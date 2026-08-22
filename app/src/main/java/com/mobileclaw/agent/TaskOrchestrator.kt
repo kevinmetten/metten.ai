@@ -44,7 +44,7 @@ class TaskOrchestrator(
         hasImage: Boolean,
         hasFile: Boolean,
         role: Role,
-        language: String = "zh",
+        language: String = "en",
     ): TaskOrchestration {
         val channelDecision = channelRouter.decide(
             taskType = route.taskType,
