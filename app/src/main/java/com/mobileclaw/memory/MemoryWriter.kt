@@ -37,7 +37,7 @@ class MemoryWriter(
     }
 
     suspend fun recordExplicitUserText(text: String) {
-        val facts = extractExplicitUserFacts(text)
+        val facts = ExplicitUserFactExtractor.extract(text)
         if (facts.isEmpty()) return
         facts.forEach { (key, value) ->
             semanticMemory.set(
@@ -48,14 +48,14 @@ class MemoryWriter(
                 source = "user_chat",
             )
             if (key.startsWith("profile.")) {
-                userConfig?.set("user.${key.removePrefix("profile.")}", value, "从聊天中识别的用户信息")
+                userConfig?.set("user.${key.removePrefix("profile.")}", value, "User information recognized from chat")
             }
         }
     }
 
     suspend fun recordScopedUserText(scopeId: String, text: String) {
         if (scopeId.isBlank()) return
-        val facts = extractExplicitUserFacts(text)
+        val facts = ExplicitUserFactExtractor.extract(text)
         if (facts.isEmpty()) return
         facts.forEach { (key, value) ->
             semanticMemory.set(
@@ -187,79 +187,230 @@ class MemoryWriter(
             key.startsWith("agent.behavior.") ||
             key.startsWith("profile.preferred")
 
-    private fun extractExplicitUserFacts(text: String): Map<String, String> {
+}
+
+internal object ExplicitUserFactExtractor {
+    private const val MAX_INPUT_LENGTH = 500
+    private const val MAX_VALUE_LENGTH = 120
+
+    private val explicitNamePattern = Regex(
+        """(?i)^(?:my name is|you can call me)\s+([^.!?;\n]{1,60})""",
+    )
+    private val conversationalNamePattern = Regex(
+        """^(?:I'm|I am)\s+([A-Z][A-Za-z'’-]*(?:\s+[A-Z][A-Za-z'’-]*){0,2})(?:[.!?]|$)""",
+    )
+    private val locationPattern = Regex(
+        """(?i)^(?:I live\s+(?:in|near)|I'm from|I am from)\s+([^.!?;\n]{2,80})""",
+    )
+    private val professionPattern = Regex(
+        """(?i)^(?:I'm|I am)\s+(?:an?\s+)?((?:software\s+)?(?:engineer|developer|designer)|lawyer|attorney|teacher|physician|doctor|student|freelancer|accountant|nurse|writer|researcher|consultant)(?:[.!?]|$)""",
+    )
+    private val workAsPattern = Regex(
+        """(?i)^(?:I work as|my job is|my profession is)\s+(?:an?\s+)?([^.!?;\n]{2,60})""",
+    )
+    private val preferencePattern = Regex(
+        """(?i)^I\s+(?:prefer|like|love)\s+([^.!?;\n]{2,100})""",
+    )
+    private val dislikePattern = Regex(
+        """(?i)^I\s+(?:don't like|do not like|dislike|hate)\s+([^.!?;\n]{2,100})""",
+    )
+    private val rememberPattern = Regex(
+        """(?i)^(?:please\s+)?(?:remember(?:\s+that|\s+this\s*:?)?|keep in mind(?:\s+that)?)\s*[:,-]?\s*([^\n]{2,160})""",
+    )
+    private val durablePrefixPattern = Regex(
+        """(?i)^(?:from now on|going forward|in the future),?\s*""",
+    )
+    private val canonicalDoNotPattern = Regex(
+        """(?i)^(?:please\s+)?(?:don't|do not|never|stop)\s+([^\n]{2,160})""",
+    )
+    private val mustPattern = Regex(
+        """(?i)^(?:always|every time|you must|from now on,?\s*(?:always|you must)?|in the future,?\s*(?:always|you must)?)\s+([^\n]{2,160})""",
+    )
+
+    fun extract(text: String): Map<String, String> {
         val trimmed = text.trim()
-        if (trimmed.isBlank() || trimmed.length > 500) return emptyMap()
+        if (trimmed.isBlank() || trimmed.length > MAX_INPUT_LENGTH) return emptyMap()
         val facts = linkedMapOf<String, String>()
+
         fun putClean(key: String, value: String) {
-            val cleaned = value
-                .trim()
-                .trim('。', '.', '，', ',', '；', ';', '！', '!', '？', '?', '"', '\'', '“', '”')
-                .take(120)
-            if (cleaned.isNotBlank()) {
-                val storageKey = if (key.startsWith("rule.") || key.startsWith("correction.") || key.startsWith("preference.user_requirement")) {
-                    "$key.${kotlin.math.abs(cleaned.hashCode())}"
-                } else {
-                    key
-                }
-                facts[storageKey] = cleaned
+            val cleaned = cleanValue(value)
+            if (cleaned.isBlank()) return
+            val storageKey = if (
+                key.startsWith("rule.") ||
+                key.startsWith("correction.") ||
+                key.startsWith("preference.user_requirement")
+            ) {
+                "$key.${kotlin.math.abs(cleaned.hashCode())}"
+            } else {
+                key
             }
+            facts[storageKey] = cleaned
         }
 
-        Regex("""(?:我叫|我的名字叫|我是)([^，。！？\n]{1,24})""").find(trimmed)?.let {
-            val value = it.groupValues[1].trim()
-            if (!value.contains("一个") && !value.contains("开发") && !value.contains("用户")) putClean("profile.name", value)
+        explicitNamePattern.find(trimmed)?.groupValues?.get(1)?.let { candidate ->
+            if (looksLikeName(candidate)) putClean("profile.name", candidate)
+        } ?: conversationalNamePattern.find(trimmed)?.groupValues?.get(1)?.let { candidate ->
+            if (looksLikeName(candidate)) putClean("profile.name", candidate)
         }
-        Regex("""(?:我在|我住在|我来自)([^，。！？\n]{1,40})""").find(trimmed)?.let {
-            putClean("profile.location", it.groupValues[1])
+
+        locationPattern.find(trimmed)?.groupValues?.get(1)?.let {
+            putClean("profile.location", it)
         }
-        Regex("""(?:我是|我的职业是|我从事)([^，。！？\n]{1,50})(?:工程师|开发|设计师|产品|学生|老师|医生|律师|运营|自由职业)?""").find(trimmed)?.let {
-            val raw = it.value.removePrefix("我是").removePrefix("我的职业是").removePrefix("我从事")
-            if (raw.any { ch -> ch in "工程师开发设计师产品学生老师医生律师运营自由职业" }) putClean("profile.profession", raw)
+
+        professionPattern.find(trimmed)?.groupValues?.get(1)?.let {
+            putClean("profile.profession", it)
+        } ?: workAsPattern.find(trimmed)?.groupValues?.get(1)?.let { candidate ->
+            if (looksLikeProfession(candidate)) putClean("profile.profession", candidate)
         }
-        Regex("""我(?:喜欢|偏好|爱用)([^，。！？\n]{1,80})""").find(trimmed)?.let {
-            putClean("profile.preferences", it.groupValues[1])
+
+        preferencePattern.find(trimmed)?.groupValues?.get(1)?.let {
+            putClean("profile.preferences", it)
         }
-        Regex("""我(?:不喜欢|讨厌|不想要)([^，。！？\n]{1,80})""").find(trimmed)?.let {
-            putClean("profile.dislikes", it.groupValues[1])
+        dislikePattern.find(trimmed)?.groupValues?.get(1)?.let {
+            putClean("profile.dislikes", it)
         }
-        Regex("""以后(?:都|请)?(?:用|以)([^，。！？\n]{1,50})(?:回复|回答|和我说话|跟我说话)""").find(trimmed)?.let {
-            putClean("profile.preferred_style", it.groupValues[1])
+        extractPreferredStyle(trimmed)?.let {
+            putClean("profile.preferred_style", it)
         }
-        Regex("""(?:记住|帮我记住|你要记住)[:： ]?([^。\n]{2,120})""").find(trimmed)?.let {
-            putClean("profile.note", it.groupValues[1])
+        rememberPattern.find(trimmed)?.groupValues?.get(1)?.let {
+            putClean("profile.note", it)
         }
-        Regex("""(?:以后|后面|下次)?(?:不要|别|不准)([^。\n]{2,120})""").find(trimmed)?.let {
-            putClean("rule.user_do_not", "不要${it.groupValues[1]}")
+
+        extractDurableDoNotRule(trimmed)?.let {
+            putClean("rule.user_do_not", it)
         }
-        Regex("""(?:以后|后面|下次)?(?:必须|一定要|优先)([^。\n]{2,120})""").find(trimmed)?.let {
-            putClean("rule.user_must", "必须${it.groupValues[1]}")
+        extractDurableMustRule(trimmed)?.let {
+            putClean("rule.user_must", it)
         }
-        Regex("""(?:你|ai|AI)(?:老是|总是|经常|一直)([^。\n]{2,120})""").find(trimmed)?.let {
-            putClean("correction.user_reported_behavior", it.value)
+        extractCorrection(trimmed)?.let {
+            putClean("correction.user_reported_behavior", it)
+        }
+        extractDurableRequirement(trimmed)?.let {
+            putClean("preference.user_requirement", it)
+        }
+
+        val lower = trimmed.lowercase()
+        val hasProhibitionOrComplaint = containsAny(
+            lower,
+            "don't", "do not", "stop", "unless i", "unnecessarily", "shouldn't", "should not",
+            "keep searching", "always search", "just inspect",
+        )
+        if (
+            containsAny(lower, "image", "picture", "photo", "screenshot") &&
+            containsAny(lower, "web search", "search the web", "browse", "online lookup", "online research") &&
+            hasProhibitionOrComplaint
+        ) {
+            putClean(
+                "tool.policy.image_understanding.no_web_search",
+                "Inspect user-provided images directly. Do not search the web unless the user explicitly requests online research.",
+            )
         }
         if (
-            trimmed.contains("图片") &&
-            listOf("网页搜索", "联网搜索", "搜索网页", "外部检索").any { trimmed.contains(it) } &&
-            listOf("不要", "别", "不用", "不该", "不希望", "老是", "总是", "经常", "不停").any { trimmed.contains(it) }
+            containsAny(lower, "uibuild", "ui_builder", "ui builder", "build a page", "create a page", "building a page", "creating a page") &&
+            containsAny(lower, "don't", "do not", "stop", "unless i", "unnecessarily", "just because", "ordinary question", "normal question")
         ) {
-            putClean("tool.policy.image_understanding.no_web_search", "图片理解优先直接看图，除非用户明确要求联网，否则不要网页搜索")
+            putClean(
+                "tool.policy.general.no_unrequested_ui_build",
+                "Do not use UI Builder for ordinary chat or follow-ups; create or modify pages only when the user explicitly asks.",
+            )
         }
         if (
-            listOf("uiBuild", "uibuild", "ui_builder", "生成页面", "创建页面").any { trimmed.contains(it, ignoreCase = true) } &&
-            listOf("不要", "别", "不该", "乱", "老是", "总是", "经常").any { trimmed.contains(it) }
+            containsAny(lower, "switch roles", "switching roles", "change roles", "changing roles", "current role") &&
+            containsAny(lower, "don't", "do not", "stop", "never", "randomly", "automatically", "unless i", "keep the current role")
         ) {
-            putClean("tool.policy.general.no_unrequested_ui_build", "普通聊天和上下文追问不要主动 uiBuild；只有用户明确要求创建或修改页面时才进入页面生成")
-        }
-        if (
-            listOf("乱切人", "乱切角色", "自动切角色", "老切角色", "切人").any { trimmed.contains(it) } &&
-            listOf("不要", "别", "不该", "乱", "老是", "总是", "经常").any { trimmed.contains(it) }
-        ) {
-            putClean("agent.behavior.keep_current_role", "不要自动乱切角色；除非用户明确点名角色，否则优先保持当前角色")
-        }
-        Regex("""(?:我希望|我要求|我想要)([^。\n]{2,120})""").find(trimmed)?.let {
-            putClean("preference.user_requirement", it.groupValues[1])
+            putClean(
+                "agent.behavior.keep_current_role",
+                "Keep the current role unless the user explicitly requests a role change.",
+            )
         }
         return facts
     }
+
+    private fun cleanValue(value: String): String = value
+        .trim()
+        .trimStart('"', '\'', '“', '”')
+        .trimEnd(' ', '.', ',', ';', ':', '!', '?', '"', '\'', '“', '”')
+        .trim()
+        .take(MAX_VALUE_LENGTH)
+
+    private fun looksLikeName(candidate: String): Boolean {
+        val cleaned = cleanValue(candidate)
+        if (cleaned.isBlank() || cleaned.split(Regex("\\s+")).size > 3) return false
+        val lower = cleaned.lowercase()
+        return !containsAny(
+            lower,
+            "developer", "engineer", "lawyer", "attorney", "student", "freelancer", "designer",
+            "tired", "working", "using ", "from ", "at ", "in ", "happy", "sad", "busy",
+        ) && cleaned.all { it.isLetter() || it == ' ' || it == '-' || it == '\'' || it == '’' }
+    }
+
+    private fun looksLikeProfession(candidate: String): Boolean {
+        val lower = cleanValue(candidate).lowercase()
+        if (lower.isBlank() || lower.split(Regex("\\s+")).size > 6) return false
+        return !containsAny(
+            lower,
+            "tired", "happy", "sad", "busy", "working on", "using ", "at ", "in ", "from ",
+        )
+    }
+
+    private fun extractPreferredStyle(text: String): String? {
+        val lower = text.lowercase()
+        val durable = containsAny(lower, "from now on", "going forward", "in the future", "always")
+        val style = containsAny(
+            lower,
+            "answer", "answers", "response", "responses", "tone", "concisely", "concise", "direct", "short", "brief", "technical", "detailed",
+        )
+        if (!durable || !style) return null
+        return durablePrefixPattern.replace(text, "")
+            .replace(Regex("(?i)^please\\s+"), "")
+            .replace(Regex("(?i)^always\\s+"), "")
+    }
+
+    private fun extractDurableDoNotRule(text: String): String? {
+        val normalized = durablePrefixPattern.replace(text, "")
+        val match = canonicalDoNotPattern.find(normalized) ?: return null
+        val lower = normalized.lowercase()
+        val durable = lower.startsWith("never ") ||
+            text.lowercase().startsWith("from now on") ||
+            containsAny(lower, " again", "unless i ask", "unless i explicitly", "automatically", "randomly", "every time")
+        if (!durable || lower.contains("don't like") || lower.contains("do not like")) return null
+        val directive = lower.removePrefix("please ")
+        val verb = when {
+            directive.startsWith("never ") -> "Never"
+            directive.startsWith("stop ") -> "Stop"
+            else -> "Do not"
+        }
+        return "$verb ${match.groupValues[1]}"
+    }
+
+    private fun extractDurableMustRule(text: String): String? {
+        val match = mustPattern.find(text) ?: return null
+        return "Always ${match.groupValues[1]}"
+    }
+
+    private fun extractCorrection(text: String): String? {
+        val lower = text.lowercase()
+        if (!Regex("""(?i)^you\s+(?:always|keep|constantly|often)\s+""").containsMatchIn(text)) return null
+        val negativeContext = containsAny(
+            lower,
+            "don't want", "do not want", "unnecessarily", "instead of", "without asking", "wrong",
+            "ask me for confirmation", "asks me for confirmation", "too often", "again",
+        )
+        return text.takeIf { negativeContext }
+    }
+
+    private fun extractDurableRequirement(text: String): String? {
+        val lower = text.lowercase()
+        val requirementLead = lower.startsWith("i want you to") ||
+            lower.startsWith("i require you to") ||
+            lower.startsWith("my requirement is")
+        val durable = containsAny(lower, "always", "from now on", "in the future", "every time", "never")
+        if (!requirementLead || !durable) return null
+        return text
+            .replace(Regex("(?i)^I want you to\\s+"), "")
+            .replace(Regex("(?i)^I require you to\\s+"), "")
+            .replace(Regex("(?i)^My requirement is(?: that)?\\s+"), "")
+    }
+
+    private fun containsAny(text: String, vararg values: String): Boolean = values.any(text::contains)
 }
