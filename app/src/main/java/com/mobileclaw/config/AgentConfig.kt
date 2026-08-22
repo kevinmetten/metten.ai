@@ -42,6 +42,7 @@ class AgentConfig(private val context: Context) {
         val GATEWAYS = stringPreferencesKey("gateways_json")
         val ACTIVE_GATEWAY_ID = stringPreferencesKey("active_gateway_id")
         // Shared / non-gateway keys
+        // Retained only so updates overwrite legacy persisted selections with English.
         val LANGUAGE = stringPreferencesKey("response_language")
         val DARK_THEME = stringPreferencesKey("dark_theme")
         val ACCENT_COLOR = stringPreferencesKey("accent_color")
@@ -64,7 +65,7 @@ class AgentConfig(private val context: Context) {
         ConfigSnapshot(
             gateways = gateways,
             activeGatewayId = activeId ?: gateways.firstOrNull()?.id,
-            language = prefs[Keys.LANGUAGE]?.takeIf { it == "zh" || it == "en" } ?: "zh",
+            language = ENGLISH_RESPONSE_LANGUAGE,
             darkTheme = (prefs[Keys.DARK_THEME] ?: "false") == "true",
             accentColor = parseAccentColor(prefs[Keys.ACCENT_COLOR]) ?: 0xFFC7F43AL,
             uiStyle = "classic",
@@ -89,7 +90,7 @@ class AgentConfig(private val context: Context) {
             if (snapshot.activeGatewayId != null) {
                 prefs[Keys.ACTIVE_GATEWAY_ID] = snapshot.activeGatewayId
             }
-            prefs[Keys.LANGUAGE] = snapshot.language.takeIf { it == "zh" || it == "en" } ?: "zh"
+            prefs[Keys.LANGUAGE] = ENGLISH_RESPONSE_LANGUAGE
             prefs[Keys.DARK_THEME] = snapshot.darkTheme.toString()
             prefs[Keys.ACCENT_COLOR] = snapshot.accentColor.toString()
             prefs[Keys.UI_STYLE] = "classic"
@@ -144,7 +145,7 @@ class AgentConfig(private val context: Context) {
 data class ConfigSnapshot(
     val gateways: List<GatewayConfig> = emptyList(),
     val activeGatewayId: String? = null,
-    val language: String = "zh",
+    val language: String = ENGLISH_RESPONSE_LANGUAGE,
     val darkTheme: Boolean = false,
     val accentColor: Long = 0xFFC7F43AL,
     val uiStyle: String = "classic",

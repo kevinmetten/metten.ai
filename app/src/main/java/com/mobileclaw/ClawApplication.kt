@@ -141,7 +141,6 @@ class ClawApplication : Application() {
         database = ClawDatabase.getInstance(this)
         agentConfig = AgentConfig(this)
         localModelManager = LocalModelManager(this)
-        applyLanguage(agentConfig.language)
         skillRegistry = SkillRegistry()
         overlayManager = AgentOverlayManager(this)
         auroraOverlayManager = AuroraOverlayManager(this)
@@ -242,20 +241,9 @@ class ClawApplication : Application() {
     /** Tasks submitted from MiniAppActivity to the main agent. */
     val pendingAgentTask = MutableSharedFlow<String>(extraBufferCapacity = 8)
 
-    /** Context with the in-app language applied — use this for getString() calls. */
-    var localizedContext: android.content.Context = this
-        private set
-
-    fun applyLanguage(language: String) {
-        localizedContext = if (language == "auto" || language.isBlank()) {
-            this
-        } else {
-            val locale = java.util.Locale.forLanguageTag(language)
-            val config = android.content.res.Configuration(resources.configuration)
-            config.setLocale(locale)
-            createConfigurationContext(config)
-        }
-    }
+    /** English-only application context used for centralized string access. */
+    val localizedContext: android.content.Context
+        get() = this
 
     companion object {
         lateinit var instance: ClawApplication

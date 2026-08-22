@@ -245,11 +245,6 @@ private val IMAGE_PROVIDER_PRESETS = listOf(
     ),
 )
 
-private val LANGUAGES = listOf(
-    "zh"   to R.string.lang_zh,
-    "en"   to R.string.lang_en,
-)
-
 private enum class SettingsSub { GATEWAY, LOCAL_MODEL, IMAGE_MODEL, APPEARANCE, PERMISSIONS, VIRTUAL_DISPLAY, CODEX_DESKTOP, CACHE, TASKS, ROLE_RUNTIME }
 
 private const val CODEX_DESKTOP_ENDPOINT_KEY = "codex_desktop_endpoint"
@@ -439,13 +434,12 @@ fun SettingsPage(
     val snapshot by config.collectAsState(initial = ConfigSnapshot())
     var gateways by remember(snapshot.gateways) { mutableStateOf(snapshot.gateways) }
     var activeGatewayId by remember(snapshot.activeGatewayId) { mutableStateOf(snapshot.activeGatewayId) }
-    var language  by remember(snapshot.language) { mutableStateOf(snapshot.language) }
     var darkTheme by remember(snapshot.darkTheme) { mutableStateOf(snapshot.darkTheme) }
     var accent    by remember(snapshot.accentColor) { mutableStateOf(snapshot.accentColor) }
     var localEnabled by remember(snapshot.localModelEnabled) { mutableStateOf(snapshot.localModelEnabled) }
     var localNativeOnly by remember(snapshot.localNativeOnly) { mutableStateOf(snapshot.localNativeOnly) }
     var localToolCallingEnabled by remember(snapshot.localToolCallingEnabled) { mutableStateOf(snapshot.localToolCallingEnabled) }
-    val isZh = language == "zh"
+    val isZh = false
 
     var subPage by remember { mutableStateOf<SettingsSub?>(null) }
 
@@ -460,7 +454,6 @@ fun SettingsPage(
         snapshot.copy(
             gateways = gateways,
             activeGatewayId = activeGatewayId,
-            language = language,
             darkTheme = darkTheme,
             accentColor = accent,
             uiStyle = "classic",
@@ -622,7 +615,6 @@ fun SettingsPage(
             SettingsSub.APPEARANCE -> AppearanceSubPage(
                 darkTheme = darkTheme, onDarkTheme = { darkTheme = it },
                 accent = accent, onAccent = { accent = it },
-                language = language, onLanguage = { language = it },
                 c = c, onBack = { subPage = null },
                 onSave = { onSave(currentSnapshot()); subPage = null },
             )
@@ -861,7 +853,6 @@ fun GeneralSettingsPage(
     val userConfig = remember(context) { com.mobileclaw.config.UserConfig(context) }
     val userConfigEntries by userConfig.entriesFlow.collectAsState(initial = emptyMap())
     val snapshot by config.collectAsState(initial = ConfigSnapshot())
-    var language by remember(snapshot.language) { mutableStateOf(snapshot.language) }
     var darkTheme by remember(snapshot.darkTheme) { mutableStateOf(snapshot.darkTheme) }
     var accent by remember(snapshot.accentColor) { mutableStateOf(snapshot.accentColor) }
     var subPage by remember { mutableStateOf<SettingsSub?>(null) }
@@ -869,7 +860,6 @@ fun GeneralSettingsPage(
 
     val currentSnapshot = {
         snapshot.copy(
-            language = language,
             darkTheme = darkTheme,
             accentColor = accent,
             uiStyle = "classic",
@@ -956,8 +946,6 @@ fun GeneralSettingsPage(
                 onDarkTheme = { darkTheme = it },
                 accent = accent,
                 onAccent = { accent = it },
-                language = language,
-                onLanguage = { language = it },
                 c = c,
                 onBack = { subPage = null },
                 onSave = {
@@ -2863,7 +2851,6 @@ private fun localModelCapabilities(model: LocalModelInfo): String {
 private fun AppearanceSubPage(
     darkTheme: Boolean, onDarkTheme: (Boolean) -> Unit,
     accent: Long, onAccent: (Long) -> Unit,
-    language: String, onLanguage: (String) -> Unit,
     c: ClawColors,
     onBack: () -> Unit,
     onSave: () -> Unit,
@@ -2902,24 +2889,6 @@ private fun AppearanceSubPage(
                                 }
                             }
                             if (row.size == 1) Spacer(Modifier.weight(1f))
-                        }
-                    }
-                }
-            }
-            SettingsSection(str(R.string.section_language), c) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    LANGUAGES.forEach { (code, resId) ->
-                        val active = language == code
-                        Box(
-                            Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
-                                .background(if (active) c.text else c.cardAlt)
-                                .border(1.dp, if (active) c.text else c.border, RoundedCornerShape(8.dp))
-                                .clickable { onLanguage(code) }
-                                .padding(vertical = 9.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(stringResource(resId), color = if (active) c.bg else c.subtext, fontSize = 11.sp,
-                                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal)
                         }
                     }
                 }

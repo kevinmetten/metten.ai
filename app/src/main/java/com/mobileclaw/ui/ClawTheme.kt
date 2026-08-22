@@ -1,21 +1,16 @@
 package com.mobileclaw.ui
 
-import android.content.Context
-import android.content.res.Configuration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
-import java.util.Locale
 
 data class ClawColors(
     val bg: Color,
@@ -81,7 +76,7 @@ fun lightClawColors(accent: Color = DefaultAccent): ClawColors {
 }
 
 val LocalClawColors = staticCompositionLocalOf { darkClawColors() }
-val LocalAppLanguage = staticCompositionLocalOf { "zh" }
+val LocalAppLanguage = staticCompositionLocalOf { "en" }
 
 private val ClawTypography = Typography(
     displayLarge  = TextStyle(fontWeight = FontWeight.Bold,     fontSize = 42.sp, lineHeight = 48.sp),
@@ -123,16 +118,10 @@ val AccentPresets = listOf(
 fun ClawTheme(
     darkTheme: Boolean = true,
     accentColor: Long = 0xFF56D6BAL,
-    language: String = "auto",
     content: @Composable () -> Unit,
 ) {
     val accent = Color(accentColor)
     val clawColors = if (darkTheme) darkClawColors(accent) else lightClawColors(accent)
-    val normalizedLanguage = language.takeIf { it == "zh" || it == "en" } ?: Locale.getDefault().language
-    val baseContext = LocalContext.current
-    val localizedContext = remember(baseContext, language) {
-        baseContext.withAppLocale(language)
-    }
 
     val materialColors = if (darkTheme) {
         darkColorScheme(
@@ -170,17 +159,8 @@ fun ClawTheme(
 
     CompositionLocalProvider(
         LocalClawColors provides clawColors,
-        LocalAppLanguage provides normalizedLanguage,
-        LocalContext provides localizedContext,
+        LocalAppLanguage provides "en",
     ) {
         MaterialTheme(colorScheme = materialColors, typography = ClawTypography, content = content)
     }
-}
-
-private fun Context.withAppLocale(language: String): Context {
-    if (language == "auto" || language.isBlank()) return this
-    val locale = Locale.forLanguageTag(language)
-    val config = Configuration(resources.configuration)
-    config.setLocale(locale)
-    return createConfigurationContext(config)
 }

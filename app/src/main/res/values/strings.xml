@@ -37,7 +37,6 @@
     <string name="section_preset">Provider Presets</string>
     <string name="section_connection">Connection Configuration</string>
     <string name="section_models">model config</string>
-    <string name="section_language">Language Settings</string>
     <string name="section_theme">ThemeLooks</string>
     <string name="section_virtual_display">Virtual Screen</string>
     <string name="field_endpoint">API URL</string>
@@ -48,16 +47,12 @@
     <string name="status_configured">Ready to connect</string>
     <string name="status_not_ready">Please configure address and key</string>
     <string name="btn_save">SAVING</string>
-    <string name="btn_cancel">’s decline</string>
-    <string name="lang_auto">Automatic (following system)</string>
-    <string name="lang_zh">Chinese</string>
-    <string name="lang_en">English</string>
-    <string name="lang_ja">JAPANESE</string>
+    <string name="btn_cancel">Cancel</string>
     <string name="theme_dark">Dark</string>
     <string name="theme_light">Light</string>
     <string name="theme_accent">Theme color</string>
     <string name="vd_status_running">● Running (Display # %d)</string>
-    <string name="vd_status_stopped">Unstart</string>
+    <string name="vd_status_stopped">Stopped</string>
     <string name="vd_test">Test Virtual Screen</string>
     <string name="vd_test_ok">Virtual screen normal (ID: %s)</string>
     <string name="vd_test_fail">Failed: %s</string>
@@ -104,7 +99,7 @@
     <string name="group_field_name_hint">Enter Group Name</string>
     <string name="group_field_icon">CHOOSE ICON</string>
     <string name="group_field_members">Select members (at least 1)</string>
-    <string name="group_create">Buat</string>
+    <string name="group_create">Create</string>
 
     <!-- Group chat -->
     <string name="group_chat_hint">Message, can @ members...</string>

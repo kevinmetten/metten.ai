@@ -520,9 +520,6 @@ class MainViewModel : ViewModel() {
     private val consoleServer = app.consoleServer
     private val userPrefs = app.getSharedPreferences("user_prefs", android.content.Context.MODE_PRIVATE)
 
-    private val _languageChanged = MutableSharedFlow<String>()
-    val languageChanged: SharedFlow<String> = _languageChanged.asSharedFlow()
-
     private val _uiState = MutableStateFlow(
         MainUiState(
             config = config.configFlow,
@@ -7091,11 +7088,7 @@ $foundationalMemory
 
     fun saveConfig(snapshot: ConfigSnapshot) {
         viewModelScope.launch {
-            val oldLanguage = config.language
             config.update(snapshot)
-            if (snapshot.language != oldLanguage) {
-                _languageChanged.emit(snapshot.language)
-            }
             navigate(AppPage.HOME)
         }
     }
