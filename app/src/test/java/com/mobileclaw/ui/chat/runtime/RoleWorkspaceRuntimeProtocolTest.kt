@@ -132,6 +132,78 @@ class RoleWorkspaceRuntimeProtocolTest {
         assertEquals(canonicalPlan.persistencePolicy, plan.persistencePolicy)
     }
 
+    @Test
+    fun `legacy managed preferences retain direct and agent selections`() {
+        val legacyDirectExecution = legacy("2d 20 45 78 65 63 75 74 69 6f 6e 20 70 72 65 66 65 72 65 6e 63 65 3a 20 666e 901a 95ee 7b54 76f4 63a5 56de 7b54 ff1b 9700 8981 884c 52a8 65f6 8fdb 5165 20 61 67 65 6e 74 3002")
+        val legacyAgentExecution = legacy("2d 20 45 78 65 63 75 74 69 6f 6e 20 70 72 65 66 65 72 65 6e 63 65 3a 20 4f18 5148 20 61 67 65 6e 74 ff1b 6267 884c 7c7b 4efb 52a1 8fdb 5165 20 61 67 65 6e 74 ff1b 9700 8981 884c 52a8 65f6 8fdb 5165 5de5 5177 3002")
+        val legacyDirectResponse = legacy("2d 20 52 65 73 70 6f 6e 73 65 20 70 72 65 66 65 72 65 6e 63 65 3a 20 76f4 63a5 56de 7b54 4f18 5148 ff0c 5c11 5c55 793a 5185 90e8 8fc7 7a0b 3002")
+        val legacyAgentResponse = legacy("2d 20 52 65 73 70 6f 6e 73 65 20 70 72 65 66 65 72 65 6e 63 65 3a 20 6267 884c 4f18 5148 ff0c 5b8c 6210 540e 6c47 62a5 7ed3 679c 548c 5173 952e 8fc7 7a0b 3002")
+
+        listOf(
+            LegacyPreferenceCase(
+                executionLine = legacyDirectExecution,
+                responseLine = legacyDirectResponse,
+                expectedPreference = RoleExecutionPreference.DIRECT_FIRST,
+                expectedHint = ChatExecutionMode.DIRECT_CHAT,
+                canonicalMode = "direct_first",
+                canonicalResponse = "- Response preference: prefer direct answers and minimize internal-process detail.",
+            ),
+            LegacyPreferenceCase(
+                executionLine = legacyAgentExecution,
+                responseLine = legacyAgentResponse,
+                expectedPreference = RoleExecutionPreference.AGENT_FIRST,
+                expectedHint = ChatExecutionMode.AGENT,
+                canonicalMode = "agent_first",
+                canonicalResponse = "- Response preference: prefer execution, then report results and key steps.",
+            ),
+        ).forEach { case ->
+            val original = managedPreferenceProtocol(case.executionLine, case.responseLine)
+            val migrated = RoleWorkspaceMarkdownMigrator.migrate(RoleWorkspaceStore.CHAT_PROTOCOL_MD, original)
+            val parsed = RoleExecutionProtocolParser.parse("test", migrated)
+
+            assertEquals(migrated, RoleWorkspaceMarkdownMigrator.migrate(RoleWorkspaceStore.CHAT_PROTOCOL_MD, migrated))
+            assertEquals(1, Regex("^\\s*- Execution mode:", RegexOption.MULTILINE).findAll(migrated).count())
+            assertTrue(migrated.contains("- Execution mode: ${case.canonicalMode}"))
+            assertTrue(migrated.contains(case.canonicalResponse))
+            assertTrue(migrated.contains("Custom skill instruction."))
+            assertTrue(migrated.contains("Custom response instruction."))
+            assertFalse(migrated.contains(case.executionLine))
+            assertFalse(migrated.contains(case.responseLine))
+            assertEquals(case.expectedPreference, RoleExecutionPreferenceProtocol.parse(parsed.skillPolicy, parsed.responsePolicy))
+            assertEquals(case.expectedHint, RoleChatControlPlanCompiler.compile(profile(parsed)).executionModeHint)
+        }
+    }
+
+    @Test
+    fun `English intermediate preferences migrate and canonical field wins conflicts`() {
+        listOf(
+            "- Execution preference: answer ordinary questions directly; enter the agent for action requests." to "direct_first",
+            "- Execution preference: agent first; use tools for execution requests." to "agent_first",
+        ).forEach { (legacyLine, expectedMode) ->
+            val migrated = RoleWorkspaceMarkdownMigrator.migrate(
+                RoleWorkspaceStore.CHAT_PROTOCOL_MD,
+                managedPreferenceProtocol(legacyLine, "Custom response instruction."),
+            )
+            assertTrue(migrated.contains("- Execution mode: $expectedMode"))
+            assertFalse(migrated.contains(legacyLine))
+            assertEquals(migrated, RoleWorkspaceMarkdownMigrator.migrate(RoleWorkspaceStore.CHAT_PROTOCOL_MD, migrated))
+        }
+
+        val canonicalWins = RoleWorkspaceMarkdownMigrator.migrate(
+            RoleWorkspaceStore.CHAT_PROTOCOL_MD,
+            managedPreferenceProtocol(
+                "- Execution mode: agent_first\n- Execution preference: answer ordinary questions directly; enter the agent for action requests.",
+                "Custom response instruction.",
+            ),
+        )
+        val parsed = RoleExecutionProtocolParser.parse("test", canonicalWins)
+        assertEquals(1, Regex("^\\s*- Execution mode:", RegexOption.MULTILINE).findAll(canonicalWins).count())
+        assertTrue(canonicalWins.contains("- Execution mode: agent_first"))
+        assertFalse(canonicalWins.contains("Execution preference:"))
+        assertEquals(RoleExecutionPreference.AGENT_FIRST, RoleExecutionPreferenceProtocol.parse(parsed.skillPolicy, parsed.responsePolicy))
+        assertEquals(ChatExecutionMode.AGENT, RoleChatControlPlanCompiler.compile(profile(parsed)).executionModeHint)
+    }
+
     private fun canonicalStockProtocol(): String = """
         # Chat Execution Protocol
 
@@ -164,6 +236,37 @@ class RoleWorkspaceRuntimeProtocolTest {
         - Update memory.md or core.md for durable changes.
         - Runtime writes configuration to model.md and model_config.json without secrets.
     """.trimIndent() + "\n"
+
+    private fun managedPreferenceProtocol(executionLine: String, responseLine: String): String = """
+        # Chat Execution Protocol
+
+        ## Runtime Contract
+        - Role id: test
+        - Protocol version: 1
+
+        ## Input Understanding
+        - Resolve short follow-ups from recent conversation.
+
+        ## Skill Policy
+        $executionLine
+        Custom skill instruction.
+
+        ## Response Policy
+        $responseLine
+        Custom response instruction.
+
+        ## Persistence Policy
+        - Append important completed work to journal.md.
+    """.trimIndent() + "\n"
+
+    private data class LegacyPreferenceCase(
+        val executionLine: String,
+        val responseLine: String,
+        val expectedPreference: RoleExecutionPreference,
+        val expectedHint: ChatExecutionMode,
+        val canonicalMode: String,
+        val canonicalResponse: String,
+    )
 
     private fun protocol(
         skillPolicy: String,

@@ -53,7 +53,12 @@ object RoleWorkspaceMarkdownMigrator {
     fun migrate(fileName: String, markdown: String): String {
         val headings = legacyMappings[fileName].orEmpty()
         val withCanonicalHeadings = migrateSections(markdown, headings)
-        return migrateKnownStockLines(fileName, withCanonicalHeadings)
+        val withCanonicalStockContent = migrateKnownStockLines(fileName, withCanonicalHeadings)
+        return if (fileName == RoleWorkspaceStore.CHAT_PROTOCOL_MD) {
+            migrateManagedExecutionPreference(withCanonicalStockContent)
+        } else {
+            withCanonicalStockContent
+        }
     }
 
     fun migrateJournal(markdown: String): String {
@@ -106,6 +111,47 @@ object RoleWorkspaceMarkdownMigrator {
         return migrated.preserveFinalNewline(markdown)
     }
 
+    private fun migrateManagedExecutionPreference(markdown: String): String {
+        val lines = markdown.lines()
+        val canonicalValues = lines.mapNotNull { line ->
+            executionModePattern.matchEntire(line)?.groupValues?.getOrNull(1)?.lowercase()
+        }
+        val canonicalValue = canonicalValues.firstOrNull()
+        val legacyValue = lines.firstNotNullOfOrNull(legacyExecutionPreferences::get)
+        val selectedValue = canonicalValue ?: legacyValue
+        val existingResponseLines = lines.toSet()
+        var emittedExecutionMode = false
+        var changed = false
+        val migrated = buildList {
+            lines.forEach { line ->
+                val isCanonical = executionModePattern.matches(line)
+                val isLegacyExecution = line in legacyExecutionPreferences
+                val responseReplacement = legacyResponsePreferences[line]
+                when {
+                    isCanonical || isLegacyExecution -> {
+                        if (!emittedExecutionMode && selectedValue != null) {
+                            val canonicalLine = "- Execution mode: $selectedValue"
+                            add(canonicalLine)
+                            emittedExecutionMode = true
+                            if (line != canonicalLine) changed = true
+                        } else {
+                            changed = true
+                        }
+                    }
+                    responseReplacement != null -> {
+                        if (responseReplacement !in existingResponseLines && responseReplacement !in this) {
+                            add(responseReplacement)
+                        }
+                        changed = true
+                    }
+                    else -> add(line)
+                }
+            }
+        }.joinToString("\n")
+        if (!changed) return markdown
+        return migrated.preserveFinalNewline(markdown)
+    }
+
     private fun sectionTitle(line: String): String? =
         line.takeIf { it.startsWith("## ") }?.removePrefix("## ")?.trim()
 
@@ -114,6 +160,27 @@ object RoleWorkspaceMarkdownMigrator {
 
     private fun legacy(vararg codePoints: Int): String =
         codePoints.joinToString("") { String(Character.toChars(it)) }
+
+    private val executionModePattern = Regex(
+        pattern = """^\s*-?\s*Execution mode\s*:\s*(auto|direct_first|agent_first)\s*$""",
+        option = RegexOption.IGNORE_CASE,
+    )
+
+    private val legacyExecutionPreferences: Map<String, String> by lazy {
+        mapOf(
+            legacy(0x2d, 0x20, 0x45, 0x78, 0x65, 0x63, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x20, 0x70, 0x72, 0x65, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x3a, 0x20, 0x666e, 0x901a, 0x95ee, 0x7b54, 0x76f4, 0x63a5, 0x56de, 0x7b54, 0xff1b, 0x9700, 0x8981, 0x884c, 0x52a8, 0x65f6, 0x8fdb, 0x5165, 0x20, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x3002) to "direct_first",
+            legacy(0x2d, 0x20, 0x45, 0x78, 0x65, 0x63, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x20, 0x70, 0x72, 0x65, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x3a, 0x20, 0x4f18, 0x5148, 0x20, 0x61, 0x67, 0x65, 0x6e, 0x74, 0xff1b, 0x6267, 0x884c, 0x7c7b, 0x4efb, 0x52a1, 0x8fdb, 0x5165, 0x20, 0x61, 0x67, 0x65, 0x6e, 0x74, 0xff1b, 0x9700, 0x8981, 0x884c, 0x52a8, 0x65f6, 0x8fdb, 0x5165, 0x5de5, 0x5177, 0x3002) to "agent_first",
+            "- Execution preference: answer ordinary questions directly; enter the agent for action requests." to "direct_first",
+            "- Execution preference: agent first; use tools for execution requests." to "agent_first",
+        )
+    }
+
+    private val legacyResponsePreferences: Map<String, String> by lazy {
+        mapOf(
+            legacy(0x2d, 0x20, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x20, 0x70, 0x72, 0x65, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x3a, 0x20, 0x76f4, 0x63a5, 0x56de, 0x7b54, 0x4f18, 0x5148, 0xff0c, 0x5c11, 0x5c55, 0x793a, 0x5185, 0x90e8, 0x8fc7, 0x7a0b, 0x3002) to "- Response preference: prefer direct answers and minimize internal-process detail.",
+            legacy(0x2d, 0x20, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x20, 0x70, 0x72, 0x65, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x3a, 0x20, 0x6267, 0x884c, 0x4f18, 0x5148, 0xff0c, 0x5b8c, 0x6210, 0x540e, 0x6c47, 0x62a5, 0x7ed3, 0x679c, 0x548c, 0x5173, 0x952e, 0x8fc7, 0x7a0b, 0x3002) to "- Response preference: prefer execution, then report results and key steps.",
+        )
+    }
 
     private val legacyMappings: Map<String, Map<String, String>> by lazy {
         mapOf(
