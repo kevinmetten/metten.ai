@@ -263,8 +263,11 @@ internal object ExplicitUserFactExtractor {
             if (looksLikeProfession(candidate)) putClean("profile.profession", candidate)
         }
 
-        preferencePattern.find(trimmed)?.groupValues?.get(1)?.let {
-            putClean("profile.preferences", it)
+        val normalizedPreferenceText = durablePrefixPattern.replace(trimmed, "")
+        preferencePattern.find(normalizedPreferenceText)?.groupValues?.get(1)?.let { candidate ->
+            if (isDurablePreference(candidate, hasExplicitDurability(trimmed))) {
+                putClean("profile.preferences", candidate)
+            }
         }
         dislikePattern.find(trimmed)?.groupValues?.get(1)?.let {
             putClean("profile.dislikes", it)
@@ -346,12 +349,26 @@ internal object ExplicitUserFactExtractor {
 
     private fun looksLikeProfession(candidate: String): Boolean {
         val lower = cleanValue(candidate).lowercase()
-        if (lower.isBlank() || lower.split(Regex("\\s+")).size > 6) return false
-        return !containsAny(
-            lower,
-            "tired", "happy", "sad", "busy", "working on", "using ", "at ", "in ", "from ",
-        )
+        if (lower.isBlank()) return false
+        return occupationTitlePattern.matches(lower)
     }
+
+    private fun isDurablePreference(candidate: String, explicitDurability: Boolean): Boolean {
+        if (explicitDurability) return true
+        val lower = cleanValue(candidate).lowercase()
+        if (lower.isBlank()) return false
+        if (lower in setOf("this", "that", "it", "this one", "that one")) return false
+        return !lower.startsWith("this ") &&
+            !lower.startsWith("that ") &&
+            !lower.startsWith("the current ") &&
+            !lower.startsWith("what you ") &&
+            !containsAny(lower, "for this task", "right now", "today", "what you did here", "what you just")
+    }
+
+    private fun hasExplicitDurability(text: String): Boolean = containsAny(
+        text.lowercase(),
+        "from now on", "going forward", "in the future", "always",
+    )
 
     private fun extractPreferredStyle(text: String): String? {
         val lower = text.lowercase()
@@ -413,4 +430,8 @@ internal object ExplicitUserFactExtractor {
     }
 
     private fun containsAny(text: String, vararg values: String): Boolean = values.any(text::contains)
+
+    private val occupationTitlePattern = Regex(
+        """(?i)^(?:(?:senior|junior|lead|principal|licensed)\s+){0,2}(?:(?:software|civil|mechanical|electrical|data)\s+)?(?:engineer|developer|designer|lawyer|attorney|teacher|physician|doctor|student|freelancer|accountant|nurse|writer|researcher|consultant)$""",
+    )
 }

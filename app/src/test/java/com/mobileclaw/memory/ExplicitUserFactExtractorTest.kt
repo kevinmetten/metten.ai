@@ -15,12 +15,19 @@ class ExplicitUserFactExtractorTest {
         assertFact("I'm from Chicago", "profile.location", "Chicago")
         assertFact("I'm a lawyer", "profile.profession", "lawyer")
         assertFact("I work as a software engineer", "profile.profession", "software engineer")
+        assertFact("My profession is physician", "profile.profession", "physician")
     }
 
     @Test
     fun `extracts preferences style and explicit memory requests`() {
         assertFact("I prefer concise answers", "profile.preferences", "concise answers")
+        assertFact("I prefer Firefox", "profile.preferences", "Firefox")
         assertFact("I like dark mode", "profile.preferences", "dark mode")
+        assertFact(
+            "I love detailed technical explanations",
+            "profile.preferences",
+            "detailed technical explanations",
+        )
         assertFact(
             "I don't like unnecessary confirmation dialogs",
             "profile.dislikes",
@@ -105,6 +112,49 @@ class ExplicitUserFactExtractorTest {
         ).forEach { text ->
             assertTrue("Unexpected durable facts for: $text", ExplicitUserFactExtractor.extract(text).isEmpty())
         }
+    }
+
+    @Test
+    fun `rejects task complements as professions`() {
+        listOf(
+            "I work as hard as I can",
+            "I work as requested by the client",
+            "My job is to review this report",
+            "My job is to open Gmail",
+            "My job is done",
+            "My profession is not relevant here",
+        ).forEach { text ->
+            assertFalse(
+                "Unexpected profession for: $text",
+                ExplicitUserFactExtractor.extract(text).containsKey("profile.profession"),
+            )
+        }
+    }
+
+    @Test
+    fun `rejects temporary and deictic artifact reactions as preferences`() {
+        listOf(
+            "I like this image",
+            "I like this result",
+            "I like this version",
+            "I prefer this version",
+            "I prefer this one",
+            "I love what you did here",
+            "I like it",
+            "I prefer that",
+            "I like the current page",
+            "I prefer this for this task",
+        ).forEach { text ->
+            assertFalse(
+                "Unexpected durable preference for: $text",
+                ExplicitUserFactExtractor.extract(text).containsKey("profile.preferences"),
+            )
+        }
+        assertFact(
+            "From now on, I prefer concise answers",
+            "profile.preferences",
+            "concise answers",
+        )
     }
 
     @Test
