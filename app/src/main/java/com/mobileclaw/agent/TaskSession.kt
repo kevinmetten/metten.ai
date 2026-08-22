@@ -68,7 +68,7 @@ object TaskPlanner {
         llm: LlmGateway,
         goal: String,
         taskType: TaskType,
-        language: String = "auto",
+        language: String = "en",
         priorContext: String = "",
     ): TaskPlan {
         val prompt = """
@@ -83,14 +83,16 @@ Recent chat context:
 ${priorContext.take(2400)}
 
 Output format:
-Summary: ...
+Summary: <one-line summary>
 Steps:
-1. ...
-2. ...
-3. ...
-Success criteria: ...
+1. <step>
+2. <step>
+3. <step>
+Success criteria: <one-line criterion>
 
 Rules:
+- Use the English labels "Summary:", "Steps:", and "Success criteria:" exactly as shown.
+- Do not add text before or after the structured plan.
 - Keep 3-6 steps.
 - Generate the todo steps from BOTH the current user goal and the recent chat context, especially the last 10 chat records if provided.
 - Treat short follow-ups like "continue", "change it", "optimize", "not this", or "do the previous one" as references to the recent context, not standalone tasks.
@@ -117,29 +119,40 @@ Rules:
             ""
         }
 
-        return parsePlan(response, taskType)
-            ?: fallbackPlan(goal, taskType)
+        return parseOrFallback(response, goal, taskType)
     }
 
-    private fun parsePlan(raw: String, taskType: TaskType): TaskPlan? {
+    internal fun parseOrFallback(raw: String, goal: String, taskType: TaskType): TaskPlan =
+        parsePlan(raw, taskType) ?: fallbackPlan(goal, taskType)
+
+    internal fun parsePlan(raw: String, taskType: TaskType): TaskPlan? {
         if (raw.isBlank()) return null
         val lines = raw.lines().map { it.trim() }.filter { it.isNotBlank() }
-        val summary = lines.firstOrNull { it.startsWith("Summary:", ignoreCase = true) || it.startsWith("概要") }
-            ?.substringAfter(":")
-            ?.trim()
-            ?.ifBlank { null }
-            ?: lines.firstOrNull().orEmpty().take(180)
-        val steps = lines
-            .filter { it.matches(Regex("""^\d+[\.)、]\s+.+""")) || it.startsWith("- ") }
-            .map { it.replace(Regex("""^\d+[\.)、]\s+"""), "").removePrefix("- ").trim() }
-            .filter { it.isNotBlank() }
-            .take(6)
-        val criteria = lines.firstOrNull { it.startsWith("Success criteria:", ignoreCase = true) || it.startsWith("成功") }
-            ?.substringAfter(":")
-            ?.trim()
-            ?.ifBlank { null }
+        val summaryPattern = Regex("^summary\\s*:\\s*(.+)$", RegexOption.IGNORE_CASE)
+        val stepsHeaderPattern = Regex("^steps\\s*:\\s*$", RegexOption.IGNORE_CASE)
+        val criteriaPattern = Regex("^success\\s+criteria\\s*:\\s*(.+)$", RegexOption.IGNORE_CASE)
+        val summaryIndex = lines.indexOfFirst { summaryPattern.matches(it) }
+        val stepsHeaderIndex = lines.indexOfFirst { stepsHeaderPattern.matches(it) }
+        if (summaryIndex != 0 || stepsHeaderIndex != 1) return null
+
+        val summary = summaryPattern.matchEntire(lines[summaryIndex])
+            ?.groupValues?.get(1)?.trim()?.take(180)?.ifBlank { null }
+            ?: return null
+        val criteriaIndex = lines.indexOfFirst { criteriaPattern.matches(it) }
+        if (criteriaIndex >= 0 && criteriaIndex != lines.lastIndex) return null
+        val stepLines = lines.subList(stepsHeaderIndex + 1, if (criteriaIndex > stepsHeaderIndex) criteriaIndex else lines.size)
+        val numberedStepPattern = Regex("^\\d+[.)]\\s+(.+)$")
+        val bulletStepPattern = Regex("^-\\s+(.+)$")
+        val parsedSteps = stepLines.map { line ->
+            numberedStepPattern.matchEntire(line)?.groupValues?.get(1)
+                ?: bulletStepPattern.matchEntire(line)?.groupValues?.get(1)
+        }
+        if (parsedSteps.any { it == null }) return null
+        val steps = parsedSteps.filterNotNull().map(String::trim).filter(String::isNotBlank).take(6)
+        val criteria = criteriaIndex.takeIf { it > stepsHeaderIndex }
+            ?.let { criteriaPattern.matchEntire(lines[it])?.groupValues?.get(1)?.trim()?.ifBlank { null } }
             ?: "The user goal is satisfied and the result is verified."
-        return TaskPlan(taskType, summary.ifBlank { "Execute the user task." }, steps.ifEmpty { fallbackPlan("", taskType).steps }, criteria)
+        return TaskPlan(taskType, summary, steps.ifEmpty { fallbackPlan("", taskType).steps }, criteria)
     }
 
     private fun fallbackPlan(goal: String, taskType: TaskType): TaskPlan = when (taskType) {
