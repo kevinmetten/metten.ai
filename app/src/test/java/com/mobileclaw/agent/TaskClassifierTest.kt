@@ -10,6 +10,21 @@ class TaskClassifierTest {
         assertType(TaskType.PHONE_CONTROL, "Open Maps and search for coffee")
         assertType(TaskType.PHONE_CONTROL, "Scroll down and tap Settings")
         assertType(TaskType.PHONE_CONTROL, "tap the blue button", hasImage = true)
+        listOf(
+            "Click the Send button",
+            "Press Settings",
+            "Scroll down",
+            "Swipe left",
+            "Type hello into the message box",
+            "Make a call to John",
+            "Tap Settings",
+            "Open Spotify and play my playlist",
+            "Use my phone to open Calendar",
+            "Search for pizza in the Yelp app",
+            "Send a message in WhatsApp",
+            "Play music in Spotify",
+        ).forEach { assertType(TaskType.PHONE_CONTROL, it) }
+        assertType(TaskType.PHONE_CONTROL, "click that", hasImage = true)
     }
 
     @Test
@@ -72,6 +87,17 @@ class TaskClassifierTest {
         assertType(TaskType.GENERAL, "Describe this image", hasImage = true, hasFile = true)
         assertType(TaskType.FILE_CREATE, "Summarize the attachment", hasFile = true)
         assertType(TaskType.FILE_CREATE, "Open Gmail", hasFile = true)
+    }
+
+    @Test
+    fun `ambiguous interaction words do not steal unrelated tasks`() {
+        assertType(TaskType.GENERAL, "Create a press release")
+        assertType(TaskType.GENERAL, "Write a story about a missed call")
+        assertType(TaskType.GENERAL, "Write a Python function that returns the type of each value")
+        assertType(TaskType.IMAGE_GENERATION, "Design a scroll-based animation")
+        assertType(TaskType.GENERAL, "Explain the call stack")
+        assertType(TaskType.APP_BUILD, "Build a web page with a button users can click")
+        assertType(TaskType.APP_BUILD, "Create a form users can type into")
     }
 
     private fun assertType(

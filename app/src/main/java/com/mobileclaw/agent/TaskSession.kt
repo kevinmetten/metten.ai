@@ -163,7 +163,7 @@ Rules:
 object TaskClassifier {
     fun classify(goal: String, hasImage: Boolean = false, hasFile: Boolean = false): TaskType {
         val text = goal.lowercase().replace(Regex("\\s+"), " ").trim()
-        if (hasImage && hasPhoneControlIntent(text)) return TaskType.PHONE_CONTROL
+        if (hasImage && hasPhoneControlIntent(text, hasScreenContext = true)) return TaskType.PHONE_CONTROL
         if (hasImage) return TaskType.GENERAL
         if (hasFile) return TaskType.FILE_CREATE
 
@@ -246,19 +246,42 @@ object TaskClassifier {
         )
     }
 
-    private fun hasPhoneControlIntent(text: String): Boolean {
+    private fun hasPhoneControlIntent(text: String, hasScreenContext: Boolean = false): Boolean {
         if (isInformationalQuestion(text)) return false
         val launchTarget = Regex(
             "\\b(?:open|launch|start)\\s+(?:the\\s+)?(?:gmail|google maps|maps|settings|messages|whatsapp|telegram|chrome|browser|instagram|facebook|amazon|youtube|spotify|calculator|camera|calendar|clock)\\b|" +
                 "\\b(?:open|launch|start)\\s+(?:the\\s+)?[a-z0-9._-]+\\s+app\\b",
         ).containsMatchIn(text)
-        return launchTarget ||
-            text.matchesAny(
-                "tap", "click", "press", "swipe", "scroll", "type", "enter text", "long press",
-                "go back", "go home", "send a message", "send a text", "make a call", "call",
-                "operate the phone", "control the phone", "use my phone", "use the phone",
-                "inspect the current screen", "read the current screen", "look at the current screen",
-            )
+        if (launchTarget) return true
+
+        val explicitDeviceAction = text.matchesAny(
+            "go back", "go home", "send a message", "send a text", "make a call", "place a call",
+            "operate the phone", "control the phone", "use my phone", "use the phone",
+            "inspect the current screen", "read the current screen", "look at the current screen",
+        ) || Regex("^call\\s+(?!stack\\b)[a-z0-9]").containsMatchIn(text)
+        if (explicitDeviceAction) return true
+
+        val directionalGesture = Regex("^(?:please\\s+)?(?:scroll\\s+(?:up|down)|swipe\\s+(?:left|right|up|down))(?:\\b|$)")
+            .containsMatchIn(text)
+        if (directionalGesture) return true
+
+        val uiTarget = "(?:button|field|text\\s+box|message\\s+box|input|menu|tab|screen|page|settings|app|icon|item|option|control|link)"
+        val targetedUiAction = Regex(
+            "^(?:please\\s+)?(?:tap|click|press|long\\s+press|select|choose)\\s+(?:the\\s+)?(?:[a-z0-9_-]+\\s+){0,4}$uiTarget\\b",
+        ).containsMatchIn(text)
+        if (targetedUiAction) return true
+
+        val targetedTextEntry = Regex(
+            "^(?:please\\s+)?(?:type|enter)\\s+.+?\\s+(?:into|in)\\s+(?:the\\s+)?(?:[a-z0-9_-]+\\s+){0,3}$uiTarget\\b",
+        ).containsMatchIn(text)
+        if (targetedTextEntry) return true
+
+        val contextualAction = Regex("^(?:please\\s+)?(?:tap|click|press|swipe|scroll|select|choose)\\s+(?:this|that)(?:\\b|$)")
+            .containsMatchIn(text)
+        if (contextualAction) return true
+
+        return hasScreenContext && Regex("^(?:please\\s+)?(?:tap|click|press|swipe|scroll|type|select|choose|enter)\\b")
+            .containsMatchIn(text)
     }
 
     private fun hasVpnControlIntent(text: String): Boolean {
