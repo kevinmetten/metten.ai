@@ -55,6 +55,24 @@ class RoleWorkspaceMarkdownSchemaTest {
     }
 
     @Test
+    fun `stock body line migrates without replacing custom additions`() {
+        val stockSkillLine = chars(
+            0x2d, 0x20, 0x6240, 0x6709, 0x6280, 0x80fd, 0x90fd, 0x53ef, 0x4ee5, 0x6309,
+            0x9700, 0x53d1, 0x73b0, 0x548c, 0x8bfb, 0x53d6, 0xff0c, 0x4f46, 0x5fc5, 0x987b,
+            0x5148, 0x5224, 0x65ad, 0x4efb, 0x52a1, 0x662f, 0x5426, 0x771f, 0x7684, 0x9700,
+            0x8981, 0x6280, 0x80fd, 0x3002,
+        )
+        val markdown = "# Chat Execution Protocol\n\n## Skill Policy\n$stockSkillLine\nCustom user-authored instruction.\n"
+
+        val migrated = RoleWorkspaceMarkdownMigrator.migrate(RoleWorkspaceStore.CHAT_PROTOCOL_MD, markdown)
+
+        assertTrue(migrated.contains("- Discover and read any installed skill on demand, but first decide whether the task genuinely requires a tool."))
+        assertTrue(migrated.contains("Custom user-authored instruction."))
+        assertFalse(migrated.contains(stockSkillLine))
+        assertEquals(migrated, RoleWorkspaceMarkdownMigrator.migrate(RoleWorkspaceStore.CHAT_PROTOCOL_MD, migrated))
+    }
+
+    @Test
     fun `migration merges duplicate canonical sections and is idempotent`() {
         val workingMethod = chars(0x5de5, 0x4f5c, 0x65b9, 0x6cd5)
         val markdown = "# Role\n\n## Working Method\nCanonical body.\n\n## $workingMethod\nLegacy body.\n"

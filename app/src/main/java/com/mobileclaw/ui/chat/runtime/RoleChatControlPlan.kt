@@ -58,6 +58,58 @@ data class RoleChatControlPlan(
     }
 }
 
+enum class RoleExecutionPreference {
+    AUTO,
+    DIRECT_FIRST,
+    AGENT_FIRST,
+}
+
+/** Stable editor-managed execution preference stored inside the Skill Policy section. */
+object RoleExecutionPreferenceProtocol {
+    private const val FIELD = "Execution mode"
+    private val fieldPattern = Regex(
+        pattern = """^\s*-?\s*$FIELD\s*:\s*(auto|direct_first|agent_first)\s*$""",
+        option = RegexOption.IGNORE_CASE,
+    )
+
+    fun parse(skillPolicy: String, responsePolicy: String = ""): RoleExecutionPreference {
+        skillPolicy.lineSequence().forEach { line ->
+            val value = fieldPattern.matchEntire(line)?.groupValues?.getOrNull(1)?.lowercase()
+                ?: return@forEach
+            return when (value) {
+                "direct_first" -> RoleExecutionPreference.DIRECT_FIRST
+                "agent_first" -> RoleExecutionPreference.AGENT_FIRST
+                else -> RoleExecutionPreference.AUTO
+            }
+        }
+
+        val prose = "$skillPolicy\n$responsePolicy".lowercase()
+        return when {
+            listOf("prefer agent", "agent first", "force agent").any(prose::contains) ->
+                RoleExecutionPreference.AGENT_FIRST
+            listOf("prefer direct", "direct chat first").any(prose::contains) ->
+                RoleExecutionPreference.DIRECT_FIRST
+            else -> RoleExecutionPreference.AUTO
+        }
+    }
+
+    fun update(skillPolicy: String, preference: RoleExecutionPreference): String {
+        val kept = skillPolicy.lineSequence()
+            .filterNot { fieldPattern.matches(it) }
+            .joinToString("\n")
+            .trimEnd()
+        val managedLine = when (preference) {
+            RoleExecutionPreference.AUTO -> ""
+            RoleExecutionPreference.DIRECT_FIRST -> "- $FIELD: direct_first"
+            RoleExecutionPreference.AGENT_FIRST -> "- $FIELD: agent_first"
+        }
+        return listOf(kept, managedLine)
+            .filter { it.isNotBlank() }
+            .joinToString("\n")
+            .trim()
+    }
+}
+
 object RoleChatControlPlanCompiler {
     fun compile(profile: RoleRuntimeProfile): RoleChatControlPlan {
         val protocol = profile.protocol
@@ -145,7 +197,13 @@ object RoleChatControlPlanCompiler {
         )
         return RoleChatControlPlan(
             roleProfile = profile,
-            executionModeHint = extractExecutionModeHint(allProtocolText, protocol.skillPolicy),
+            executionModeHint = when (
+                RoleExecutionPreferenceProtocol.parse(protocol.skillPolicy, protocol.responsePolicy)
+            ) {
+                RoleExecutionPreference.AUTO -> null
+                RoleExecutionPreference.DIRECT_FIRST -> ChatExecutionMode.DIRECT_CHAT
+                RoleExecutionPreference.AGENT_FIRST -> ChatExecutionMode.AGENT
+            },
             contextPolicy = contextPolicy,
             toolPolicy = toolPolicy,
             intentPolicy = intentPolicy,
@@ -195,28 +253,6 @@ object RoleChatControlPlanCompiler {
             .firstOrNull { it.contains("threshold", ignoreCase = true) }
             .orEmpty()
         return line.substringAfter(":").trim()
-    }
-
-    private fun extractExecutionModeHint(text: String, skillPolicy: String): ChatExecutionMode? {
-        val prefersAgent = listOf(
-            "prefer agent",
-            "agent first",
-            "force agent",
-            "enter agent",
-            "enter the agent",
-            "use tools for action requests",
-            "action requests enter the tool",
-        ).any { text.contains(it) } || skillPolicy.contains("agent", ignoreCase = true)
-        if (prefersAgent) return ChatExecutionMode.AGENT
-        val prefersDirect = listOf(
-            "prefer direct",
-            "direct chat first",
-            "answer ordinary questions directly",
-            "answer simple questions directly",
-            "answer chat directly",
-        ).any { text.contains(it) }
-        if (prefersDirect) return ChatExecutionMode.DIRECT_CHAT
-        return null
     }
 
     private fun extractResponseStyle(responsePolicy: String): String {

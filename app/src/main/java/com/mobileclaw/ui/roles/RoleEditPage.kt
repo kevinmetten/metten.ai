@@ -79,6 +79,8 @@ import com.mobileclaw.ui.RoleWorkspaceFileUi
 import com.mobileclaw.ui.chat.runtime.RoleChatControlPlanCompiler
 import com.mobileclaw.ui.chat.runtime.RoleExecutionProtocol
 import com.mobileclaw.ui.chat.runtime.RoleExecutionProtocolParser
+import com.mobileclaw.ui.chat.runtime.RoleExecutionPreference
+import com.mobileclaw.ui.chat.runtime.RoleExecutionPreferenceProtocol
 import com.mobileclaw.ui.chat.runtime.RoleRuntimeProfile
 import java.util.UUID
 import com.mobileclaw.str
@@ -86,12 +88,6 @@ import com.mobileclaw.str
 private enum class RoleEditMode {
     QUICK,
     FULL,
-}
-
-private enum class RoleExecutionPreference {
-    AUTO,
-    DIRECT_FIRST,
-    AGENT_FIRST,
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1365,28 +1361,13 @@ private fun defaultEditableChatProtocol(role: Role): String = """
 """.trimIndent() + "\n"
 
 private fun inferExecutionPreference(protocol: RoleExecutionProtocol): RoleExecutionPreference {
-    val text = listOf(protocol.skillPolicy, protocol.responsePolicy).joinToString("\n").lowercase()
-    return when {
-        listOf("agent first", "prefer agent", "enter agent", "enter the agent", "action requests enter the tool").any { text.contains(it) } ->
-            RoleExecutionPreference.AGENT_FIRST
-        listOf("direct chat first", "prefer direct", "answer ordinary questions directly", "answer simple questions directly").any { text.contains(it) } ->
-            RoleExecutionPreference.DIRECT_FIRST
-        else -> RoleExecutionPreference.AUTO
-    }
+    return RoleExecutionPreferenceProtocol.parse(protocol.skillPolicy, protocol.responsePolicy)
 }
 
 private fun applyExecutionPreferenceToSkillPolicy(
     value: String,
     preference: RoleExecutionPreference,
-): String = replaceManagedPreferenceLine(
-    value = value,
-    marker = "Execution preference",
-    next = when (preference) {
-        RoleExecutionPreference.AUTO -> ""
-        RoleExecutionPreference.DIRECT_FIRST -> "- Execution preference: answer ordinary questions directly; enter the agent for action requests."
-        RoleExecutionPreference.AGENT_FIRST -> "- Execution preference: agent first; use tools for execution requests."
-    },
-)
+): String = RoleExecutionPreferenceProtocol.update(value, preference)
 
 private fun applyExecutionPreferenceToResponsePolicy(
     value: String,
