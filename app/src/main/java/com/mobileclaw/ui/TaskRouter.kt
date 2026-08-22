@@ -13,6 +13,7 @@ import com.mobileclaw.artifact.ArtifactSpec
 import com.mobileclaw.skill.SkillAttachment
 import com.mobileclaw.ui.aipage.AiPageDef
 import com.mobileclaw.ui.chat.ChatMessage
+import com.mobileclaw.ui.chat.ConfirmationActionProtocol
 import com.mobileclaw.ui.chat.MessageRole
 import com.mobileclaw.workspace.WorkspaceExecutionContext
 
@@ -66,11 +67,6 @@ class TaskRouter(
 ) {
     companion object {
         private const val TAG = "TaskRouter"
-        private const val CONFIRM_TASK_PREFIX = "确认执行:"
-        private const val CONFIRM_ACCESSIBILITY_TASK_PREFIX = "确认无障碍并执行:"
-        private const val OPEN_ACCESSIBILITY_PREFIX = "打开无障碍设置:"
-        private const val CONFIRM_ROLE_PREFIX = "确认切换角色:"
-        private const val CANCEL_CONFIRMATION_TEXT = "取消"
         private val PHONE_CONTROL_SKILLS = setOf(
             "see_screen", "screenshot", "tap", "scroll", "input_text", "long_click",
             "navigate", "list_apps", "phone_status", "check_permissions",
@@ -997,13 +993,10 @@ class TaskRouter(
         if (attachments.any { it is SkillAttachment.ActionCard || it is SkillAttachment.AccessibilityRequest }) return true
         val normalized = text.trim()
         if (normalized.isBlank() && attachments.isEmpty() && logLines.isEmpty() && imageBase64.isNullOrBlank()) return true
-        if (role == MessageRole.AGENT && normalized in setOf("已取消。", "已切换到 手机操控。", "已切换到 手机操控", "已切换到 phone_operator。")) return true
-        if (role == MessageRole.AGENT && normalized.startsWith("已打开无障碍设置")) return true
-        if (role == MessageRole.USER && normalized in setOf(CANCEL_CONFIRMATION_TEXT, "已开启", "已经开了", "开了", "无障碍已开启", "无障碍开了")) return true
-        if (normalized.startsWith(CONFIRM_TASK_PREFIX) ||
-            normalized.startsWith(CONFIRM_ACCESSIBILITY_TASK_PREFIX) ||
-            normalized.startsWith(OPEN_ACCESSIBILITY_PREFIX) ||
-            normalized.startsWith(CONFIRM_ROLE_PREFIX)) return true
+        if (role == MessageRole.AGENT && normalized in setOf("Canceled.", "Switched to phone_operator.")) return true
+        if (role == MessageRole.AGENT && normalized.startsWith("Accessibility settings opened.")) return true
+        if (role == MessageRole.USER && normalized in setOf("已开启", "已经开了", "开了", "无障碍已开启", "无障碍开了")) return true
+        if (ConfirmationActionProtocol.isProtocolValue(normalized)) return true
         return false
     }
 

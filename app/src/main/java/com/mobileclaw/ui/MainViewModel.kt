@@ -133,6 +133,8 @@ import com.mobileclaw.ui.chat.AgentSenderMeta
 import com.mobileclaw.ui.chat.ChatMessage
 import com.mobileclaw.ui.chat.ChatContextComposer
 import com.mobileclaw.ui.chat.ConfirmationFlow
+import com.mobileclaw.ui.chat.ConfirmationActionId
+import com.mobileclaw.ui.chat.ConfirmationActionProtocol
 import com.mobileclaw.ui.chat.ExplicitRoleSwitch
 import com.mobileclaw.ui.chat.FileAttachment
 import com.mobileclaw.ui.chat.buildNarrativeAgentMessages
@@ -1736,89 +1738,95 @@ class MainViewModel : ViewModel() {
             runTaskInternal(trimmed)
             return
         }
-        when {
-            trimmed.startsWith(OPEN_ACCESSIBILITY_PREFIX) -> {
-                val originalGoal = trimmed.removePrefix(OPEN_ACCESSIBILITY_PREFIX).trim()
-                pendingAccessibilityTaskGoal = originalGoal.ifBlank { pendingAccessibilityTaskGoal }
-                app.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                appendConfirmationResolution("已打开无障碍设置。开启 MobileClaw 后，回到这里点“已开启并继续”。")
-                return
-            }
-            trimmed.startsWith(CONFIRM_ACCESSIBILITY_TASK_PREFIX) -> {
-                val originalGoal = trimmed.removePrefix(CONFIRM_ACCESSIBILITY_TASK_PREFIX).trim()
-                    .ifBlank { pendingAccessibilityTaskGoal.orEmpty() }
-                if (originalGoal.isBlank()) {
-                    appendConfirmationResolution("没有找到要继续的手机操作任务。")
+        val confirmationAction = ConfirmationActionProtocol.parse(trimmed)
+        if (confirmationAction != null) {
+            when (confirmationAction.id) {
+                ConfirmationActionId.OPEN_ACCESSIBILITY_SETTINGS -> {
+                    val originalGoal = confirmationAction.fields.single().trim()
+                    pendingAccessibilityTaskGoal = originalGoal.ifBlank { pendingAccessibilityTaskGoal }
+                    app.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    appendConfirmationResolution("Accessibility settings opened. Enable MobileClaw, then return here and select “Enabled — Continue.”")
                     return
                 }
-                if (!ClawAccessibilityService.isEnabled()) {
-                    requestTaskExecutionConfirmation(originalGoal, TaskType.PHONE_CONTROL)
+                ConfirmationActionId.CONFIRM_ACCESSIBILITY_TASK -> {
+                    val originalGoal = confirmationAction.fields.single().trim()
+                        .ifBlank { pendingAccessibilityTaskGoal.orEmpty() }
+                    if (originalGoal.isBlank()) {
+                        appendConfirmationResolution("The phone-control task to continue could not be found.")
+                        return
+                    }
+                    if (!ClawAccessibilityService.isEnabled()) {
+                        requestTaskExecutionConfirmation(originalGoal, TaskType.PHONE_CONTROL)
+                        return
+                    }
+                    pendingAccessibilityTaskGoal = null
+                    viewModelScope.launch(Dispatchers.IO) {
+                        val route = resolveRouteWithAi(
+                            goal = originalGoal,
+                            effectiveGoal = originalGoal,
+                            hasImage = _uiState.value.inputImageBase64 != null,
+                            hasFile = _uiState.value.inputFileAttachment != null,
+                            activeWorkflow = activeWorkflowForCurrentSession(),
+                        )
+                        withContext(Dispatchers.Main) { runTaskInternal(originalGoal, routeOverride = route, showUserMessage = false) }
+                    }
                     return
                 }
-                pendingAccessibilityTaskGoal = null
-                viewModelScope.launch(Dispatchers.IO) {
-                    val route = resolveRouteWithAi(
-                        goal = originalGoal,
-                        effectiveGoal = originalGoal,
-                        hasImage = _uiState.value.inputImageBase64 != null,
-                        hasFile = _uiState.value.inputFileAttachment != null,
-                        activeWorkflow = activeWorkflowForCurrentSession(),
-                    )
-                    withContext(Dispatchers.Main) { runTaskInternal(originalGoal, routeOverride = route, showUserMessage = false) }
+                ConfirmationActionId.CONFIRM_TASK -> {
+                    val confirmedGoal = confirmationAction.fields.single().trim()
+                    viewModelScope.launch(Dispatchers.IO) {
+                        val route = synchronized(pendingConfirmedRoutes) {
+                            pendingConfirmedRoutes.remove(confirmedGoal)
+                        } ?: resolveRouteWithAi(
+                            goal = confirmedGoal,
+                            effectiveGoal = confirmedGoal,
+                            hasImage = _uiState.value.inputImageBase64 != null,
+                            hasFile = _uiState.value.inputFileAttachment != null,
+                            activeWorkflow = activeWorkflowForCurrentSession(),
+                        )
+                        withContext(Dispatchers.Main) { runTaskInternal(confirmedGoal, routeOverride = route, showUserMessage = false) }
+                    }
+                    return
                 }
-                return
-            }
-            trimmed.startsWith(CONFIRM_TASK_PREFIX) -> {
-                val confirmedGoal = trimmed.removePrefix(CONFIRM_TASK_PREFIX).trim()
-                viewModelScope.launch(Dispatchers.IO) {
-                    val route = synchronized(pendingConfirmedRoutes) {
-                        pendingConfirmedRoutes.remove(confirmedGoal)
-                    } ?: resolveRouteWithAi(
-                        goal = confirmedGoal,
-                        effectiveGoal = confirmedGoal,
-                        hasImage = _uiState.value.inputImageBase64 != null,
-                        hasFile = _uiState.value.inputFileAttachment != null,
-                        activeWorkflow = activeWorkflowForCurrentSession(),
-                    )
-                    withContext(Dispatchers.Main) { runTaskInternal(confirmedGoal, routeOverride = route, showUserMessage = false) }
+                ConfirmationActionId.CANCEL -> {
+                    pendingAccessibilityTaskGoal = null
+                    pendingRoleSwitchTaskGoal = null
+                    synchronized(pendingConfirmedRoutes) { pendingConfirmedRoutes.clear() }
+                    appendConfirmationResolution("Canceled.")
+                    return
                 }
-                return
-            }
-            trimmed == CANCEL_CONFIRMATION_TEXT -> {
-                pendingAccessibilityTaskGoal = null
-                pendingRoleSwitchTaskGoal = null
-                synchronized(pendingConfirmedRoutes) { pendingConfirmedRoutes.clear() }
-                appendConfirmationResolution("已取消。")
-                return
-            }
-            trimmed.startsWith(CONFIRM_ROLE_PREFIX) -> {
-                val payload = trimmed.removePrefix(CONFIRM_ROLE_PREFIX).trim()
-                val roleId = payload.substringBefore("::", payload).trim()
-                val originalGoal = payload.substringAfter("::", "").trim()
-                    .ifBlank { pendingRoleSwitchTaskGoal.orEmpty() }
-                val role = roleManager.get(roleId)
-                if (role != null) {
-                    setActiveRole(role)
-                    if (originalGoal.isNotBlank()) {
-                        pendingRoleSwitchTaskGoal = null
-                        viewModelScope.launch(Dispatchers.IO) {
-                            val route = resolveRouteWithAi(
-                                goal = originalGoal,
-                                effectiveGoal = originalGoal,
-                                hasImage = _uiState.value.inputImageBase64 != null,
-                                hasFile = _uiState.value.inputFileAttachment != null,
-                                activeWorkflow = activeWorkflowForCurrentSession(),
-                            )
-                            withContext(Dispatchers.Main) { runTaskInternal(originalGoal, routeOverride = route, showUserMessage = false) }
+                ConfirmationActionId.CONFIRM_ROLE_SWITCH -> {
+                    val roleId = confirmationAction.fields[0].trim()
+                    val originalGoal = confirmationAction.fields[1].trim()
+                        .ifBlank { pendingRoleSwitchTaskGoal.orEmpty() }
+                    val role = roleManager.get(roleId)
+                    if (role != null) {
+                        setActiveRole(role)
+                        if (originalGoal.isNotBlank()) {
+                            pendingRoleSwitchTaskGoal = null
+                            viewModelScope.launch(Dispatchers.IO) {
+                                val route = resolveRouteWithAi(
+                                    goal = originalGoal,
+                                    effectiveGoal = originalGoal,
+                                    hasImage = _uiState.value.inputImageBase64 != null,
+                                    hasFile = _uiState.value.inputFileAttachment != null,
+                                    activeWorkflow = activeWorkflowForCurrentSession(),
+                                )
+                                withContext(Dispatchers.Main) { runTaskInternal(originalGoal, routeOverride = route, showUserMessage = false) }
+                            }
+                        } else {
+                            appendConfirmationResolution("Switched to ${role.name}.")
                         }
                     } else {
-                        appendConfirmationResolution("已切换到 ${role.name}。")
+                        appendConfirmationResolution("Role not found: $roleId")
                     }
-                } else {
-                    appendConfirmationResolution("没有找到这个角色：$roleId")
+                    return
                 }
-                return
             }
+        }
+        if (ConfirmationActionProtocol.isProtocolValue(trimmed)) {
+            appendConfirmationResolution("This confirmation action is invalid or expired.")
+            return
         }
 
         if (pendingAccessibilityTaskGoal != null && ConfirmationFlow.isAccessibilityResumeText(trimmed)) {
@@ -3467,9 +3475,6 @@ class MainViewModel : ViewModel() {
                 pendingAccessibilityTaskGoal = contextualGoal
                 ConfirmationFlow.accessibilityActionCard(
                     goal = contextualGoal,
-                    confirmAccessibilityTaskPrefix = CONFIRM_ACCESSIBILITY_TASK_PREFIX,
-                    openAccessibilityPrefix = OPEN_ACCESSIBILITY_PREFIX,
-                    cancelText = CANCEL_CONFIRMATION_TEXT,
                     skillName = event.attachment.skillName,
                 )
             }
@@ -7487,9 +7492,6 @@ $foundationalMemory
                 goal,
                 ConfirmationFlow.accessibilityActionCard(
                     goal = goal,
-                    confirmAccessibilityTaskPrefix = CONFIRM_ACCESSIBILITY_TASK_PREFIX,
-                    openAccessibilityPrefix = OPEN_ACCESSIBILITY_PREFIX,
-                    cancelText = CANCEL_CONFIRMATION_TEXT,
                 ),
             )
             return
@@ -7504,8 +7506,6 @@ $foundationalMemory
             ConfirmationFlow.taskConfirmationCard(
                 goal = goal,
                 taskType = taskType,
-                confirmTaskPrefix = CONFIRM_TASK_PREFIX,
-                cancelText = CANCEL_CONFIRMATION_TEXT,
             ),
         )
     }
@@ -7517,8 +7517,6 @@ $foundationalMemory
             ConfirmationFlow.roleSwitchConfirmationCard(
                 goal = goal,
                 role = role,
-                confirmRolePrefix = CONFIRM_ROLE_PREFIX,
-                cancelText = CANCEL_CONFIRMATION_TEXT,
             ),
         )
     }
@@ -7836,11 +7834,6 @@ $foundationalMemory
         }.getOrDefault("")
 
     private companion object {
-        const val CONFIRM_TASK_PREFIX = "确认执行:"
-        const val CONFIRM_ACCESSIBILITY_TASK_PREFIX = "确认无障碍并执行:"
-        const val OPEN_ACCESSIBILITY_PREFIX = "打开无障碍设置:"
-        const val CONFIRM_ROLE_PREFIX = "确认切换角色:"
-        const val CANCEL_CONFIRMATION_TEXT = "取消"
         const val ACTIVE_WORKFLOW_TTL_MS = 30 * 60 * 1000L
         const val ACTIVE_WORKFLOW_GOAL_LIMIT = 3000
     }
@@ -8410,7 +8403,7 @@ $foundationalMemory
                                 style = a["style"]?.asString ?: "secondary",
                             )
                         }.orEmpty()
-                        SkillAttachment.ActionCard(
+                        ConfirmationActionProtocol.migrateLegacyCard(
                             title = o["title"]?.asString ?: "",
                             body = o["body"]?.asString ?: "",
                             actions = actions,
@@ -8628,7 +8621,7 @@ private fun SessionMessageEntity.toChatMessage(): ChatMessage {
                             )
                         }.orEmpty()
                     }.getOrDefault(emptyList())
-                    SkillAttachment.ActionCard(
+                    ConfirmationActionProtocol.migrateLegacyCard(
                         title = o["title"]?.asString ?: "",
                         body = o["body"]?.asString ?: "",
                         actions = actions,

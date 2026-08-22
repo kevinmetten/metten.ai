@@ -3309,8 +3309,8 @@ private fun ActionCardAttachment(
                     else -> c.border.copy(alpha = 0.75f)
                 }
                 val label = when {
-                    selected && action.label.contains("取消") -> if (isZh) "已取消" else "Canceled"
-                    selected -> if (isZh) "已提交" else "Submitted"
+                    selected && ConfirmationActionProtocol.parse(action.message)?.id == ConfirmationActionId.CANCEL -> "Canceled"
+                    selected -> "Submitted"
                     else -> action.label
                 }
                 Box(
