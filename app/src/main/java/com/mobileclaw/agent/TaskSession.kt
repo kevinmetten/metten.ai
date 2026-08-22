@@ -248,11 +248,7 @@ object TaskClassifier {
 
     private fun hasPhoneControlIntent(text: String, hasScreenContext: Boolean = false): Boolean {
         if (isInformationalQuestion(text)) return false
-        val launchTarget = Regex(
-            "\\b(?:open|launch|start)\\s+(?:the\\s+)?(?:gmail|google maps|maps|settings|messages|whatsapp|telegram|chrome|browser|instagram|facebook|amazon|youtube|spotify|calculator|camera|calendar|clock)\\b|" +
-                "\\b(?:open|launch|start)\\s+(?:the\\s+)?[a-z0-9._-]+\\s+app\\b",
-        ).containsMatchIn(text)
-        if (launchTarget) return true
+        if (hasAppLaunchIntent(text)) return true
 
         val explicitDeviceAction = text.matchesAny(
             "go back", "go home", "send a message", "send a text", "make a call", "place a call",
@@ -282,6 +278,43 @@ object TaskClassifier {
 
         return hasScreenContext && Regex("^(?:please\\s+)?(?:tap|click|press|swipe|scroll|type|select|choose|enter)\\b")
             .containsMatchIn(text)
+    }
+
+    private fun hasAppLaunchIntent(text: String): Boolean {
+        val request = Regex("^(?:please\\s+)?(open|launch|start)\\s+(.+?)[.!?]?$")
+            .matchEntire(text) ?: return false
+        val verb = request.groupValues[1]
+        if (verb.isBlank()) return false
+        val rawTarget = request.groupValues[2].trim().removePrefix("the ")
+        val target = rawTarget
+            .substringBefore(" and ")
+            .substringBefore(" then ")
+            .trim()
+        if (target.isBlank() || target.split(Regex("\\s+")).size > 4) return false
+
+        val explicitApp = target.endsWith(" app")
+        val commonSystemTarget = target in setOf(
+            "gmail", "google maps", "maps", "settings", "messages", "chrome", "browser", "calculator",
+            "camera", "calendar", "clock", "spotify",
+        )
+        if (verb == "start") return explicitApp || commonSystemTarget
+        if (explicitApp || commonSystemTarget) return true
+
+        if (target.startsWith("a ") || target.startsWith("an ")) return false
+        val rejectedTargets = setOf(
+            "source", "source code", "source software", "source licensing", "bank account", "account",
+            "marketing campaign", "campaign", "business", "discussion", "conversation", "report", "document",
+            "attached pdf", "pdf", "file", "folder", "project", "repository", "repo", "website", "web page",
+            "link", "url",
+        )
+        if (target in rejectedTargets) return false
+        val targetWords = target.split(Regex("\\s+"))
+        val rejectedWords = setOf(
+            "source", "account", "campaign", "business", "discussion", "report", "document", "pdf", "file",
+            "folder", "project", "repository", "repo", "website", "link", "url",
+        )
+        if (targetWords.any { it in rejectedWords || it.endsWith("ing") }) return false
+        return Regex("^[a-z0-9][a-z0-9+._'-]*(?:\\s+[a-z0-9][a-z0-9+._'-]*){0,3}$").matches(target)
     }
 
     private fun hasVpnControlIntent(text: String): Boolean {

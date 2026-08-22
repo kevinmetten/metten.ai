@@ -100,6 +100,39 @@ class TaskClassifierTest {
         assertType(TaskType.APP_BUILD, "Create a form users can type into")
     }
 
+    @Test
+    fun `short imperative launches support arbitrary application names`() {
+        listOf(
+            "Open Reddit",
+            "Open Discord",
+            "Open Uber",
+            "Open DoorDash",
+            "Open Signal",
+            "Open Notion",
+            "Open Slack",
+            "Open ChatGPT",
+            "Launch Reddit",
+            "Launch Discord",
+            "Open the Reddit app",
+            "Launch the Slack app",
+            "Start the calculator",
+            "Start the Spotify app",
+        ).forEach { assertType(TaskType.PHONE_CONTROL, it) }
+    }
+
+    @Test
+    fun `non application uses of launch verbs are rejected`() {
+        assertType(TaskType.GENERAL, "Open source licensing is complicated")
+        assertType(TaskType.GENERAL, "Write about open source software")
+        assertType(TaskType.GENERAL, "Launch a marketing campaign")
+        assertType(TaskType.GENERAL, "Start writing the report")
+        assertType(TaskType.GENERAL, "Start a discussion about Android")
+        assertType(TaskType.GENERAL, "Open a bank account")
+        assertType(TaskType.GENERAL, "Create an open-world game")
+        assertType(TaskType.GENERAL, "Explain how to launch a business")
+        assertType(TaskType.FILE_CREATE, "Open the attached PDF", hasFile = true)
+    }
+
     private fun assertType(
         expected: TaskType,
         goal: String,
