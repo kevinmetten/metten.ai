@@ -155,9 +155,12 @@ private fun composePlanningNarratives(
         .filterNot { isGenericProcessSentence(it) }
         .distinctBy { it.normalizeMeaning() }
     val nextSteps = lines
-        .flatMap { line -> line.details.filter { it.startsWith("接下来：") || it.startsWith("后续计划：") } }
-        .map { sanitizeUserFacingNarration(it.substringAfter("：").trim()) }
-        .flatMap { it.split('；', '\n').map(String::trim) }
+        .flatMap { line ->
+            ProgressDetailProtocol.values(line.details, ProgressDetailKey.NEXT) +
+                ProgressDetailProtocol.values(line.details, ProgressDetailKey.NEXT_PLAN)
+        }
+        .map(::sanitizeUserFacingNarration)
+        .flatMap { it.split(';', '\n').map(String::trim) }
         .filter { it.isNotBlank() }
         .filterNot { isGenericProcessSentence(it) }
         .distinctBy { it.normalizeMeaning() }
@@ -195,9 +198,9 @@ private fun composePlanningNarratives(
 
 private fun composeActionNarrative(lines: List<LogLine>, isRunning: Boolean): String {
     val action = lines.firstOrNull { it.type == LogType.ACTION }
-    val purpose = lines.firstDetailValue("本步目的")
+    val purpose = lines.firstDetailValue(ProgressDetailKey.PURPOSE)
     val result = lines.lastMeaningfulResult()
-    val next = lines.firstDetailValue("接下来")
+    val next = lines.firstDetailValue(ProgressDetailKey.NEXT)
     val fallback = sanitizeUserFacingNarration(action?.text?.trim().orEmpty())
 
     return buildString {
@@ -218,8 +221,8 @@ private fun composeActionNarrative(lines: List<LogLine>, isRunning: Boolean): St
 }
 
 private fun composeStandaloneNarrative(line: LogLine): String {
-    val purpose = line.details.firstValue("本步目的")
-    val result = line.details.firstValue("本步结果")
+    val purpose = ProgressDetailProtocol.value(line.details, ProgressDetailKey.PURPOSE)
+    val result = ProgressDetailProtocol.value(line.details, ProgressDetailKey.RESULT)
     return sanitizeUserFacingNarration(when (line.type) {
         LogType.THINKING, LogType.INFO -> purpose.ifBlank { line.text }
         LogType.OBSERVATION -> result.ifBlank { line.text }
@@ -237,7 +240,7 @@ private fun composeCheckpointNarrative(
     val first = finished.firstOrNull().orEmpty().lineSequence().firstOrNull().orEmpty()
     val last = finished.lastOrNull().orEmpty().lineSequence().firstOrNull().orEmpty()
     return buildString {
-        append("已经处理了 $completedSteps 步")
+        append("Completed $completedSteps steps")
         if (first.isNotBlank()) {
             append("\n")
             append(first)
@@ -248,22 +251,17 @@ private fun composeCheckpointNarrative(
         }
         if (isRunning) {
             append("\n")
-            append("后面的部分还在继续。")
+            append("The remaining work is still in progress.")
         }
     }.trim()
 }
 
-private fun List<LogLine>.firstDetailValue(prefix: String): String =
+private fun List<LogLine>.firstDetailValue(key: ProgressDetailKey): String =
     asSequence()
         .flatMap { it.details.asSequence() }
-        .firstOrNull { it.startsWith("$prefix：") }
-        ?.substringAfter("：")
-        ?.trim()
-        .orEmpty()
-
-private fun List<String>.firstValue(prefix: String): String =
-    firstOrNull { it.startsWith("$prefix：") }
-        ?.substringAfter("：")
+        .mapNotNull(ProgressDetailProtocol::parse)
+        .firstOrNull { it.key == key }
+        ?.value
         ?.trim()
         .orEmpty()
 
@@ -271,8 +269,9 @@ private fun List<LogLine>.lastMeaningfulResult(): String {
     val resultFromDetails = asReversed()
         .asSequence()
         .flatMap { it.details.asReversed().asSequence() }
-        .firstOrNull { it.startsWith("本步结果：") }
-        ?.substringAfter("：")
+        .mapNotNull(ProgressDetailProtocol::parse)
+        .firstOrNull { it.key == ProgressDetailKey.RESULT }
+        ?.value
         ?.trim()
         .orEmpty()
     if (resultFromDetails.isNotBlank()) return resultFromDetails
@@ -307,24 +306,17 @@ private fun isGenericProcessSentence(text: String): Boolean {
     val normalized = text.normalizeMeaning()
     if (normalized.isBlank()) return true
     val genericFragments = listOf(
-        "继续推进",
-        "继续处理",
-        "继续执行",
-        "继续往下做",
-        "确认结果",
-        "确认是否",
-        "判断是否",
-        "再决定是否",
-        "根据返回结果继续",
-        "按新的判断继续推进",
-        "换好了下一步思路",
-        "整理任务类型和执行方式",
-        "正在整理当前进展",
-        "正在根据当前结果选择下一步",
-        "正在确定本轮任务的执行方式",
-        "理清本轮要先做什么后做什么",
-        "整理出本轮的处理顺序",
-        "还在继续处理这件事",
+        "continue processing",
+        "continue execution",
+        "keep going",
+        "confirm the result",
+        "check whether",
+        "decide whether",
+        "continue based on the result",
+        "choose the next step",
+        "organize the current progress",
+        "determine the execution approach",
+        "work is still in progress",
     )
     return genericFragments.any { normalized.contains(it.normalizeMeaning()) }
 }

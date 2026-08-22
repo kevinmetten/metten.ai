@@ -715,7 +715,7 @@ fun ChatScreen(
             sheetState = sheetState,
         ) {
             val c = LocalClawColors.current
-            val detailView = remember(step, isZh) { buildStepDetailView(step, isZh) }
+            val detailView = remember(step) { buildStepDetailView(step) }
             var debugExpanded by remember { mutableStateOf(false) }
             Column(
                 modifier = Modifier
@@ -728,15 +728,15 @@ fun ChatScreen(
                 Text(detailView.title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = c.text)
                 Spacer(Modifier.height(8.dp))
                 if (detailView.purpose.isNotBlank()) {
-                    DetailLabelRow(if (isZh) "这一步在做" else "Current step", detailView.purpose)
+                    DetailLabelRow("Purpose", detailView.purpose)
                     Spacer(Modifier.height(8.dp))
                 }
                 if (detailView.result.isNotBlank()) {
-                    DetailLabelRow(if (isZh) "拿到的结果" else "Result", detailView.result)
+                    DetailLabelRow("Result", detailView.result)
                     Spacer(Modifier.height(8.dp))
                 }
                 if (detailView.next.isNotBlank()) {
-                    DetailLabelRow(if (isZh) "后面会继续" else "Next", detailView.next)
+                    DetailLabelRow("Next", detailView.next)
                     Spacer(Modifier.height(8.dp))
                 }
                 detailView.supportLines.forEach { (label, content) ->
@@ -745,11 +745,7 @@ fun ChatScreen(
                 }
                 if (detailView.debugLines.isNotEmpty()) {
                     Text(
-                        if (debugExpanded) {
-                            if (isZh) "收起技术细节" else "Hide technical details"
-                        } else {
-                            if (isZh) "查看技术细节" else "View technical details"
-                        },
+                        if (debugExpanded) "Hide technical details" else "View technical details",
                         color = c.subtext,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -792,106 +788,90 @@ private data class StepDetailView(
     val debugLines: List<String>,
 )
 
-private fun buildStepDetailView(step: LogLine, isZh: Boolean): StepDetailView {
+private fun buildStepDetailView(step: LogLine): StepDetailView {
     val detailLines = step.details.ifEmpty { listOf(step.text).filter { it.isNotBlank() } }
-    val purpose = detailValue(detailLines, "本步目的", "Purpose")
-    val result = detailValue(detailLines, "本步结果", "Result")
-    val next = detailValue(detailLines, "接下来", "Next").ifBlank {
-        detailValue(detailLines, "后续计划", "Next plan")
+    val purpose = ProgressDetailProtocol.value(detailLines, ProgressDetailKey.PURPOSE)
+    val result = ProgressDetailProtocol.value(detailLines, ProgressDetailKey.RESULT)
+    val next = ProgressDetailProtocol.value(detailLines, ProgressDetailKey.NEXT).ifBlank {
+        ProgressDetailProtocol.value(detailLines, ProgressDetailKey.NEXT_PLAN)
     }
     val supportLines = buildList {
-        detailValue(detailLines, "这样安排", "Plan")
-            .trim()
-            .takeIf { it.isNotBlank() }
-            ?.let { add((if (isZh) "这样安排" else "Plan") to it) }
-        detailValue(detailLines, "补充判断", "Note")
-            .trim()
-            .takeIf { it.isNotBlank() }
-            ?.let { add((if (isZh) "补充判断" else "Note") to it) }
+        listOf(ProgressDetailKey.PLAN, ProgressDetailKey.NOTE).forEach { key ->
+            ProgressDetailProtocol.value(detailLines, key)
+                .takeIf { it.isNotBlank() }
+                ?.let { add(key.displayLabel to it) }
+        }
     }
-    val debugLines = detailLines.filterNot {
-        it.hasDetailPrefix("本步目的", "Purpose") ||
-            it.hasDetailPrefix("本步结果", "Result") ||
-            it.hasDetailPrefix("这样安排", "Plan") ||
-            it.hasDetailPrefix("补充判断", "Note") ||
-            it.hasDetailPrefix("接下来", "Next") ||
-            it.hasDetailPrefix("后续计划", "Next plan") ||
-            it.hasDetailPrefix("完整结果", "Full result")
+    val primaryKeys = setOf(
+        ProgressDetailKey.PURPOSE,
+        ProgressDetailKey.RESULT,
+        ProgressDetailKey.PLAN,
+        ProgressDetailKey.NOTE,
+        ProgressDetailKey.NEXT,
+        ProgressDetailKey.NEXT_PLAN,
+    )
+    val debugLines = detailLines.mapNotNull { detail ->
+        val parsed = ProgressDetailProtocol.parse(detail) ?: return@mapNotNull detail
+        parsed.takeIf { it.key !in primaryKeys }
+            ?.let { "${it.key.displayLabel}: ${it.value.trim()}" }
     }.takeIf { it.isNotEmpty() } ?: listOf(step.text).filter { it.isNotBlank() }
     val title = when (step.type) {
-        LogType.ACTION -> if (isZh) "正在处理" else "Processing"
-        LogType.OBSERVATION -> if (isZh) "刚拿到的结果" else "Latest result"
-        LogType.THINKING -> if (isZh) "这一段的判断" else "Current reasoning"
-        LogType.SUCCESS -> if (isZh) "已经完成" else "Completed"
-        LogType.ERROR -> if (isZh) "这里出了问题" else "Issue found"
-        else -> if (isZh) "当前情况" else "Current status"
+        LogType.ACTION -> "Processing"
+        LogType.OBSERVATION -> "Latest result"
+        LogType.THINKING -> "Current reasoning"
+        LogType.SUCCESS -> "Completed"
+        LogType.ERROR -> "Issue found"
+        else -> "Current status"
     }
     return StepDetailView(
         title = title,
-        purpose = purpose.ifBlank { fallbackReadablePurpose(step, isZh) },
-        result = result.ifBlank { fallbackReadableResult(step, isZh) },
+        purpose = purpose.ifBlank { fallbackReadablePurpose(step) },
+        result = result.ifBlank { fallbackReadableResult(step) },
         next = next,
         supportLines = supportLines,
         debugLines = debugLines,
     )
 }
 
-private fun detailValue(lines: List<String>, zh: String, en: String): String =
-    lines.firstOrNull { it.hasDetailPrefix(zh, en) }
-        ?.removeDetailPrefix(zh, en)
-        ?.trim()
-        .orEmpty()
-
-private fun String.hasDetailPrefix(zh: String, en: String): Boolean =
-    startsWith("$zh：") || startsWith("$en: ")
-
-private fun String.removeDetailPrefix(zh: String, en: String): String =
-    removePrefix("$zh：").removePrefix("$en: ")
-
-private fun fallbackReadablePurpose(step: LogLine, isZh: Boolean): String = when (step.type) {
+private fun fallbackReadablePurpose(step: LogLine): String = when (step.type) {
     LogType.ACTION -> chineseSkillLabel(step.skillId)
     LogType.OBSERVATION -> if (step.imageBase64 != null) {
-        if (isZh) "查看当前画面，确认任务是否推进到了正确位置" else "Review the current screen and confirm the task is moving forward"
+        "Review the current screen and confirm the task is moving forward"
     } else {
-        if (isZh) "读取当前返回结果，判断这一步是否真的解决了问题" else "Read the returned result and decide whether this step solved the issue"
+        "Read the returned result and decide whether this step solved the issue"
     }
-    LogType.THINKING -> step.text.ifBlank { if (isZh) "正在根据当前任务整理下一步" else "Organizing the next step for this task" }
-    LogType.SUCCESS -> if (isZh) "任务阶段完成" else "Task stage completed"
-    LogType.ERROR -> if (isZh) "当前步骤遇到问题" else "This step hit an issue"
-    else -> step.text.ifBlank { if (isZh) "继续推进当前任务" else "Continue the current task" }
+    LogType.THINKING -> step.text.ifBlank { "Organizing the next step for this task" }
+    LogType.SUCCESS -> "Task stage completed"
+    LogType.ERROR -> "This step hit an issue"
+    else -> step.text.ifBlank { "Continue the current task" }
 }
 
-private fun fallbackReadableResult(step: LogLine, isZh: Boolean): String = when (step.type) {
-    LogType.ACTION -> if (isZh) "这一步已经发出，正在等待结果返回" else "This step has been sent and is waiting for a result"
+private fun fallbackReadableResult(step: LogLine): String = when (step.type) {
+    LogType.ACTION -> "This step has been sent and is waiting for a result"
     LogType.OBSERVATION -> if (step.imageBase64 != null) {
-        if (isZh) "已经看到当前画面，正在判断是否符合目标" else "The current screen is visible; checking whether it matches the goal"
+        "The current screen is visible; checking whether it matches the goal"
     } else {
-        if (isZh) "已经拿到结果，正在判断是否继续修正" else "The result is available; deciding whether more fixes are needed"
+        "The result is available; deciding whether more fixes are needed"
     }
-    LogType.THINKING -> step.text.ifBlank { if (isZh) "已经更新下一步的处理依据" else "The basis for the next step has been updated" }
-    LogType.SUCCESS -> step.text.ifBlank { if (isZh) "已完成" else "Completed" }
-    LogType.ERROR -> step.text.ifBlank { if (isZh) "这里遇到问题，正在准备换一种方式继续" else "This step hit an issue; preparing another approach" }
-    else -> step.text.ifBlank { if (isZh) "已经记录当前进展" else "Current progress recorded" }
+    LogType.THINKING -> step.text.ifBlank { "The basis for the next step has been updated" }
+    LogType.SUCCESS -> step.text.ifBlank { "Completed" }
+    LogType.ERROR -> step.text.ifBlank { "This step hit an issue; preparing another approach" }
+    else -> step.text.ifBlank { "Current progress recorded" }
 }
 
 private fun conciseUserProgress(text: String, limit: Int = 42): String {
     val normalized = text
         .lineSequence()
         .map { it.trim() }
-        .filter { it.isNotBlank() && !it.hasDetailPrefix("调试", "Debug") }
+        .mapNotNull { line ->
+            val parsed = ProgressDetailProtocol.parse(line)
+            when (parsed?.key) {
+                ProgressDetailKey.DEBUG, ProgressDetailKey.FULL_RESULT -> null
+                null -> line.takeIf { it.isNotBlank() }
+                else -> parsed.value.trim().takeIf { it.isNotBlank() }
+            }
+        }
         .joinToString(" ")
-        .replace("本步目的：", "")
-        .replace("本步结果：", "")
-        .replace("这样安排：", "")
-        .replace("补充判断：", "")
-        .replace("接下来：", "")
-        .replace("后续计划：", "")
-        .replace("Purpose: ", "")
-        .replace("Result: ", "")
-        .replace("Plan: ", "")
-        .replace("Note: ", "")
-        .replace("Next: ", "")
-        .replace("Next plan: ", "")
         .trim()
     return when {
         normalized.isBlank() -> ""
@@ -900,36 +880,35 @@ private fun conciseUserProgress(text: String, limit: Int = 42): String {
     }
 }
 
-private fun stepRowSummary(line: LogLine, isZh: Boolean): String {
-    val structured = line.details.firstNotNullOfOrNull { detail ->
-        when {
-            detail.hasDetailPrefix("本步结果", "Result") -> detail.removeDetailPrefix("本步结果", "Result").trim()
-            detail.hasDetailPrefix("本步目的", "Purpose") -> detail.removeDetailPrefix("本步目的", "Purpose").trim()
-            detail.hasDetailPrefix("补充判断", "Note") -> detail.removeDetailPrefix("补充判断", "Note").trim()
-            detail.hasDetailPrefix("这样安排", "Plan") -> detail.removeDetailPrefix("这样安排", "Plan").trim()
-            detail.hasDetailPrefix("接下来", "Next") -> detail.removeDetailPrefix("接下来", "Next").trim()
-            detail.hasDetailPrefix("后续计划", "Next plan") -> detail.removeDetailPrefix("后续计划", "Next plan").trim()
-            else -> null
-        }
+private fun stepRowSummary(line: LogLine): String {
+    val structured = listOf(
+        ProgressDetailKey.RESULT,
+        ProgressDetailKey.PURPOSE,
+        ProgressDetailKey.NOTE,
+        ProgressDetailKey.PLAN,
+        ProgressDetailKey.NEXT,
+        ProgressDetailKey.NEXT_PLAN,
+    ).firstNotNullOfOrNull { key ->
+        ProgressDetailProtocol.value(line.details, key).takeIf { it.isNotBlank() }
     }.orEmpty()
     val fallback = when (line.type) {
-        LogType.THINKING -> line.text.ifBlank { if (isZh) "正在整理下一步" else "Organizing the next step" }
-        LogType.ACTION -> fallbackReadablePurpose(line, isZh)
-        LogType.OBSERVATION -> fallbackReadableResult(line, isZh)
-        LogType.SUCCESS -> line.text.ifBlank { if (isZh) "这一段已经完成" else "This stage is complete" }
-        LogType.ERROR -> line.text.ifBlank { if (isZh) "这一段遇到问题，正在调整" else "This stage hit an issue and is being adjusted" }
+        LogType.THINKING -> line.text.ifBlank { "Organizing the next step" }
+        LogType.ACTION -> fallbackReadablePurpose(line)
+        LogType.OBSERVATION -> fallbackReadableResult(line)
+        LogType.SUCCESS -> line.text.ifBlank { "This stage is complete" }
+        LogType.ERROR -> line.text.ifBlank { "This stage hit an issue and is being adjusted" }
         else -> line.text
     }
     return conciseUserProgress(structured.ifBlank { fallback })
 }
 
-private fun formatStepStatus(line: LogLine, isZh: Boolean, now: Long = System.currentTimeMillis()): String {
+private fun formatStepStatus(line: LogLine, now: Long = System.currentTimeMillis()): String {
     val anchor = line.startedAt.takeIf { it > 0L } ?: return ""
     val end = if (line.isRunning) now else line.finishedAt.takeIf { it > 0L } ?: now
     val elapsed = (end - anchor).coerceAtLeast(0L)
     val elapsedText = formatElapsedShort(elapsed)
     return if (line.isRunning) {
-        if (isZh) "执行中 $elapsedText" else "Running $elapsedText"
+        "Running $elapsedText"
     } else elapsedText
 }
 
@@ -2649,16 +2628,16 @@ private fun LogLineItem(line: LogLine, onSelectStep: (LogLine) -> Unit = {}) {
     val c = LocalClawColors.current
     val isZh = LocalAppLanguage.current == "zh"
     val statusText by produceState(
-        initialValue = formatStepStatus(line, isZh),
+        initialValue = formatStepStatus(line),
         key1 = line.startedAt,
         key2 = line.finishedAt,
         key3 = line.isRunning,
     ) {
-        value = formatStepStatus(line, isZh)
+        value = formatStepStatus(line)
         if (line.isRunning && line.startedAt > 0L) {
             while (true) {
                 delay(1_000)
-                value = formatStepStatus(line, isZh)
+                value = formatStepStatus(line)
             }
         }
     }
@@ -2667,7 +2646,7 @@ private fun LogLineItem(line: LogLine, onSelectStep: (LogLine) -> Unit = {}) {
         LogType.THINKING -> {
             var expanded by remember(line.entryId) { mutableStateOf(false) }
             // 思考卡片的摘要改成“当前思路”，避免把字符数这种机械指标展示给用户。
-            val summary = stepRowSummary(line, isZh)
+            val summary = stepRowSummary(line)
             CollapsibleStepRow(
                 label = stringResource(R.string.chat_f2b9df),
                 summary = summary,
@@ -2696,7 +2675,7 @@ private fun LogLineItem(line: LogLine, onSelectStep: (LogLine) -> Unit = {}) {
             val accentLong = line.skillId?.let { SkillColors[it] }
             val labelColor = (if (accentLong != null) Color(accentLong) else c.blue).copy(alpha = 0.85f)
             // 执行动作的摘要统一走用户向提炼函数，避免出现旧的截断工具描述。
-            val summary = stepRowSummary(line, isZh)
+            val summary = stepRowSummary(line)
             CollapsibleStepRow(
                 label = skillLabel,
                 summary = summary,
@@ -2720,7 +2699,7 @@ private fun LogLineItem(line: LogLine, onSelectStep: (LogLine) -> Unit = {}) {
             val hasImage = line.imageBase64 != null
             val label = if (hasImage) stringResource(R.string.chat_a3d484) else stringResource(R.string.chat_173c2c)
             // 观察结果优先展示“当前判断”，这样用户能立刻知道这一步看到了什么。
-            val summary = stepRowSummary(line, isZh).ifBlank {
+            val summary = stepRowSummary(line).ifBlank {
                 if (hasImage) stringResource(R.string.chat_b3e19e) else ""
             }
             CollapsibleStepRow(
@@ -2758,12 +2737,10 @@ private fun LogLineItem(line: LogLine, onSelectStep: (LogLine) -> Unit = {}) {
                             }
                         }
                     }
-                    val readable = line.details.firstOrNull { it.hasDetailPrefix("本步结果", "Result") }
-                        ?.removeDetailPrefix("本步结果", "Result")
-                        ?.trim()
-                        ?.takeIf { it.isNotBlank() }
+                    val readable = ProgressDetailProtocol.value(line.details, ProgressDetailKey.RESULT)
+                        .takeIf { it.isNotBlank() }
                         // 展开内容也优先用用户向结果描述，避免展示原始返回句式。
-                        ?: fallbackReadableResult(line, isZh).takeIf { it.isNotBlank() }
+                        ?: fallbackReadableResult(line).takeIf { it.isNotBlank() }
                     if (readable != null) {
                         Text(readable, color = c.subtext.copy(alpha = 0.78f), fontSize = 11.sp, lineHeight = 15.sp)
                     }

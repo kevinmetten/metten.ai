@@ -157,6 +157,8 @@ import com.mobileclaw.ui.common.userFacingThinkingResult
 import com.mobileclaw.ui.chat.LogLine
 import com.mobileclaw.ui.chat.LogType
 import com.mobileclaw.ui.chat.MessageRole
+import com.mobileclaw.ui.chat.ProgressDetailKey
+import com.mobileclaw.ui.chat.ProgressDetailProtocol
 import com.mobileclaw.ui.chat.SessionRunState
 import com.mobileclaw.ui.chat.currentRunState
 import com.mobileclaw.ui.chat.runtime.ChatExecutionMode
@@ -395,8 +397,8 @@ class MainViewModel : ViewModel() {
                     type = LogType.INFO,
                     text = message,
                     details = listOf(
-                        uiDetailLine("本步目的", "Purpose", uiText("恢复这次模型生成", "Recover this model generation")),
-                        uiDetailLine("本步结果", "Result", uiText("上一次模型返回异常，正在按相同目标重新发起请求", "The previous model response failed; retrying the same goal")),
+                        progressDetail(ProgressDetailKey.PURPOSE, uiText("恢复这次模型生成", "Recover this model generation")),
+                        progressDetail(ProgressDetailKey.RESULT, uiText("上一次模型返回异常，正在按相同目标重新发起请求", "The previous model response failed; retrying the same goal")),
                     ),
                 ).withLifecycle(running = false),
             )
@@ -2338,11 +2340,11 @@ class MainViewModel : ViewModel() {
                         type = LogType.INFO,
                         text = uiText("极光悬浮框没有显示，请检查悬浮窗权限", "Aurora overlay is not visible. Check overlay permission."),
                         details = listOf(
-                            uiDetailLine("本步结果", "Result", uiText(
+                            progressDetail(ProgressDetailKey.RESULT, uiText(
                                 "系统没有允许 MobileClaw 显示悬浮窗，手机操作仍会继续，但你看不到极光边框提示。",
                                 "The system has not allowed MobileClaw to show overlays. Phone control will continue, but the Aurora border will not be visible.",
                             )),
-                            uiDetailLine("接下来", "Next", uiText(
+                            progressDetail(ProgressDetailKey.NEXT, uiText(
                                 "在系统设置里开启 MobileClaw 的悬浮窗 / Display over other apps 权限。",
                                 "Enable MobileClaw overlay / Display over other apps permission in system settings.",
                             )),
@@ -2468,8 +2470,8 @@ class MainViewModel : ViewModel() {
                         type = LogType.INFO,
                         text = step.userSummary.ifBlank { step.purpose },
                         details = listOf(
-                            uiDetailLine("调试", "Debug", "role-runtime dry-run: ${step.action.id}"),
-                            uiDetailLine("调试", "Debug", step.outputSummary.take(1200)),
+                            progressDetail(ProgressDetailKey.DEBUG, "role-runtime dry-run: ${step.action.id}"),
+                            progressDetail(ProgressDetailKey.DEBUG, step.outputSummary.take(1200)),
                         ),
                     ).withLifecycle(running = false)
                 )
@@ -2827,12 +2829,12 @@ class MainViewModel : ViewModel() {
                         type = LogType.THINKING,
                         text = userFacing,
                         details = buildList {
-                            add(uiDetailLine("本步目的", "Purpose", uiText("根据目标和角色选择本轮需要的工具", "Select tools for this goal and role")))
-                            result?.reason?.takeIf { it.isNotBlank() }?.let { add(uiDetailLine("本步结果", "Result", it.take(600))) }
-                            add(uiDetailLine("调试", "Debug", "runtimePlanMode=${runtimePlan.executionMode}"))
-                            if (selected.isNotEmpty()) add(uiDetailLine("调试", "Debug", selected.joinToString(", ")))
+                            add(progressDetail(ProgressDetailKey.PURPOSE, uiText("根据目标和角色选择本轮需要的工具", "Select tools for this goal and role")))
+                            result?.reason?.takeIf { it.isNotBlank() }?.let { add(progressDetail(ProgressDetailKey.RESULT, it.take(600))) }
+                            add(progressDetail(ProgressDetailKey.DEBUG, "runtimePlanMode=${runtimePlan.executionMode}"))
+                            if (selected.isNotEmpty()) add(progressDetail(ProgressDetailKey.DEBUG, selected.joinToString(", ")))
                             result?.executionPlan?.takeIf { it.isNotEmpty() }?.let { plan ->
-                                add(uiDetailLine("调试", "Debug", plan.joinToString(" -> ").take(900)))
+                                add(progressDetail(ProgressDetailKey.DEBUG, plan.joinToString(" -> ").take(900)))
                             }
                         },
                     ).withLifecycle(running = false)
@@ -3162,19 +3164,19 @@ class MainViewModel : ViewModel() {
                     type = LogType.THINKING,
                     text = text,
                     details = buildList {
-                        add(uiDetailLine("本步目的", "Purpose", uiText(
+                        add(progressDetail(ProgressDetailKey.PURPOSE, uiText(
                             "根据角色协议决定本轮如何理解、读取上下文、选择工具和沉淀记忆",
                             "Apply the role protocol to intent, context, tools, and memory",
                         )))
-                        add(uiDetailLine("本步结果", "Result", roleControlUserSummary(role, plan, runtimePlan.executionMode)))
-                        add(uiDetailLine("接下来", "Next", roleControlNextStep(runtimePlan.executionMode)))
-                        add(uiDetailLine("角色", "Role", "${role.name} (${role.id})"))
-                        add(uiDetailLine("执行模式", "Execution mode", roleExecutionModeText(runtimePlan.executionMode, plan.executionModeHint)))
-                        add(uiDetailLine("意图理解", "Intent", roleIntentPolicyText(plan)))
-                        add(uiDetailLine("回复方式", "Response", roleResponsePolicyText(plan)))
-                        add(uiDetailLine("上下文", "Context", roleContextPolicyText(plan)))
-                        add(uiDetailLine("工具", "Tools", roleToolPolicyText(plan)))
-                        add(uiDetailLine("记忆", "Memory", rolePersistencePolicyText(plan)))
+                        add(progressDetail(ProgressDetailKey.RESULT, roleControlUserSummary(role, plan, runtimePlan.executionMode)))
+                        add(progressDetail(ProgressDetailKey.NEXT, roleControlNextStep(runtimePlan.executionMode)))
+                        add(progressDetail(ProgressDetailKey.ROLE, "${role.name} (${role.id})"))
+                        add(progressDetail(ProgressDetailKey.EXECUTION_MODE, roleExecutionModeText(runtimePlan.executionMode, plan.executionModeHint)))
+                        add(progressDetail(ProgressDetailKey.INTENT, roleIntentPolicyText(plan)))
+                        add(progressDetail(ProgressDetailKey.RESPONSE, roleResponsePolicyText(plan)))
+                        add(progressDetail(ProgressDetailKey.CONTEXT, roleContextPolicyText(plan)))
+                        add(progressDetail(ProgressDetailKey.TOOLS, roleToolPolicyText(plan)))
+                        add(progressDetail(ProgressDetailKey.MEMORY, rolePersistencePolicyText(plan)))
                     },
                 ).withLifecycle(running = false)
             )
@@ -3365,9 +3367,9 @@ class MainViewModel : ViewModel() {
                                 type = LogType.THINKING,
                                 text = userFacingThought,
                                 details = listOf(
-                                    uiDetailLine("本步目的", "Purpose", userFacingThought),
-                                    uiDetailLine("本步结果", "Result", friendlyThought),
-                                    uiDetailLine("调试", "Debug", event.thought.take(1200)),
+                                    progressDetail(ProgressDetailKey.PURPOSE, userFacingThought),
+                                    progressDetail(ProgressDetailKey.RESULT, friendlyThought),
+                                    progressDetail(ProgressDetailKey.DEBUG, event.thought.take(1200)),
                                 ),
                             ).withLifecycle(running = false),
                             streamingToken = "",
@@ -3411,14 +3413,14 @@ class MainViewModel : ViewModel() {
             "  $k: ${Gson().toJson(v).take(300)}"
         }
         val lineDetails = buildList {
-            add(uiDetailLine("本步目的", "Purpose", purposeText))
+            add(progressDetail(ProgressDetailKey.PURPOSE, purposeText))
             userFacingActionResult(event.skillId, stageText)
                 .takeIf { it.isNotBlank() }
-                ?.let { add(uiDetailLine("本步结果", "Result", it)) }
-            if (stageText.isNotBlank() && stageText != debugPurposeText) add(uiDetailLine("这样安排", "Plan", stageText))
-            add(uiDetailLine("调试", "Debug", str(R.string.vm_c96809)))
-            add(uiDetailLine("调试", "Debug", "${uiText("意图", "intent")}=$debugPurposeText"))
-            addAll(paramDetails.map { uiDetailLine("调试", "Debug", it) })
+                ?.let { add(progressDetail(ProgressDetailKey.RESULT, it)) }
+            if (stageText.isNotBlank() && stageText != debugPurposeText) add(progressDetail(ProgressDetailKey.PLAN, stageText))
+            add(progressDetail(ProgressDetailKey.DEBUG, str(R.string.vm_c96809)))
+            add(progressDetail(ProgressDetailKey.DEBUG, "${uiText("意图", "intent")}=$debugPurposeText"))
+            addAll(paramDetails.map { progressDetail(ProgressDetailKey.DEBUG, it) })
         }
         val line = event.toLogLine()?.copy(text = purposeText, details = lineDetails)
         if (runtimePlan.shouldShowToolTimeline(event.skillId)) {
@@ -3457,15 +3459,7 @@ class MainViewModel : ViewModel() {
             ?.activeLogLines
             ?.lastOrNull { it.type == LogType.ACTION }
             ?.details
-            ?.firstOrNull {
-                it.startsWith(uiDetailPrefix("这样安排", "Plan")) ||
-                    it.startsWith(uiDetailPrefix("这样安排", "Plan", englishOverride = false))
-            }
-            ?.let { detail ->
-                detail.removePrefix(uiDetailPrefix("这样安排", "Plan"))
-                    .removePrefix(uiDetailPrefix("这样安排", "Plan", englishOverride = false))
-            }
-            ?.trim()
+            ?.let { ProgressDetailProtocol.value(it, ProgressDetailKey.PLAN) }
         overlay.onObservation(purposeText)
         if (event.attachment is SkillAttachment.ActionCard && event.attachment.tone == "role") {
             pendingRoleSwitchTaskGoal = contextualGoal
@@ -3483,14 +3477,14 @@ class MainViewModel : ViewModel() {
         val inlineProcessAttachment = attachment?.takeIf { it.shouldShowInlineInProcess() }
         val shouldShowTimeline = runtimePlan.shouldShowObservationTimeline(previousSkill, attachment)
         val lineDetails = buildList {
-            actionStage?.takeIf { it.isNotBlank() }?.let { add(uiDetailLine("本步目的", "Purpose", it)) }
-            add(uiDetailLine("本步结果", "Result", purposeText))
+            actionStage?.takeIf { it.isNotBlank() }?.let { add(progressDetail(ProgressDetailKey.PURPOSE, it)) }
+            add(progressDetail(ProgressDetailKey.RESULT, purposeText))
             userFacingActionNext(actionStage.orEmpty(), previousSkill.orEmpty(), event.text)
-                ?.let { add(uiDetailLine("接下来", "Next", it)) }
+                ?.let { add(progressDetail(ProgressDetailKey.NEXT, it)) }
             if (event.text.isNotBlank()) {
-                summarizeTechnicalResultForUser(previousSkill, event.text)?.let { add(uiDetailLine("补充判断", "Note", it)) }
-                add(uiDetailLine("调试", "Debug", uiText("完整结果 (${event.text.length} 字符)", "Full result (${event.text.length} chars)")))
-                add(uiDetailLine("调试", "Debug", event.text.take(2000)))
+                summarizeTechnicalResultForUser(previousSkill, event.text)?.let { add(progressDetail(ProgressDetailKey.NOTE, it)) }
+                add(progressDetail(ProgressDetailKey.DEBUG, "Full result (${event.text.length} chars)"))
+                add(progressDetail(ProgressDetailKey.FULL_RESULT, event.text.take(2000)))
             }
         }
         val line = LogLine(
@@ -3573,12 +3567,12 @@ class MainViewModel : ViewModel() {
                     type = LogType.THINKING,
                     text = text,
                     details = buildList {
-                        add(uiDetailLine("本步目的", "Purpose", text))
-                        add(uiDetailLine("本步结果", "Result", userFacingPlanResult(steps, event.plan.summary)))
-                        if (!secondStep.isNullOrBlank()) add(uiDetailLine("接下来", "Next", secondStep.trim()))
-                        add(uiDetailLine("调试", "Debug", "${uiText("角色", "role")}=${scheduledRole.name} (${scheduledRole.id})"))
-                        add(uiDetailLine("调试", "Debug", scheduleDecision.reason))
-                        add(uiDetailLine("调试", "Debug", event.plan.toPrompt().take(1600)))
+                        add(progressDetail(ProgressDetailKey.PURPOSE, text))
+                        add(progressDetail(ProgressDetailKey.RESULT, userFacingPlanResult(steps, event.plan.summary)))
+                        if (!secondStep.isNullOrBlank()) add(progressDetail(ProgressDetailKey.NEXT, secondStep.trim()))
+                        add(progressDetail(ProgressDetailKey.DEBUG, "${uiText("角色", "role")}=${scheduledRole.name} (${scheduledRole.id})"))
+                        add(progressDetail(ProgressDetailKey.DEBUG, scheduleDecision.reason))
+                        add(progressDetail(ProgressDetailKey.DEBUG, event.plan.toPrompt().take(1600)))
                     },
                 ).withLifecycle(running = true)
             )
@@ -4517,11 +4511,11 @@ For pure conversational replies, greetings, explanations, and simple factual ans
                 text = normalized.take(220),
                 skillId = "app_manager",
                 details = listOf(
-                    uiDetailLine("本步结果", "Result", uiText(
+                    progressDetail(ProgressDetailKey.RESULT, uiText(
                         "聊天里的验证预览已经看到运行问题",
                         "The validation preview in chat has detected a runtime issue",
                     )),
-                    uiDetailLine("补充判断", "Note", uiText(
+                    progressDetail(ProgressDetailKey.NOTE, uiText(
                         "先收起这个验证窗口，继续查日志并做一轮针对性修复，不要直接重写整个 MiniAPP",
                         "Close the validation preview, inspect logs, and make a targeted fix instead of rewriting the whole MiniAPP",
                     )),
@@ -8670,11 +8664,8 @@ private fun isEnglishUiText(): Boolean =
 private fun uiText(zh: String, en: String): String =
     if (isEnglishUiText()) en else zh
 
-private fun uiDetailPrefix(zh: String, en: String, englishOverride: Boolean = isEnglishUiText()): String =
-    if (englishOverride) "$en: " else "$zh："
-
-private fun uiDetailLine(zh: String, en: String, value: String): String =
-    uiDetailPrefix(zh, en) + value
+private fun progressDetail(key: ProgressDetailKey, value: String): String =
+    ProgressDetailProtocol.encode(key, value)
 
 private fun buildRoleUiInstruction(plan: RoleChatControlPlan): String =
     if (plan.responsePolicy.allowUiBlocks) {
