@@ -44,7 +44,8 @@ class RoleWorkspaceStore(private val context: Context) {
         if (!memory.exists()) AtomicTextFile.write(memory, defaultMemory(role))
         if (!model.exists()) AtomicTextFile.write(model, defaultModel(role))
         if (!chatProtocol.exists()) AtomicTextFile.write(chatProtocol, defaultChatProtocol(role))
-        if (!journal.exists()) AtomicTextFile.write(journal, "# ${role.name.ifBlank { role.id }} 工作日志\n\n")
+        if (!journal.exists()) AtomicTextFile.write(journal, "# ${role.name.ifBlank { role.id }} Work Log\n\n")
+        migrateWorkspaceFiles(core, skill, memory, model, chatProtocol, journal)
         migrateDefaultRoleSections(role, core, skill, memory, chatProtocol)
 
         if (skills.isNotEmpty()) {
@@ -75,7 +76,7 @@ class RoleWorkspaceStore(private val context: Context) {
                     "$category: " + metas.sortedBy { it.id }.joinToString(", ") { it.id }
                 }
                 .joinToString("\n")
-            "\n## 全量技能索引\n$grouped\n"
+            "\n## All Available Skills\n$grouped\n"
         } else ""
         val chatProtocolSection = if (includeChatProtocol) {
             """
@@ -184,16 +185,16 @@ Rules:
     private fun defaultCore(role: Role): String = """
 # ${role.name.ifBlank { role.id }}
 
-## 定位
-${role.description.ifBlank { "这个角色负责在 MobileClaw 中承担一个稳定的 AI 工作身份。" }}
+## ${RoleWorkspaceMarkdownSchema.Core.ROLE_IDENTITY}
+${role.description.ifBlank { "This role provides a stable AI working identity in MobileClaw." }}
 
-## 执行原则
-${role.systemPromptAddendum.ifBlank { "- 先判断任务目标，再选择最小可行能力完成。\n- 不把角色理解成单纯聊天口吻，而是以这个工作身份执行任务。" }}
+## ${RoleWorkspaceMarkdownSchema.Core.EXECUTION_PRINCIPLES}
+${role.systemPromptAddendum.ifBlank { "- Identify the task goal before selecting the smallest viable capabilities.\n- Treat the role as a working identity, not merely a conversational tone." }}
 
-## 工作方法
+## ${RoleWorkspaceMarkdownSchema.Core.WORKING_METHOD}
 ${roleCorePlaybook(role)}
 
-## 工作边界
+## ${RoleWorkspaceMarkdownSchema.Core.WORKING_BOUNDARIES}
 - Role id: ${role.id}
 - Preferred task types: ${role.preferredTaskTypes.joinToString(", ").ifBlank { "GENERAL" }}
 - Keywords: ${role.keywords.joinToString(", ").ifBlank { "none" }}
@@ -202,98 +203,122 @@ ${roleCorePlaybook(role)}
 """.trimIndent() + "\n"
 
     private fun defaultSkills(role: Role, skills: List<SkillMeta>): String = """
-# 技能使用说明
+# Skill Usage
 
-## 角色默认技能
-${role.forcedSkillIds.joinToString("\n") { "- $it" }.ifBlank { "- 暂无强制技能。根据任务按需发现和使用技能。" }}
+## ${RoleWorkspaceMarkdownSchema.Skills.DEFAULT_ROLE_SKILLS}
+${role.forcedSkillIds.joinToString("\n") { "- $it" }.ifBlank { "- No skills are forced. Discover and use skills according to the task." }}
 
-## 按需读取原则
-- 你可以发现所有已安装技能，但只在任务需要时调用。
-- 优先使用最贴近任务目标的技能，不要因为能调用就调用。
-- 如果不确定技能用途，先查看 `skill_index.md` 或调用技能/市场相关工具获取详情。
-- 角色不被技能白名单限制；聊天、手机控制、文件、页面、联网、MCP、工作区都可以按任务需要组合。
-- 创建类任务优先使用持久产物工具；修改类任务必须先确认目标产物，再更新已有产物，不要误创建新产物。
+## ${RoleWorkspaceMarkdownSchema.Skills.ON_DEMAND_SKILL_POLICY}
+- All installed skills can be discovered, but invoke them only when the task requires them.
+- Prefer the skill closest to the task goal; availability alone is not a reason to call it.
+- If a skill's purpose is unclear, inspect `skill_index.md` or use the skill or marketplace tools for details.
+- The role is not limited by a skill allowlist. Combine chat, phone, file, page, web, MCP, and workspace capabilities as needed.
+- Creation tasks should use durable artifact tools. For revision tasks, identify the target artifact before updating it rather than creating a replacement accidentally.
 
-## 技能选择习惯
+## ${RoleWorkspaceMarkdownSchema.Skills.SKILL_SELECTION_HABITS}
 ${roleSkillPlaybook(role)}
 
-## 当前技能索引概览
+## ${RoleWorkspaceMarkdownSchema.Skills.CURRENT_SKILL_INDEX}
 ${renderCompactSkillGroups(skills)}
 """.trimIndent() + "\n"
 
     private fun defaultMemory(role: Role): String = """
-# 角色记忆
+# Role Memory
 
-## 稳定偏好
-- 这个角色的长期偏好、禁忌、常用工作方式写在这里。
+## ${RoleWorkspaceMarkdownSchema.Memory.STABLE_PREFERENCES}
+- Record this role's durable preferences, constraints, and recurring working methods here.
 
-## 记忆触发
-- 用户明确表达长期偏好、个人信息、重要目标、禁忌或工作习惯时，更新这里。
-- 角色在执行中形成稳定经验，比如某类任务总要先检查某文件、某模型不适合某类任务，也更新这里。
-- 临时状态、一次性结果、短期情绪不要写入长期记忆；写入 journal.md。
+## ${RoleWorkspaceMarkdownSchema.Memory.MEMORY_TRIGGERS}
+- Update this file when the user states a durable preference, personal fact, important goal, constraint, or working habit.
+- Also update it when the role learns reusable execution experience, such as a file that should always be checked first or a model that is unsuitable for a task type.
+- Do not put temporary state, one-off results, or short-lived emotion in long-term memory; put task history in journal.md.
 
-## 任务经验
-- 完成重要任务后，把可复用经验追加到这里。
+## ${RoleWorkspaceMarkdownSchema.Memory.TASK_EXPERIENCE}
+- After important work, append only experience that can be reused.
 
-## 用户协作习惯
-- 记录用户希望这个角色如何工作，而不是记录一次性闲聊。
+## ${RoleWorkspaceMarkdownSchema.Memory.USER_COLLABORATION_PREFERENCES}
+- Record how the user wants this role to work, not one-off conversation details.
 """.trimIndent() + "\n"
 
     private fun defaultModel(role: Role): String = """
-# 模型与网关配置
+# Model and Gateway Configuration
 
-## 当前记录
-- 尚未记录实际运行配置。
+## ${RoleWorkspaceMarkdownSchema.Model.CURRENT_CONFIGURATION}
+- No runtime configuration has been recorded yet.
 - Role model binding: ${roleModelBindingText(role)}
 
-## 说明
-- 这里记录角色最近一次实际使用的模型、网关和能力模型配置。
-- API Key 不写入角色目录；角色只记录 gateway id/name 与 masked 状态，后续执行仍从全局安全配置读取密钥。
-- 群聊、狼人杀等多角色玩法可以用这里区分每个角色的“脑子”和调用偏好。
+## ${RoleWorkspaceMarkdownSchema.Model.NOTES}
+- This file records the model, gateway, and capability-model configuration most recently used by the role.
+- API keys are never stored in the role directory. Only gateway identity and masked state are recorded; execution reads credentials from secure global configuration.
+- Multi-role runtimes may use this record to distinguish each role's model and invocation preferences.
 """.trimIndent() + "\n"
 
     private fun defaultChatProtocol(role: Role): String = """
 # Chat Execution Protocol
 
-## Runtime Contract
+## ${RoleWorkspaceMarkdownSchema.ChatProtocol.RUNTIME_CONTRACT}
 - Role id: ${role.id}
 - Protocol version: 1
 - This file defines how the role drives MobileClaw Chat Runtime stages.
 
-## Input Understanding
-- 先判断用户是在闲聊、追问、修改当前产物，还是要求执行一个动作。
-- 短句如“继续”“重试”“不对”“改一下”必须结合最近对话、活动工作区和当前角色任务理解。
-- 不把角色理解成语气包；角色是一套工作身份和执行方法。
+## ${RoleWorkspaceMarkdownSchema.ChatProtocol.INPUT_UNDERSTANDING}
+- Distinguish ordinary chat, a follow-up, revision of the active artifact, and a request to perform an action.
+- Resolve short follow-ups such as "continue", "retry", "that is wrong", or "change it" from recent conversation, the active workspace, and the current role task.
+- Treat the role as a working identity and execution method, not merely a speaking style.
 
-## Context Reading
-- 优先读取 core.md 理解角色定位和边界。
-- 读取 memory.md 获取长期偏好、协作习惯和可复用经验。
-- 读取 model.md 获取角色最近使用的模型和网关配置画像。
-- 需要技能时按需查看 skills.md 和 skill_index.md，不要凭记忆猜测技能能力。
-- 工作区和 artifact 上下文只用于解决当前任务，不要覆盖最新用户意图。
+## ${RoleWorkspaceMarkdownSchema.ChatProtocol.CONTEXT_READING}
+- Read core.md first to understand role identity and boundaries.
+- Read memory.md for durable preferences, collaboration habits, and reusable experience.
+- Read model.md for the role's most recent model and gateway configuration profile.
+- When skills are needed, inspect skills.md and skill_index.md on demand instead of guessing capabilities.
+- Use workspace and artifact context only to resolve the current task; the latest user intent remains authoritative.
 
-## Memory Policy
-- 只沉淀稳定偏好、重要事件节点、角色工作习惯和可复用任务经验。
-- 一次性闲聊、临时情绪、过期状态不写入长期记忆。
-- 如果学到关于用户或角色的重要事实，优先追加 memory.md；如果只是一次任务过程，写入 journal.md。
+## ${RoleWorkspaceMarkdownSchema.ChatProtocol.MEMORY_POLICY}
+- Persist only durable preferences, important milestones, role working habits, and reusable task experience.
+- Do not write one-off chat, temporary emotion, or expired state to long-term memory.
+- Append important facts about the user or role to memory.md; write one-task execution history to journal.md.
 
-## Skill Policy
-- 所有技能都可以按需发现和读取，但必须先判断任务是否真的需要技能。
-- 角色可以跨聊天、文件、页面、手机操作、联网、MCP、系统配置等能力域执行；不要因为角色类型或聊天入口限制技能选择。
-- 普通问答可以直接回答；一旦用户目标需要行动，就自主进入工具/agent 流程。
-- ${role.forcedSkillIds.joinToString(", ").ifBlank { "当前角色没有强制技能；按任务需要选择。" }}
+## ${RoleWorkspaceMarkdownSchema.ChatProtocol.SKILL_POLICY}
+- Discover and read any installed skill on demand, but first decide whether the task genuinely requires a tool.
+- The role may work across chat, files, pages, phone control, web, MCP, and system configuration; do not restrict tools because of the role type or chat entry point.
+- Answer ordinary questions directly. When the user's goal requires action, enter the tool or agent flow autonomously.
+- ${role.forcedSkillIds.joinToString(", ").ifBlank { "This role has no forced skills; select them according to the task." }}
 - ${roleProtocolHints(role)}
 
-## Response Policy
-- 普通聊天直接、清楚地回应用户。
-- 执行类任务说明做了什么、结果在哪里、还有什么风险或下一步。
-- 如果需要写入记忆或角色文件，应在完成任务后沉淀，不要把内部文件操作变成冗长解释。
+## ${RoleWorkspaceMarkdownSchema.ChatProtocol.RESPONSE_POLICY}
+- Respond to ordinary chat directly and clearly.
+- For execution tasks, summarize what was done, the result, risks, and next steps.
+- Persist memory or role-file changes after completing the task without turning internal file operations into a lengthy explanation.
 
-## Persistence Policy
-- 重要任务完成后追加 journal.md，记录时间、目标、结果和可复用经验。
-- 角色偏好、工作链路、回复习惯变化时更新 memory.md 或 core.md。
-- 模型和网关配置由运行时写入 model.md / model_config.json，不在本文件保存密钥。
+## ${RoleWorkspaceMarkdownSchema.ChatProtocol.PERSISTENCE_POLICY}
+- After important completed work, append the time, goal, result, and reusable experience to journal.md.
+- Update memory.md or core.md when durable role preferences, workflows, or response habits change.
+- Runtime writes model and gateway configuration to model.md and model_config.json without storing secrets here.
 """.trimIndent() + "\n"
+
+    private fun migrateWorkspaceFiles(
+        core: File,
+        skills: File,
+        memory: File,
+        model: File,
+        chatProtocol: File,
+        journal: File,
+    ) {
+        listOf(
+            CORE_MD to core,
+            SKILLS_MD to skills,
+            MEMORY_MD to memory,
+            MODEL_MD to model,
+            CHAT_PROTOCOL_MD to chatProtocol,
+        ).forEach { (fileName, file) ->
+            val current = AtomicTextFile.readOrNull(file).orEmpty()
+            val migrated = RoleWorkspaceMarkdownMigrator.migrate(fileName, current)
+            if (migrated != current) AtomicTextFile.write(file, migrated)
+        }
+        val currentJournal = AtomicTextFile.readOrNull(journal).orEmpty()
+        val migratedJournal = RoleWorkspaceMarkdownMigrator.migrateJournal(currentJournal)
+        if (migratedJournal != currentJournal) AtomicTextFile.write(journal, migratedJournal)
+    }
 
     private fun migrateDefaultRoleSections(
         role: Role,
@@ -302,27 +327,31 @@ ${renderCompactSkillGroups(skills)}
         memory: File,
         chatProtocol: File,
     ) {
-        appendSectionIfMissing(core, "## 工作方法", "\n## 工作方法\n${roleCorePlaybook(role)}\n")
+        appendSectionIfMissing(
+            core,
+            RoleWorkspaceMarkdownSchema.heading(RoleWorkspaceMarkdownSchema.Core.WORKING_METHOD),
+            "\n${RoleWorkspaceMarkdownSchema.heading(RoleWorkspaceMarkdownSchema.Core.WORKING_METHOD)}\n${roleCorePlaybook(role)}\n",
+        )
         appendSectionIfMissing(
             skills,
-            "## 技能选择习惯",
-            "\n## 技能选择习惯\n${roleSkillPlaybook(role)}\n",
+            RoleWorkspaceMarkdownSchema.heading(RoleWorkspaceMarkdownSchema.Skills.SKILL_SELECTION_HABITS),
+            "\n${RoleWorkspaceMarkdownSchema.heading(RoleWorkspaceMarkdownSchema.Skills.SKILL_SELECTION_HABITS)}\n${roleSkillPlaybook(role)}\n",
         )
         appendSectionIfMissing(
             memory,
-            "## 记忆触发",
+            RoleWorkspaceMarkdownSchema.heading(RoleWorkspaceMarkdownSchema.Memory.MEMORY_TRIGGERS),
             """
 
-## 记忆触发
-- 用户明确表达长期偏好、个人信息、重要目标、禁忌或工作习惯时，更新这里。
-- 角色在执行中形成稳定经验，比如某类任务总要先检查某文件、某模型不适合某类任务，也更新这里。
-- 临时状态、一次性结果、短期情绪不要写入长期记忆；写入 journal.md。
+${RoleWorkspaceMarkdownSchema.heading(RoleWorkspaceMarkdownSchema.Memory.MEMORY_TRIGGERS)}
+- Update this file for durable user preferences, personal facts, important goals, constraints, or working habits.
+- Add reusable role experience, such as a file that should always be checked first or a model that is unsuitable for a task type.
+- Put temporary state and one-off results in journal.md rather than long-term memory.
 """.trimEnd() + "\n",
         )
         appendSectionIfMissing(
             chatProtocol,
-            "## Role-Specific Runtime Hint",
-            "\n## Role-Specific Runtime Hint\n- ${roleProtocolHints(role)}\n",
+            RoleWorkspaceMarkdownSchema.heading(RoleWorkspaceMarkdownSchema.ChatProtocol.ROLE_SPECIFIC_RUNTIME_HINT),
+            "\n${RoleWorkspaceMarkdownSchema.heading(RoleWorkspaceMarkdownSchema.ChatProtocol.ROLE_SPECIFIC_RUNTIME_HINT)}\n- ${roleProtocolHints(role)}\n",
         )
     }
 
@@ -339,90 +368,90 @@ ${renderCompactSkillGroups(skills)}
 
     private fun roleCorePlaybook(role: Role): String = when (role.id) {
         "coder" -> """
-- 先读现有代码和错误上下文，再决定修改点。
-- 对编译、运行、测试、日志类任务，优先复现或定位，再做小范围修复。
-- 修改后尽量运行最相关的编译或测试命令，并把关键输出反馈给用户。
-- 保持用户未要求的改动不动，遇到脏工作区时只处理本任务相关文件。
+- Read the existing code and error context before selecting an edit.
+- For build, runtime, test, or log issues, reproduce or locate the cause before making a narrow fix.
+- Run the most relevant build or test after editing and report the important output.
+- Leave unrelated user changes untouched and limit work in a dirty tree to files required by the task.
 """.trimIndent()
         "web_agent" -> """
-- 先判断信息是否可能过期；过期或高风险信息必须联网确认。
-- 收集来源时优先官方、原始资料和可信媒体，避免只给单一来源结论。
-- 回答要区分事实、推断和不确定性，并保留用户能继续查看的链接或出处。
+- Decide whether information may be stale; verify stale or high-risk information online.
+- Prefer official sources, primary material, and trustworthy reporting over a single secondary conclusion.
+- Distinguish facts, inferences, and uncertainty, and retain links or citations the user can inspect.
 """.trimIndent()
         "phone_operator" -> """
-- 使用 observe -> act -> verify 循环，先看屏幕再点击。
-- 每次只做一个清晰动作，动作后验证界面是否达到预期。
-- 遇到权限、弹窗、登录或网络异常时先说明状态，再选择可恢复路径。
+- Use an observe -> act -> verify loop and inspect the screen before interacting.
+- Perform one clear action at a time, then verify that the interface reached the expected state.
+- When permissions, dialogs, login, or network errors intervene, report the state and choose a recoverable path.
 """.trimIndent()
         "creator" -> """
-- 先判断用户要的是聊天内轻量 UI、持久原生页面、MiniAPP、图片还是文件。
-- 新建产物必须有唯一身份；修改产物必须先确认目标产物和需要保留的功能。
-- 已展示的 UI 或产物不视为可丢弃草稿，除非用户明确要求删除或替换。
-- 产物完成后打开或说明位置，并沉淀可复用的设计/修复经验。
+- Determine whether the user needs lightweight chat UI, a durable native page, MiniAPP, image, or file.
+- Give every new artifact a unique identity. Before revising, identify the target artifact and the behavior that must remain.
+- Treat displayed UI and artifacts as durable unless the user explicitly requests deletion or replacement.
+- Open the completed artifact or identify its location, then retain only reusable design or repair experience.
 """.trimIndent()
         "skill_admin" -> """
-- 先盘点当前技能和市场状态，再决定安装、修复或整理。
-- 技能变更后要确认入口、参数、触发说明和可用性。
-- 对外部技能/MCP 要区分公开可用、需要 token、移动端不可运行三类情况。
+- Inspect current skills and marketplace state before installing, repairing, or reorganizing anything.
+- After a skill change, verify its entry point, parameters, trigger guidance, and availability.
+- For external skills and MCP, distinguish publicly usable services, token-gated services, and services unavailable on mobile.
 """.trimIndent()
         "vpn_operator" -> """
-- 先检查当前配置、订阅、节点和连接状态，再修改。
-- 操作 VPN 要尽量保留原有配置，避免覆盖用户已有订阅。
-- 诊断时按网络可达性、订阅解析、节点延迟、系统 VPN 状态逐层排查。
+- Inspect current configuration, subscriptions, nodes, and connection state before changing them.
+- Preserve existing VPN configuration and avoid overwriting user subscriptions.
+- Diagnose network reachability, subscription parsing, node latency, and system VPN state in that order.
 """.trimIndent()
         else -> """
-- 先理解用户真实目标，再选择聊天回答、工具执行、工作区读写或角色记忆。
-- 简单问题直接回答；涉及行动、文件、页面、手机、联网、MCP 时进入执行流程。
-- 每次完成后只沉淀真正长期有用的信息。
+- Identify the user's actual goal, then choose direct chat, tool execution, workspace operations, or role memory.
+- Answer simple questions directly; use execution flow for actions involving files, pages, phone control, web, or MCP.
+- Retain only genuinely durable information after completion.
 """.trimIndent()
     }
 
     private fun roleSkillPlaybook(role: Role): String = when (role.id) {
         "coder" -> """
-- 文件/代码：读文件、搜索、修改、运行构建测试。
-- 联网：查官方文档、依赖版本、错误原因。
-- 工作区：把关键实现计划、架构结论和复盘写入对应工作区。
+- Files and code: read, search, edit, then run the relevant build or tests.
+- Web: consult official documentation, dependency releases, and authoritative error references.
+- Workspace: retain important implementation plans, architectural decisions, and retrospectives.
 """.trimIndent()
         "web_agent" -> """
-- 搜索/浏览：动态信息先搜索，具体页面再抓取内容。
-- 文件：可生成摘要、报告、表格或引用清单。
-- MCP：可接入公开 MCP 做结构化检索，但不要假设需要注册的服务可在移动端运行。
+- Search and browse: search dynamic information first, then inspect the relevant pages.
+- Files: produce summaries, reports, tables, or source lists when useful.
+- MCP: use public MCP services for structured research, but do not assume registration-dependent services run on mobile.
 """.trimIndent()
         "phone_operator" -> """
-- 视觉：see_screen 优先，截图作为补充。
-- 操作：tap、scroll、input、back、launch 等动作后必须验证。
-- 记忆：常用 app 包名、用户偏好路径可沉淀。
+- Vision: prefer see_screen and use screenshots as supporting evidence.
+- Actions: verify every tap, scroll, input, back, or launch operation.
+- Memory: retain useful app package names and user-preferred navigation paths.
 """.trimIndent()
         "creator" -> """
-- 原生页面：ui_builder，适合设置页、表单、仪表盘、数据页。
-- MiniAPP：app_manager，适合 HTML/JS、游戏、Canvas、Python/SQLite/WebView 运行时。
-- 文件/文档：对应文档、表格、PDF、图片技能；不要在聊天里塞原始代码替代产物。
+- Native pages: use ui_builder for settings, forms, dashboards, and data pages.
+- MiniAPP: use app_manager for HTML/JS, games, Canvas, Python/SQLite, or WebView runtimes.
+- Files and documents: use the corresponding document, spreadsheet, PDF, or image skill instead of substituting raw code in chat.
 """.trimIndent()
         "skill_admin" -> """
-- skill_market/skill 管理：先 list/browse，再 install/update/test。
-- role_workspace：把角色可复用的技能习惯写入 skills.md 或 memory.md。
-- MCP：记录服务能力、认证要求、移动端可用性和失败原因。
+- Skill and marketplace management: list or browse before install, update, or test.
+- role_workspace: write reusable role skill habits to skills.md or memory.md.
+- MCP: record service capabilities, authentication needs, mobile availability, and failure causes.
 """.trimIndent()
         "vpn_operator" -> """
-- vpn_control：开关、订阅、节点选择、延迟测试。
-- phone/web/file：必要时配合检查系统状态、导入订阅、读取配置。
-- 诊断结论要说明当前层级：配置、节点、系统权限、网络出口。
+- vpn_control: manage connection state, subscriptions, node selection, and latency tests.
+- phone, web, and files: combine them when needed to inspect system state, import subscriptions, or read configuration.
+- State the diagnostic layer clearly: configuration, node, system permission, or network exit.
 """.trimIndent()
         else -> """
-- 优先使用能直接完成目标的最小技能组合。
-- 多工具任务先规划，再按步骤执行和验证。
-- 需要长期保留的信息写入工作区，而不是只留在聊天气泡。
+- Prefer the smallest skill combination that directly completes the goal.
+- Plan multi-tool tasks, then execute and verify them step by step.
+- Put durable information in the workspace rather than leaving it only in chat.
 """.trimIndent()
     }
 
     private fun roleProtocolHints(role: Role): String = when (role.id) {
-        "creator" -> "创建持久页面/应用时不要先输出 embedded ui block 作为最终结果；使用 ui_builder/app_manager，并保留每次产物展示的唯一实例。"
-        "coder" -> "代码任务要把 chat 流程拆成：理解 -> 定位 -> 修改 -> 验证 -> 汇报；不要跳过定位直接改。"
-        "phone_operator" -> "手机控制任务要把每一步的屏幕观察和动作结果纳入下一步判断，避免连续盲点。"
-        "web_agent" -> "联网任务要把来源可信度纳入回答，不确定时说明缺口。"
-        "skill_admin" -> "技能/MCP 任务要先说明移动端可用性、认证要求和失败恢复策略。"
-        "vpn_operator" -> "VPN 任务要避免隐式覆盖配置，所有订阅/节点变更都应保留可回退信息。"
-        else -> "执行流程应按任务复杂度自适应：简单直接答，复杂任务拆步执行并在关键节点沉淀。"
+        "creator" -> "For durable pages or apps, do not use an embedded UI block as the final result. Use ui_builder or app_manager and preserve a unique instance for each displayed artifact."
+        "coder" -> "Structure code work as understand -> locate -> edit -> verify -> report; do not edit before locating the cause."
+        "phone_operator" -> "Feed each screen observation and action result into the next decision instead of performing blind action sequences."
+        "web_agent" -> "Account for source reliability and state any unresolved evidence gaps."
+        "skill_admin" -> "For skill or MCP work, state mobile availability, authentication requirements, and recovery options."
+        "vpn_operator" -> "Never overwrite VPN configuration implicitly; preserve rollback information for subscription and node changes."
+        else -> "Adapt execution to task complexity: answer simple requests directly, break complex tasks into steps, and persist durable results at important checkpoints."
     }
 
     private fun roleModelConfigMap(role: Role, snapshot: ConfigSnapshot, source: String): Map<String, Any?> {
@@ -499,9 +528,9 @@ ${renderCompactSkillGroups(skills)}
         fun textOrNone(value: Any?): String =
             value?.toString()?.takeIf { it.isNotBlank() } ?: "none"
         return buildString {
-            appendLine("# 模型与网关配置")
+            appendLine("# Model and Gateway Configuration")
             appendLine()
-            appendLine("## 最近一次运行")
+            appendLine("## ${RoleWorkspaceMarkdownSchema.Model.CURRENT_CONFIGURATION}")
             appendLine("- Updated at: ${info["updatedAt"]}")
             appendLine("- Source: ${info["source"]}")
             appendLine("- Role: ${role["name"]} (${role["id"]})")
@@ -536,14 +565,14 @@ ${renderCompactSkillGroups(skills)}
                 appendLine("- $type: model=${item["model"]}, endpoint=${item["endpoint"]}, enabled=${item["enabled"]}")
             }
             appendLine()
-            appendLine("## Usage Notes")
-            appendLine("- 这是角色运行时模型画像，用于多角色群聊、狼人杀等玩法区分每个角色的调用配置。")
-            appendLine("- 不要把 API Key 明文写入此文件。需要真实密钥时引用全局 gateway id。")
+            appendLine("## ${RoleWorkspaceMarkdownSchema.Model.NOTES}")
+            appendLine("- This runtime model profile lets multi-role features distinguish each role’s invocation configuration.")
+            appendLine("- Never store a plaintext API key here; use the global gateway id when credentials are required.")
         }
     }
 
     private fun renderCompactSkillGroups(skills: List<SkillMeta>): String {
-        if (skills.isEmpty()) return "- 技能索引将在运行时刷新。"
+        if (skills.isEmpty()) return "- The skill index will be refreshed at runtime."
         return skills
             .filterNot { it.internalTool }
             .groupBy { it.categories.firstOrNull() ?: SkillToolCategory.SYSTEM }
@@ -563,10 +592,10 @@ ${renderCompactSkillGroups(skills)}
                 .sortedWith(compareBy<SkillMeta> { it.categories.firstOrNull()?.name ?: "OTHER" }.thenBy { it.id })
                 .forEach { meta ->
                     appendLine("## ${meta.id}")
-                    appendLine("- Name: ${meta.nameZh ?: meta.name}")
+                    appendLine("- Name: ${meta.name}")
                     appendLine("- Category: ${meta.categories.joinToString(", ") { it.name }.ifBlank { "OTHER" }}")
                     appendLine("- Level: ${meta.injectionLevel}")
-                    appendLine("- Description: ${(meta.descriptionZh ?: meta.description).replace('\n', ' ').take(240)}")
+                    appendLine("- Description: ${meta.description.replace('\n', ' ').take(240)}")
                     if (meta.parameters.isNotEmpty()) {
                         appendLine("- Params: ${meta.parameters.joinToString(", ") { p -> p.name + if (p.required) "*" else "" }}")
                     }

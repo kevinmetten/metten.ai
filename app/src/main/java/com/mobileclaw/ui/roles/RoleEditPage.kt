@@ -63,6 +63,7 @@ import com.mobileclaw.config.capabilityModel
 import com.mobileclaw.agent.Role
 import com.mobileclaw.agent.RoleAvatarDefaults
 import com.mobileclaw.agent.RoleModelBinding
+import com.mobileclaw.agent.RoleWorkspaceMarkdownSchema
 import com.mobileclaw.agent.RoleWorkspaceSnapshot
 import com.mobileclaw.agent.RoleWorkspaceStore
 import com.mobileclaw.agent.effectiveModelBinding
@@ -1331,44 +1332,44 @@ private fun TaskType.roleTaskHint(): String = when (this) {
 private fun defaultEditableChatProtocol(role: Role): String = """
 # Chat Execution Protocol
 
-## Runtime Contract
+## ${RoleWorkspaceMarkdownSchema.ChatProtocol.RUNTIME_CONTRACT}
 - Role id: ${role.id}
 - Protocol version: 1
 
-## Input Understanding
-- 先判断用户真实目标：闲聊、追问、修改当前产物、还是执行动作。
-- “继续”“重试”“不对”“改一下”等短句必须结合最近对话和当前工作区理解。
-- 不把角色当成语气包；角色是一套工作身份、执行方法和记忆策略。
+## ${RoleWorkspaceMarkdownSchema.ChatProtocol.INPUT_UNDERSTANDING}
+- Distinguish ordinary chat, follow-up, active-artifact revision, and action requests.
+- Resolve short messages such as "continue", "retry", "that is wrong", and "change it" from recent conversation and the active workspace.
+- Treat the role as a working identity, execution method, and memory policy rather than a speaking style.
 
-## Context Reading
-- 优先读取 core.md、memory.md、model.md 和 chat_protocol.md。
-- 需要技能时读取 skills.md / skill_index.md，再按任务选择工具。
-- 最近对话用于理解当前指令，不覆盖最新用户意图。
+## ${RoleWorkspaceMarkdownSchema.ChatProtocol.CONTEXT_READING}
+- Read core.md, memory.md, model.md, and chat_protocol.md as appropriate.
+- When skills are needed, inspect skills.md and skill_index.md before selecting tools.
+- Recent conversation resolves references but never overrides the latest user intent.
 
-## Memory Policy
-- 只沉淀稳定偏好、重要事件节点、角色工作习惯和可复用经验。
-- 临时情绪、一次性状态和过期信息不写入长期记忆。
+## ${RoleWorkspaceMarkdownSchema.ChatProtocol.MEMORY_POLICY}
+- Persist only durable preferences, important milestones, role working habits, and reusable experience.
+- Do not write temporary emotion, one-off state, or expired information to long-term memory.
 
-## Skill Policy
-- 所有技能都可以按需发现和读取；先判断任务是否真的需要工具。
-- 普通问答直接回答；需要行动时进入工具/agent 流程。
-- ${role.forcedSkillIds.joinToString(", ").ifBlank { "当前角色没有强制技能；按任务需要选择。" }}
+## ${RoleWorkspaceMarkdownSchema.ChatProtocol.SKILL_POLICY}
+- Discover and read skills on demand; first decide whether the task genuinely requires tools.
+- Answer ordinary questions directly. When action is required, enter the tool or agent flow.
+- ${role.forcedSkillIds.joinToString(", ").ifBlank { "This role has no forced skills; select them according to the task." }}
 
-## Response Policy
-- 少罗列能力清单，优先回答用户当前目标。
-- 执行类任务说明做了什么、结果在哪里、风险和下一步。
+## ${RoleWorkspaceMarkdownSchema.ChatProtocol.RESPONSE_POLICY}
+- Avoid capability menus and address the user's current goal first.
+- For execution tasks, summarize what was done, the result, risks, and next steps.
 
-## Persistence Policy
-- 重要任务完成后追加 journal.md。
-- 角色偏好、工作链路、回复习惯变化时更新 memory.md 或 core.md。
+## ${RoleWorkspaceMarkdownSchema.ChatProtocol.PERSISTENCE_POLICY}
+- Append important completed work to journal.md.
+- Update memory.md or core.md when durable preferences, workflows, or response habits change.
 """.trimIndent() + "\n"
 
 private fun inferExecutionPreference(protocol: RoleExecutionProtocol): RoleExecutionPreference {
     val text = listOf(protocol.skillPolicy, protocol.responsePolicy).joinToString("\n").lowercase()
     return when {
-        listOf("优先 agent", "优先工具", "进入 agent", "执行类任务进入 agent", "需要行动时进入 agent", "agent first", "prefer agent").any { text.contains(it) } ->
+        listOf("agent first", "prefer agent", "enter agent", "enter the agent", "action requests enter the tool").any { text.contains(it) } ->
             RoleExecutionPreference.AGENT_FIRST
-        listOf("直接回答优先", "普通问答直接回答", "简单问题直接回答", "闲聊直接回答", "direct chat first", "prefer direct").any { text.contains(it) } ->
+        listOf("direct chat first", "prefer direct", "answer ordinary questions directly", "answer simple questions directly").any { text.contains(it) } ->
             RoleExecutionPreference.DIRECT_FIRST
         else -> RoleExecutionPreference.AUTO
     }
@@ -1382,8 +1383,8 @@ private fun applyExecutionPreferenceToSkillPolicy(
     marker = "Execution preference",
     next = when (preference) {
         RoleExecutionPreference.AUTO -> ""
-        RoleExecutionPreference.DIRECT_FIRST -> "- Execution preference: 普通问答直接回答；需要行动时进入 agent。"
-        RoleExecutionPreference.AGENT_FIRST -> "- Execution preference: 优先 agent；执行类任务进入 agent；需要行动时进入工具。"
+        RoleExecutionPreference.DIRECT_FIRST -> "- Execution preference: answer ordinary questions directly; enter the agent for action requests."
+        RoleExecutionPreference.AGENT_FIRST -> "- Execution preference: agent first; use tools for execution requests."
     },
 )
 
@@ -1395,8 +1396,8 @@ private fun applyExecutionPreferenceToResponsePolicy(
     marker = "Response preference",
     next = when (preference) {
         RoleExecutionPreference.AUTO -> ""
-        RoleExecutionPreference.DIRECT_FIRST -> "- Response preference: 直接回答优先，少展示内部过程。"
-        RoleExecutionPreference.AGENT_FIRST -> "- Response preference: 执行优先，完成后汇报结果和关键过程。"
+        RoleExecutionPreference.DIRECT_FIRST -> "- Response preference: prefer direct answers and minimize internal-process detail."
+        RoleExecutionPreference.AGENT_FIRST -> "- Response preference: prefer execution, then report results and key steps."
     },
 )
 
