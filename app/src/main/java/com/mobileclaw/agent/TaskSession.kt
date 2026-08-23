@@ -626,22 +626,18 @@ object TaskToolPolicy {
             append(' ')
             append(meta.name.lowercase())
             append(' ')
-            append(meta.nameZh.orEmpty().lowercase())
-            append(' ')
             append(meta.description.lowercase())
-            append(' ')
-            append(meta.descriptionZh.orEmpty().lowercase())
             append(' ')
             append(meta.tags.joinToString(" ").lowercase())
             append(' ')
             append(meta.categories.joinToString(" ") { it.name.lowercase() })
         }
-        val directNames = listOf(meta.id, meta.name, meta.nameZh.orEmpty())
+        val directNames = listOf(meta.id, meta.name)
             .map { it.lowercase().trim() }
             .filter { it.length >= 2 }
         if (directNames.any { it in text || text in it }) return true
         val goalTerms = text
-            .split(Regex("""[\s,，。.!?！？;；:：/\\|()\[\]{}"'`~]+"""))
+            .split(Regex("[\\p{Z}\\p{P}\\p{S}\\p{C}]+"))
             .map { it.trim() }
             .filter { it.length >= 2 }
         if (goalTerms.any { it in seed }) return true
@@ -656,29 +652,24 @@ object TaskToolPolicy {
         if (memoryContext.isBlank()) return allowed
         val lower = memoryContext.lowercase()
         var result = allowed
-        val noWeb = lower.contains("不要搜索") ||
-            lower.contains("不要网页搜索") ||
-            lower.contains("不要联网") ||
-            lower.contains("不用联网") ||
-            lower.contains("no web search") ||
+        val noWeb = lower.contains("no web search") ||
+            lower.contains("do not search the web") ||
+            lower.contains("don't search the web") ||
+            lower.contains("do not browse") ||
             lower.contains("offline only") ||
             lower.contains("no_web_search") ||
-            lower.contains("image_understanding.no_web_search") ||
-            (lower.contains("网页搜索") && listOf("不该", "不希望", "老是", "总是", "经常", "不停").any { lower.contains(it) })
+            lower.contains("image_understanding.no_web_search")
         if (noWeb && taskType != TaskType.WEB_RESEARCH) {
             result = result.filterNot { it in listOf("web_search", "fetch_url", "web_browse", "web_content", "web_js") }
         }
-        val noPhone = lower.contains("不要操作手机") || lower.contains("no phone control")
+        val noPhone = lower.contains("no phone control") || lower.contains("do not control the phone")
         if (noPhone && taskType != TaskType.PHONE_CONTROL) {
             result = result.filterNot { it in listOf("see_screen", "screenshot", "tap", "scroll", "input_text", "long_click", "navigate", "phone_status") }
         }
-        val preferNativePage = lower.contains("页面优先生成原生页面") ||
-            lower.contains("优先生成原生页面") ||
-            lower.contains("ai native page") ||
+        val preferNativePage = lower.contains("ai native page") ||
+            lower.contains("prefer native page") ||
             lower.contains("native page first")
-        val preferMiniApp = lower.contains("程序优先生成miniapp") ||
-            lower.contains("优先生成miniapp") ||
-            lower.contains("prefer miniapp")
+        val preferMiniApp = lower.contains("prefer miniapp")
         if (taskType == TaskType.APP_BUILD) {
             result = when {
                 preferNativePage && !preferMiniApp -> result.sortedBy { if (it == "ui_builder") 0 else 1 }
@@ -695,9 +686,9 @@ object TaskToolPolicy {
         val artifactPreference = detectArtifactToolPreferenceFromGoal(text)
         val preferred = when (taskType) {
             TaskType.PHONE_CONTROL -> when {
-                text.anyContains("截图", "看屏幕", "识别", "布局", "界面", "坐标", "当前页面") ->
+                text.anyContains("screenshot", "screen", "read screen", "inspect screen", "layout", "interface", "ui", "coordinates") ->
                     listOf("see_screen", "screenshot", "phone_status")
-                text.anyContains("点击", "tap", "打开", "选择", "进入", "切换", "提交") ->
+                text.anyContains("tap", "click", "open", "select", "choose", "enter", "switch", "submit", "press") ->
                     listOf(
                         "see_screen",
                         "phone_status",
@@ -710,7 +701,7 @@ object TaskToolPolicy {
                         "long_click",
                         "input_text",
                     )
-                text.anyContains("输入", "搜索", "填写", "键入", "type") ->
+                text.anyContains("type", "input", "enter", "fill", "search") ->
                     listOf("input_text", "tap", "see_screen")
                 else -> listOf(
                     "see_screen",
@@ -727,16 +718,16 @@ object TaskToolPolicy {
                 )
             }
             TaskType.WEB_RESEARCH -> when {
-                text.anyContains("搜索", "查找", "研究", "找到", "资料", "来源", "新闻", "最新") ->
+                text.anyContains("search", "find", "research", "source", "sources", "news", "latest", "current") ->
                     listOf("web_search", "web_browse", "fetch_url", "web_content")
-                text.anyContains("抓取", "网页", "打开", "页面", "提取", "阅读") ->
+                text.anyContains("fetch", "page", "website", "open", "extract", "read", "browse") ->
                     listOf("fetch_url", "web_browse", "web_content", "web_js")
                 else -> listOf("web_search", "fetch_url", "web_browse", "web_content")
             }
             TaskType.FILE_CREATE -> when {
-                text.anyContains("ppt", "pptx", "word", "doc", "docx", "excel", "xlsx", "pdf", "文档", "报告") ->
+                text.anyContains("ppt", "pptx", "word", "doc", "docx", "excel", "xlsx", "pdf", "document", "report") ->
                     listOf("generate_document", "create_html", "read_file", "list_files")
-                text.anyContains("html", "页面", "预览", "报告") ->
+                text.anyContains("html", "page", "preview", "report") ->
                     listOf("create_html", "create_file", "read_file", "list_files")
                 else -> listOf("create_file", "read_file", "list_files", "generate_document", "create_html")
             }
@@ -745,33 +736,33 @@ object TaskToolPolicy {
                     listOf("app_manager", "read_file", "create_file", "list_files", "create_html")
                 artifactPreference == ArtifactToolPreference.AI_PAGE ->
                     listOf("ui_builder", "read_file", "create_file", "list_files")
-                text.anyContains("页面", "原生", "native", "ui", "dashboard", "settings", "列表", "卡片") ->
+                text.anyContains("page", "native", "native page", "ui", "dashboard", "settings", "list", "card", "form", "panel") ->
                     listOf("ui_builder", "read_file", "create_file", "list_files")
-                text.anyContains("miniapp", "程序", "应用", "游戏", "webview", "html") ->
+                text.anyContains("miniapp", "mini app", "program", "application", "app", "game", "webview", "html", "javascript", "canvas") ->
                     listOf("app_manager", "read_file", "create_file", "list_files", "create_html")
                 else -> listOf("ui_builder", "app_manager", "create_html", "read_file", "create_file", "list_files")
             }
             TaskType.IMAGE_GENERATION -> when {
-                text.anyContains("icon", "头像", "图标", "logo") ->
+                text.anyContains("icon", "avatar", "logo", "image", "picture") ->
                     listOf("generate_icon", "generate_image")
-                text.anyContains("视频", "动图", "animation") ->
+                text.anyContains("video", "animation", "animated") ->
                     listOf("generate_video")
                 else -> listOf("generate_image", "generate_icon", "generate_video")
             }
             TaskType.VPN_CONTROL -> listOf("vpn_control")
             TaskType.SKILL_MANAGEMENT -> when {
-                text.anyContains("查看", "检查", "inventory", "现有", "是否已经有") ->
+                text.anyContains("check", "inspect", "inventory", "existing", "list") ->
                     listOf("skill_check", "skill_notes")
-                text.anyContains("安装", "市场", "search", "导入", "获取") ->
+                text.anyContains("install", "market", "search", "import", "get", "add") ->
                     listOf("skill_market", "quick_skill", "create_skill")
-                text.anyContains("角色", "切换", "persona", "自我升级", "调整") ->
+                text.anyContains("role", "switch", "persona", "self-upgrade", "adjust", "modify") ->
                     listOf("role_manager", "switch_role", "skill_check")
                 else -> listOf("skill_check", "quick_skill", "skill_market", "create_skill", "skill_notes", "role_manager", "switch_role")
             }
             TaskType.CODE_EXECUTION -> when {
-                text.anyContains("python", "脚本", "代码") ->
+                text.anyContains("python", "script", "code") ->
                     listOf("run_python", "shell", "pip_install")
-                text.anyContains("安装", "依赖", "pip") ->
+                text.anyContains("install", "dependency", "dependencies", "pip", "package") ->
                     listOf("pip_install", "run_python", "shell")
                 else -> listOf("shell", "run_python", "pip_install", "read_file", "create_file", "list_files")
             }
@@ -780,19 +771,19 @@ object TaskToolPolicy {
                     listOf("app_manager", "read_file", "create_file", "list_files", "create_html", "ui_builder")
                 artifactPreference == ArtifactToolPreference.AI_PAGE ->
                     listOf("ui_builder", "app_manager", "create_html", "read_file", "create_file", "list_files")
-                text.anyContains("记忆", "记住", "偏好", "配置", "用户画像") ->
+                text.anyContains("memory", "remember", "preference", "preferences", "config", "configuration", "profile") ->
                     listOf("memory", "user_profile", "user_config")
-                text.anyContains("角色", "切换", "persona", "风格") ->
+                text.anyContains("role", "switch", "persona", "style") ->
                     listOf("role_manager", "switch_role", "memory")
-                text.anyContains("技能", "skill", "创建技能", "能力") ->
+                text.anyContains("skill", "skills", "capability", "capabilities") ->
                     listOf("skill_check", "skill_market", "quick_skill", "create_skill", "skill_notes")
-                text.anyContains("miniapp", "mini app", "小程序", "程序", "应用", "game", "游戏", "webview", "html", "javascript", "canvas") ->
+                text.anyContains("miniapp", "mini app", "program", "application", "game", "webview", "html", "javascript", "canvas") ->
                     listOf("app_manager", "read_file", "create_file", "list_files", "create_html", "ui_builder")
-                text.anyContains("页面", "ui", "原生", "app", "应用中心") ->
+                text.anyContains("page", "ui", "native", "native page", "app center") ->
                     listOf("ui_builder", "app_manager", "create_html", "read_file", "create_file")
-                text.anyContains("图片", "图标", "头像", "视频", "bqb", "表情") ->
+                text.anyContains("image", "picture", "icon", "avatar", "video", "sticker", "meme", "reaction") ->
                     listOf("generate_image", "generate_icon", "generate_video", "sticker_bqb")
-                text.anyContains("网页", "搜索", "资料", "查找", "联网") ->
+                text.anyContains("web", "website", "search", "research", "source", "find", "online", "browse") ->
                     listOf("web_search", "fetch_url", "web_browse", "web_content", "web_js")
                 else -> allowed
             }
@@ -801,7 +792,7 @@ object TaskToolPolicy {
     }
 
     // When a continuation already carries an artifact contract or workspace anchor, prefer that tool
-    // over broad keyword matches like "页面" or "UI", which previously misrouted MiniAPP patch flows.
+    // over broad keyword matches like "page" or "UI", which previously misrouted MiniAPP patch flows.
     private fun detectArtifactToolPreferenceFromGoal(text: String): ArtifactToolPreference? = when {
         text.contains("artifact_type=miniapp") ||
             text.contains("current miniapp target:") ||
