@@ -240,8 +240,8 @@ private const val ROLE_RUNTIME_DRY_RUN_TRACE_KEY = "role_runtime_dry_run_trace_e
 private const val ROLE_RUNTIME_DRY_RUN_MAX_STEPS = 2
 private const val VIDEO_TASK_AUTO_REFRESH_INTERVAL_MS = 12_000L
 
-// 聊天内 MiniAPP 预览如果暴露出运行问题，这里把“继续修”的意图挂起到 session 级队列里。
-// 这样不用把 UI 状态硬塞回正在执行的 runtime，也不会要求用户手动再说一次“继续”。
+// Queue targeted MiniAPP preview repairs at session scope without coupling UI state to the active runtime.
+// This lets repair continue automatically instead of requiring another user command.
 private data class PendingMiniAppAutoRepair(
     val sessionId: String,
     val appId: String,
@@ -285,7 +285,7 @@ class MainViewModel : ViewModel() {
     private val llm get() = app.createLlmGateway()
     private var appUpdateCheckedThisRun = false
 
-    // 只对模型异常做轻量重试，避免正常业务失败也被机械重复执行。
+    // Retry only model failures so ordinary execution failures are not repeated.
     private fun shouldRetryAfterAgentRun(result: com.mobileclaw.agent.AgentResult?, error: Throwable?): Boolean {
         if (error is kotlinx.coroutines.CancellationException) return false
         if (isNonRetryableLlmFailure(error?.message ?: result?.summary.orEmpty())) return false
@@ -295,13 +295,13 @@ class MainViewModel : ViewModel() {
             !isNonRetryableLlmFailure(result.summary)
     }
 
-    // 直接聊天没有工具链保护，所以同样补一层模型异常重试。
+    // Direct chat has no tool-chain recovery, so retry transient model failures here too.
     private fun shouldRetryDirectChat(error: Throwable?): Boolean =
         error != null &&
             error !is kotlinx.coroutines.CancellationException &&
             !isNonRetryableLlmFailure(error.message.orEmpty())
 
-    // 每次重试前都显式告诉用户当前不是卡死，而是在重新发起这一轮模型请求。
+    // Tell the user when the same model request is being retried.
     private fun appendRetryLogLine(sessionId: String, message: String) {
         updateSession(sessionId) { s ->
             s.copy(
@@ -311,8 +311,8 @@ class MainViewModel : ViewModel() {
                     type = LogType.INFO,
                     text = message,
                     details = listOf(
-                        progressDetail(ProgressDetailKey.PURPOSE, uiText("恢复这次模型生成", "Recover this model generation")),
-                        progressDetail(ProgressDetailKey.RESULT, uiText("上一次模型返回异常，正在按相同目标重新发起请求", "The previous model response failed; retrying the same goal")),
+                        progressDetail(ProgressDetailKey.PURPOSE, "Recover this model generation"),
+                        progressDetail(ProgressDetailKey.RESULT, "The previous model response failed; retrying the same goal"),
                     ),
                 ).withLifecycle(running = false),
             )
@@ -2258,16 +2258,14 @@ class MainViewModel : ViewModel() {
                 listOf(
                     LogLine(
                         type = LogType.INFO,
-                        text = uiText("极光悬浮框没有显示，请检查悬浮窗权限", "Aurora overlay is not visible. Check overlay permission."),
+                        text = "Aurora overlay is not visible. Check overlay permission.",
                         details = listOf(
-                            progressDetail(ProgressDetailKey.RESULT, uiText(
-                                "系统没有允许 MobileClaw 显示悬浮窗，手机操作仍会继续，但你看不到极光边框提示。",
+                            progressDetail(ProgressDetailKey.RESULT,
                                 "The system has not allowed MobileClaw to show overlays. Phone control will continue, but the Aurora border will not be visible.",
-                            )),
-                            progressDetail(ProgressDetailKey.NEXT, uiText(
-                                "在系统设置里开启 MobileClaw 的悬浮窗 / Display over other apps 权限。",
-                                "Enable MobileClaw overlay / Display over other apps permission in system settings.",
-                            )),
+                            ),
+                            progressDetail(ProgressDetailKey.NEXT,
+                                "Enable MobileClaw's Display over other apps permission in system settings.",
+                            ),
                         ),
                     ).withLifecycle(running = false)
                 )
@@ -2733,14 +2731,8 @@ class MainViewModel : ViewModel() {
             ?.ifEmpty { fallback }
             ?: fallback
         val userFacing = when {
-            selected.isNotEmpty() -> uiText(
-                "已为本轮选择 ${selected.size} 个工具",
-                "Selected ${selected.size} tools for this run",
-            )
-            else -> uiText(
-                "本轮不收窄工具，交给执行器按需选择",
-                "Tool set is not narrowed for this run",
-            )
+            selected.isNotEmpty() -> "Selected ${selected.size} tools for this run"
+            else -> "Tool set is not narrowed for this run"
         }
         if (runtimePlan.roleControlPlan.visibilityPolicy.showTimelineForToolCalls) {
             updateSession(resolvedSessionId) { s ->
@@ -2749,7 +2741,7 @@ class MainViewModel : ViewModel() {
                         type = LogType.THINKING,
                         text = userFacing,
                         details = buildList {
-                            add(progressDetail(ProgressDetailKey.PURPOSE, uiText("根据目标和角色选择本轮需要的工具", "Select tools for this goal and role")))
+                            add(progressDetail(ProgressDetailKey.PURPOSE, "Select tools for this goal and role"))
                             result?.reason?.takeIf { it.isNotBlank() }?.let { add(progressDetail(ProgressDetailKey.RESULT, it.take(600))) }
                             add(progressDetail(ProgressDetailKey.DEBUG, "runtimePlanMode=${runtimePlan.executionMode}"))
                             if (selected.isNotEmpty()) add(progressDetail(ProgressDetailKey.DEBUG, selected.joinToString(", ")))
@@ -2881,11 +2873,7 @@ class MainViewModel : ViewModel() {
                     taskTypeOverride = TaskType.CODE_EXECUTION,
                     aiPrimaryChannel = ChannelType.CODE,
                     aiToolHints = listOf("codex_desktop"),
-                    userVisibleSteps = if (isEnglishUiText()) {
-                        listOf("Connect to desktop Codex", "Send the task", "Return the result")
-                    } else {
-                        listOf("连接电脑 Codex", "发送任务", "返回结果")
-                    },
+                    userVisibleSteps = listOf("Connect to desktop Codex", "Send the task", "Return the result"),
                 ),
                 goalForExecution = prepared.effectiveGoal,
                 source = TaskRouteSource.CLASSIFIER,
@@ -3074,20 +3062,16 @@ class MainViewModel : ViewModel() {
     ) {
         val plan = execution.roleControlPlan
         val role = execution.scheduledRole
-        val text = uiText(
-            "角色 ${role.name} 正在接管本轮执行",
-            "Role ${role.name} is controlling this run",
-        )
+        val text = "Role ${role.name} is controlling this run"
         updateSession(sessionId) { s ->
             s.copy(
                 activeLogLines = s.activeLogLines.finishLatestRunningLine() + LogLine(
                     type = LogType.THINKING,
                     text = text,
                     details = buildList {
-                        add(progressDetail(ProgressDetailKey.PURPOSE, uiText(
-                            "根据角色协议决定本轮如何理解、读取上下文、选择工具和沉淀记忆",
+                        add(progressDetail(ProgressDetailKey.PURPOSE,
                             "Apply the role protocol to intent, context, tools, and memory",
-                        )))
+                        ))
                         add(progressDetail(ProgressDetailKey.RESULT, roleControlUserSummary(role, plan, runtimePlan.executionMode)))
                         add(progressDetail(ProgressDetailKey.NEXT, roleControlNextStep(runtimePlan.executionMode)))
                         add(progressDetail(ProgressDetailKey.ROLE, "${role.name} (${role.id})"))
@@ -3339,7 +3323,7 @@ class MainViewModel : ViewModel() {
                 ?.let { add(progressDetail(ProgressDetailKey.RESULT, it)) }
             if (stageText.isNotBlank() && stageText != debugPurposeText) add(progressDetail(ProgressDetailKey.PLAN, stageText))
             add(progressDetail(ProgressDetailKey.DEBUG, str(R.string.vm_c96809)))
-            add(progressDetail(ProgressDetailKey.DEBUG, "${uiText("意图", "intent")}=$debugPurposeText"))
+            add(progressDetail(ProgressDetailKey.DEBUG, "intent=$debugPurposeText"))
             addAll(paramDetails.map { progressDetail(ProgressDetailKey.DEBUG, it) })
         }
         val line = event.toLogLine()?.copy(text = purposeText, details = lineDetails)
@@ -3490,7 +3474,7 @@ class MainViewModel : ViewModel() {
                         add(progressDetail(ProgressDetailKey.PURPOSE, text))
                         add(progressDetail(ProgressDetailKey.RESULT, userFacingPlanResult(steps, event.plan.summary)))
                         if (!secondStep.isNullOrBlank()) add(progressDetail(ProgressDetailKey.NEXT, secondStep.trim()))
-                        add(progressDetail(ProgressDetailKey.DEBUG, "${uiText("角色", "role")}=${scheduledRole.name} (${scheduledRole.id})"))
+                        add(progressDetail(ProgressDetailKey.DEBUG, "role=${scheduledRole.name} (${scheduledRole.id})"))
                         add(progressDetail(ProgressDetailKey.DEBUG, scheduleDecision.reason))
                         add(progressDetail(ProgressDetailKey.DEBUG, event.plan.toPrompt().take(1600)))
                     },
@@ -3529,11 +3513,8 @@ class MainViewModel : ViewModel() {
             }
         } else ""
         val directExecutionContext = if (imageBase64 != null) executionContext else ""
-        val capabilityInfoInstruction = if (config.language == "en") {
+        val capabilityInfoInstruction =
             "If the user asks what MobileClaw can do or which tools are available, do not guess from memory; that request is handled by the INFO capability directory."
-        } else {
-            "如果用户询问 MobileClaw 能做什么、有哪些工具或某类任务是否支持，不要凭记忆展开能力清单；这类请求由 INFO 能力目录处理。"
-        }
         val roleUiInstruction = buildRoleUiInstruction(roleControlPlan)
         val systemPrompt = if (localChatMode) {
             buildString {
@@ -3569,7 +3550,7 @@ Chat, memory, skills, and self-evolution are separate channels. Use the right ch
 
 ## Context Rules
 Use the current user message as the source of truth. Treat recent conversation as supporting context only.
-Short follow-ups like “继续/改一下/不是这个/换个方式” refer to the most relevant recent message or artifact.
+Short follow-ups refer to the most relevant recent message or artifact.
 Do not start building pages, HTML, MiniAPPs, or UI artifacts unless the user clearly asks to create or modify one.
 If the latest user message clearly requires memory, skills, artifacts, files, web, or phone execution, do not behave as if chat is the only available path.
 
@@ -3917,7 +3898,7 @@ For pure conversational replies, greetings, explanations, and simple factual ans
         }
     }
 
-    // 当前轮结束后，自动把“查日志 -> 小范围修复 -> 校验 -> 重新打开”继续跑完。
+    // After this run, automatically inspect logs, make a targeted repair, validate, and reopen.
     private fun resumePendingMiniAppAutoRepair(sessionId: String) {
         val pending = pendingMiniAppAutoRepairs.remove(sessionId) ?: return
         if (_uiState.value.sessionStates[sessionId]?.isRunning == true || taskJobs[sessionId] != null) {
@@ -4017,9 +3998,9 @@ For pure conversational replies, greetings, explanations, and simple factual ans
             val statusLine = LogLine(
                 type = if (result.success) LogType.SUCCESS else LogType.ERROR,
                 text = if (result.success) {
-                    uiText("电脑 Codex 已返回结果", "Desktop Codex returned a result")
+                    "Desktop Codex returned a result"
                 } else {
-                    uiText("电脑 Codex 执行失败", "Desktop Codex failed")
+                    "Desktop Codex failed"
                 },
                 skillId = "codex_desktop",
                 details = listOf(result.output.take(2000)),
@@ -4032,7 +4013,7 @@ For pure conversational replies, greetings, explanations, and simple factual ans
                 .orEmpty()
             val agentMessage = ChatMessage(
                 role = MessageRole.AGENT,
-                text = result.output.ifBlank { if (result.success) "电脑 Codex 已完成。" else "电脑 Codex 没有返回内容。" },
+                text = result.output.ifBlank { if (result.success) "Desktop Codex completed the task." else "Desktop Codex returned no output." },
                 logLines = progressLines + statusLine,
                 senderRoleId = _uiState.value.currentRole.id,
                 senderRoleName = _uiState.value.currentRole.name,
@@ -4426,14 +4407,12 @@ For pure conversational replies, greetings, explanations, and simple factual ans
                 text = normalized.take(220),
                 skillId = "app_manager",
                 details = listOf(
-                    progressDetail(ProgressDetailKey.RESULT, uiText(
-                        "聊天里的验证预览已经看到运行问题",
+                    progressDetail(ProgressDetailKey.RESULT,
                         "The validation preview in chat has detected a runtime issue",
-                    )),
-                    progressDetail(ProgressDetailKey.NOTE, uiText(
-                        "先收起这个验证窗口，继续查日志并做一轮针对性修复，不要直接重写整个 MiniAPP",
+                    ),
+                    progressDetail(ProgressDetailKey.NOTE,
                         "Close the validation preview, inspect logs, and make a targeted fix instead of rewriting the whole MiniAPP",
-                    )),
+                    ),
                 ),
             )
             if (state.activeLogLines.lastOrNull()?.text == line.text) state
@@ -5377,19 +5356,7 @@ $foundationalMemory
 
     private fun shouldPushAccessibilityCardForGoal(goal: String): Boolean {
         if (activeWorkflowForCurrentSession()?.taskType == TaskType.PHONE_CONTROL) return false
-        val text = goal.lowercase()
-        val actionHit = listOf(
-            "打开", "启动", "点", "点击", "搜索", "找", "附近", "下单", "发送", "输入", "滑动", "操作",
-            "帮我到", "帮我在", "替我", "进入", "切到",
-            "open", "launch", "tap", "click", "search", "nearby", "send", "input", "scroll",
-        ).any { text.contains(it) }
-        val appHit = listOf(
-            "美团", "微信", "支付宝", "抖音", "淘宝", "京东", "高德", "百度地图", "小红书", "b站", "哔哩",
-            "meituan", "wechat", "alipay", "douyin", "taobao", "jd", "maps",
-        ).any { text.contains(it) }
-        val phoneControlPhraseHit = listOf("操作手机", "控制手机", "打开app", "打开 app", "手机上", "帮我到").any { text.contains(it) }
-        if (phoneControlPhraseHit) return true
-        return actionHit && appHit
+        return MainExecutionSemantics.hasExplicitPhoneControlIntent(goal)
     }
 
     private fun shouldRunDirectChat(
@@ -5421,18 +5388,11 @@ $foundationalMemory
     }
 
     private fun roleControlPlanPrefersAgent(goal: String, roleControlPlan: RoleChatControlPlan): Boolean {
-        val text = goal.lowercase()
-        val memoryIntent = listOf(
-            "记住", "记录", "以后", "下次", "我的偏好", "我的习惯", "沉淀", "写入记忆",
-            "remember", "save this", "from now on", "next time", "my preference",
-        ).any { text.contains(it) }
+        val memoryIntent = MainExecutionSemantics.hasMemoryIntent(goal)
         if (memoryIntent && (roleControlPlan.persistencePolicy.allowRoleMemoryWrite || roleControlPlan.persistencePolicy.allowUserMemoryWrite)) {
             return true
         }
-        val actionIntent = listOf(
-            "帮我处理", "帮我生成", "帮我创建", "帮我修改", "继续处理", "执行", "打开", "搜索", "修复", "接入",
-            "create", "generate", "update", "fix", "run", "open", "search", "install", "connect",
-        ).any { text.contains(it) }
+        val actionIntent = MainExecutionSemantics.hasExecutionIntent(goal)
         return actionIntent && roleControlPlan.toolPolicy.preferredToolIds.isNotEmpty()
     }
 
@@ -5449,20 +5409,8 @@ $foundationalMemory
             TaskType.CODE_EXECUTION -> ChannelType.CODE
         }
 
-    private fun looksLikeCapabilityInfoQuestion(goal: String): Boolean {
-        val text = goal.trim().lowercase()
-        if (text.isBlank() || text.length > 80) return false
-        val capabilityNeedles = listOf(
-            "你能做什么", "你可以做什么", "你会什么", "你有什么能力", "有哪些能力", "有什么能力",
-            "有哪些工具", "有什么工具", "能力列表", "工具列表", "能干什么", "能帮我干嘛",
-            "mobileclaw能做什么", "mobileclaw 可以做什么", "支持什么",
-            "what can you do", "what are your capabilities", "available tools", "capability list",
-        )
-        if (capabilityNeedles.any { text.contains(it) }) return true
-        val pureSupportQuestion = listOf("支持做什么", "支持哪些", "能做哪些", "可以做哪些", "哪些能做")
-            .any { text.contains(it) }
-        return pureSupportQuestion
-    }
+    private fun looksLikeCapabilityInfoQuestion(goal: String): Boolean =
+        MainExecutionSemantics.isCapabilityInfoQuestion(goal)
 
     private suspend fun buildMobileClawCapabilityDirectory(goal: String): String {
         val metas = registry.userVisibleMetasWithTaxonomy()
@@ -5470,11 +5418,11 @@ $foundationalMemory
             meta.categories.ifEmpty { emptyList() }.map { category -> category to meta }
         }.groupBy({ it.first }, { it.second })
         val snap = config.snapshot()
-        val accessibility = if (ClawAccessibilityService.isEnabled()) "已开启" else "未开启，需要先授权无障碍"
+        val accessibility = if (ClawAccessibilityService.isEnabled()) "enabled" else "not enabled; accessibility permission is required"
         val codexDesktop = if (
             _uiState.value.userConfigEntries["codex_desktop_endpoint"]?.value.orEmpty().isNotBlank() &&
             _uiState.value.userConfigEntries["codex_desktop_token"]?.value.orEmpty().isNotBlank()
-        ) "已配置" else "未配置"
+        ) "configured" else "not configured"
         val imageReady = registry.contains("generate_image") && (
             snap.activeGateway?.hasCapability("image") == true ||
                 userConfig.get("image_api_endpoint")?.isNotBlank() == true ||
@@ -5490,34 +5438,29 @@ $foundationalMemory
                 .filterNot { it.internalTool }
                 .sortedWith(compareBy<SkillMeta> { it.injectionLevel }.thenBy { it.id })
                 .take(limit)
-                .map { it.nameZh ?: it.name }
-            return items.joinToString("、").ifBlank { "当前未发现可见工具" }
+                .map { it.name }
+            return items.joinToString(", ").ifBlank { "No visible tools found" }
         }
         return """
-我可以做这些事，具体会按任务需要再读取对应能力目录，不会每次聊天都塞满上下文：
+I can help in these areas. The relevant capability directory is loaded for each task rather than filling every chat with every tool:
 
-- 普通聊天和思考：回答问题、解释概念、写作润色、翻译、规划、学习辅导。
-- 手机操作：查看屏幕、点击、输入、滑动、打开应用并完成多步骤流程。状态：$accessibility。代表工具：${examples(SkillToolCategory.PHONE)}。
-- 创建产物：MiniAPP、原生页面、仪表盘、表单、HTML/CSS/JS、文件和文档。代表工具：${examples(SkillToolCategory.ARTIFACT)}。
-- 网页与信息检索：搜索、打开网页、读取页面内容、提炼结论。代表工具：${examples(SkillToolCategory.WEB)}。
-- 图片/视频：图片生成状态：${if (imageReady) "可用" else "未完整配置"}；视频生成状态：${if (videoReady) "可用" else "未完整配置"}。代表工具：${examples(SkillToolCategory.MEDIA)}。
-- 记忆和配置：记住偏好、读取会话/工作区上下文、管理默认配置。代表工具：${examples(SkillToolCategory.MEMORY)}。
-- 技能和自我改进：安装/创建技能、切换角色、调整页面或能力策略。代表工具：${examples(SkillToolCategory.SKILL)}。
-- 电脑 Codex 协作：把复杂开发任务交给电脑端 Codex bridge。状态：$codexDesktop。
+- Ordinary chat and reasoning: answer questions, explain concepts, write and edit text, translate, plan, and tutor.
+- Phone operation: inspect the screen, tap, type, scroll, open apps, and complete multi-step flows. Status: $accessibility. Example tools: ${examples(SkillToolCategory.PHONE)}.
+- Artifact creation: create MiniAPPs, native pages, dashboards, forms, HTML/CSS/JS, files, and documents. Example tools: ${examples(SkillToolCategory.ARTIFACT)}.
+- Web and research: search, open webpages, read their content, and summarize findings. Example tools: ${examples(SkillToolCategory.WEB)}.
+- Image and video: image generation is ${if (imageReady) "available" else "not fully configured"}; video generation is ${if (videoReady) "available" else "not fully configured"}. Example tools: ${examples(SkillToolCategory.MEDIA)}.
+- Memory and configuration: remember preferences, use conversation and workspace context, and manage default configuration. Example tools: ${examples(SkillToolCategory.MEMORY)}.
+- Skills and self-improvement: install or create skills, switch roles, and adjust page or capability policies. Example tools: ${examples(SkillToolCategory.SKILL)}.
+- Desktop Codex collaboration: send complex development tasks to the desktop Codex bridge. Status: $codexDesktop.
 
-你可以直接说目标，比如“帮我生成一个记账 MiniAPP”“打开美团搜附近烤肉”“总结这个网页”“记住我喜欢简洁黑白风”。我会先判断是普通聊天、INFO 目录，还是需要进入 agent 执行通道。
+For example: "Create an expense-tracker MiniAPP", "Open Settings and change the display option", "Summarize this webpage", or "Remember that I prefer a minimal dark style". I will route the request to ordinary chat, the capability directory, or agent execution as appropriate.
         """.trimIndent()
     }
 
     private fun isRecentContinuationRoute(route: TaskRoute, goal: String): Boolean {
         if (route.source != TaskRouteSource.RECENT_CONTEXT) return false
         if (route.taskType == TaskType.PHONE_CONTROL && !ClawAccessibilityService.isEnabled()) return false
-        val normalized = goal.trim().lowercase()
-        if (normalized.length > 40) return false
-        return normalized in setOf(
-            "继续", "接着", "继续执行", "继续操作", "继续吧", "接着来",
-            "然后呢", "下一步", "go on", "continue", "next",
-        ) || normalized.contains("继续") || normalized.contains("接着")
+        return MainExecutionSemantics.isRecentContinuationCommand(goal)
     }
 
     private fun resolveAllowedToolIds(
@@ -5809,8 +5752,6 @@ $foundationalMemory
 
     private fun sanitizeWorkflowGoal(goal: String): String =
         goal
-            .substringBefore("\n\n[用户继续当前流程]")
-            .replace(Regex("""\n\n\[上下文约束]\n[\s\S]*$"""), "")
             .replace(Regex("""\n\n\[resolved_context:[\s\S]*$"""), "")
             .trim()
             .ifBlank { goal.take(ACTIVE_WORKFLOW_GOAL_LIMIT) }
@@ -6698,7 +6639,7 @@ private fun AgentEvent.toLogLine(): LogLine? = when (this) {
     is AgentEvent.SkillCalling -> LogLine(type = LogType.ACTION, text = friendlySkillDescription(skillId, params), skillId = skillId)
     is AgentEvent.Observation  -> LogLine(type = LogType.OBSERVATION, text = text.take(400), imageBase64 = imageBase64)
     is AgentEvent.Completed    -> LogLine(type = LogType.SUCCESS, text = summary)
-    // Warning 映射为 INFO，让 guard/约束在 UI 里表现为提醒而不是失败。
+    // Warnings remain informational so runtime guards appear as guidance rather than failures.
     is AgentEvent.Warning      -> LogLine(type = LogType.INFO, text = friendlyRuntimeNotice(message))
     is AgentEvent.Error        -> LogLine(type = LogType.ERROR, text = friendlyRuntimeNotice(message))
     is AgentEvent.Token        -> null
@@ -6706,26 +6647,14 @@ private fun AgentEvent.toLogLine(): LogLine? = when (this) {
     is AgentEvent.PlanCreated -> LogLine(type = LogType.THINKING, text = plan.toPrompt())
 }
 
-private fun isEnglishUiText(): Boolean =
-    ClawApplication.instance.agentConfig.language == "en"
-
-private fun uiText(zh: String, en: String): String =
-    if (isEnglishUiText()) en else zh
-
 private fun progressDetail(key: ProgressDetailKey, value: String): String =
     ProgressDetailProtocol.encode(key, value)
 
 private fun buildRoleUiInstruction(plan: RoleChatControlPlan): String =
     if (plan.responsePolicy.allowUiBlocks) {
-        uiText(
-            "角色允许在用户明确需要交互时输出 UI block；普通聊天仍然使用纯文本。",
-            "This role may output UI blocks when the user explicitly needs interaction; normal chat remains plain text.",
-        )
+        "This role may output UI blocks when the user explicitly needs interaction; normal chat remains plain text."
     } else {
-        uiText(
-            "当前角色默认不输出 UI block；除非用户明确要求交互界面，否则只用纯文本回复。",
-            "This role does not output UI blocks by default; use plain text unless the user explicitly asks for an interactive interface.",
-        )
+        "This role does not output UI blocks by default; use plain text unless the user explicitly asks for an interactive interface."
     }
 
 private fun roleControlUserSummary(
@@ -6734,63 +6663,43 @@ private fun roleControlUserSummary(
     mode: ChatExecutionMode,
 ): String {
     val files = plan.contextPolicy.readRoleFiles.joinToString(", ").ifBlank { "none" }
-    val tools = plan.toolPolicy.preferredToolIds.joinToString(", ").ifBlank {
-        uiText("按任务由 AI 选择", "AI selects by task")
-    }
-    return uiText(
-        "本轮使用 ${role.name} 的协议，模式 $mode，读取 $files，工具策略：$tools。",
-        "This run uses ${role.name}'s protocol, mode $mode, reads $files, tools: $tools.",
-    )
+    val tools = plan.toolPolicy.preferredToolIds.joinToString(", ").ifBlank { "AI selects by task" }
+    return "This run uses ${role.name}'s protocol, mode $mode, reads $files, tools: $tools."
 }
 
 private fun roleControlNextStep(mode: ChatExecutionMode): String = when (mode) {
     ChatExecutionMode.DIRECT_CHAT,
-    ChatExecutionMode.INFO -> uiText("直接组织回复，并遵守角色的回复方式。", "Compose the answer directly using the role response policy.")
+    ChatExecutionMode.INFO -> "Compose the answer directly using the role response policy."
     ChatExecutionMode.AGENT,
-    ChatExecutionMode.CODEX_DESKTOP -> uiText("进入执行流程，按角色策略选择工具并记录必要过程。", "Enter execution, select tools by role policy, and keep useful trace.")
+    ChatExecutionMode.CODEX_DESKTOP -> "Enter execution, select tools by role policy, and keep useful trace."
 }
 
 private fun roleExecutionModeText(mode: ChatExecutionMode, hint: ChatExecutionMode?): String =
     if (hint != null) {
-        uiText("最终 $mode，角色倾向 $hint", "final $mode, role hint $hint")
+        "final $mode, role hint $hint"
     } else {
-        uiText("最终 $mode，角色未强制模式", "final $mode, no forced role mode")
+        "final $mode, no forced role mode"
     }
 
 private fun roleIntentPolicyText(plan: RoleChatControlPlan): String =
-    uiText(
-        "短句=${plan.intentPolicy.shortFollowUpMode}；当前消息优先=${plan.intentPolicy.currentMessagePriority}；产物引用=${plan.intentPolicy.artifactReferenceMode}",
-        "short=${plan.intentPolicy.shortFollowUpMode}; latest=${plan.intentPolicy.currentMessagePriority}; artifact=${plan.intentPolicy.artifactReferenceMode}",
-    )
+    "short=${plan.intentPolicy.shortFollowUpMode}; latest=${plan.intentPolicy.currentMessagePriority}; artifact=${plan.intentPolicy.artifactReferenceMode}"
 
 private fun roleResponsePolicyText(plan: RoleChatControlPlan): String =
-    uiText(
-        "风格=${plan.responsePolicy.style}；完成汇报=${plan.responsePolicy.completionSummaryMode}；少列能力=${plan.responsePolicy.avoidCapabilityListing}；UI=${plan.responsePolicy.allowUiBlocks}",
-        "style=${plan.responsePolicy.style}; summary=${plan.responsePolicy.completionSummaryMode}; avoid capabilities=${plan.responsePolicy.avoidCapabilityListing}; UI=${plan.responsePolicy.allowUiBlocks}",
-    )
+    "style=${plan.responsePolicy.style}; summary=${plan.responsePolicy.completionSummaryMode}; avoid capabilities=${plan.responsePolicy.avoidCapabilityListing}; UI=${plan.responsePolicy.allowUiBlocks}"
 
 private fun roleContextPolicyText(plan: RoleChatControlPlan): String {
     val files = plan.contextPolicy.readRoleFiles.joinToString(", ").ifBlank { "none" }
-    return uiText(
-        "读取 $files；用户记忆 ${if (plan.contextPolicy.includeUserMemory) "开启" else "关闭"}；最近对话 ${if (plan.contextPolicy.includeRecentMessages) "开启" else "按需"}",
-        "reads $files; user memory ${if (plan.contextPolicy.includeUserMemory) "on" else "off"}; recent messages ${if (plan.contextPolicy.includeRecentMessages) "on" else "on demand"}",
-    )
+    return "reads $files; user memory ${if (plan.contextPolicy.includeUserMemory) "on" else "off"}; recent messages ${if (plan.contextPolicy.includeRecentMessages) "on" else "on demand"}"
 }
 
 private fun roleToolPolicyText(plan: RoleChatControlPlan): String {
-    val preferred = plan.toolPolicy.preferredToolIds.joinToString(", ").ifBlank { uiText("无固定偏好", "no fixed preference") }
-    val blocked = plan.toolPolicy.blockedToolIds.joinToString(", ").ifBlank { uiText("无", "none") }
-    return uiText(
-        "偏好：$preferred；禁用：$blocked；MCP ${if (plan.toolPolicy.allowMcp) "允许" else "禁用"}",
-        "preferred: $preferred; blocked: $blocked; MCP ${if (plan.toolPolicy.allowMcp) "allowed" else "disabled"}",
-    )
+    val preferred = plan.toolPolicy.preferredToolIds.joinToString(", ").ifBlank { "no fixed preference" }
+    val blocked = plan.toolPolicy.blockedToolIds.joinToString(", ").ifBlank { "none" }
+    return "preferred: $preferred; blocked: $blocked; MCP ${if (plan.toolPolicy.allowMcp) "allowed" else "disabled"}"
 }
 
 private fun rolePersistencePolicyText(plan: RoleChatControlPlan): String =
-    uiText(
-        "角色记忆 ${if (plan.persistencePolicy.allowRoleMemoryWrite) "允许" else "不主动"}；用户记忆 ${if (plan.persistencePolicy.allowUserMemoryWrite) "允许" else "禁用"}；阈值 ${plan.persistencePolicy.memoryImportanceThreshold}",
-        "role memory ${if (plan.persistencePolicy.allowRoleMemoryWrite) "allowed" else "passive"}; user memory ${if (plan.persistencePolicy.allowUserMemoryWrite) "allowed" else "disabled"}; threshold ${plan.persistencePolicy.memoryImportanceThreshold}",
-    )
+    "role memory ${if (plan.persistencePolicy.allowRoleMemoryWrite) "allowed" else "passive"}; user memory ${if (plan.persistencePolicy.allowUserMemoryWrite) "allowed" else "disabled"}; threshold ${plan.persistencePolicy.memoryImportanceThreshold}"
 
 private fun LogLine.withLifecycle(
     running: Boolean,
@@ -6820,16 +6729,16 @@ private fun List<LogLine>.finishLatestRunningLine(now: Long = System.currentTime
     }
 }
 
-// 运行时内部报文统一翻译成人话，避免聊天步骤看起来像控制台日志。
+// Present internal runtime messages as user-facing progress rather than console output.
 private fun friendlyRuntimeNotice(message: String): String {
     val normalized = message.trim()
     return when {
         normalized.startsWith("LLM error:") ->
             friendlyLlmFailureMessage(normalized.removePrefix("LLM error:").trim())
         normalized.contains("skill '", ignoreCase = true) && normalized.contains("not found", ignoreCase = true) ->
-            uiText("这一步工具调用没有成功，正在改走别的处理方式", "This tool call did not succeed, so switching to another approach")
+            "This tool call did not succeed, so switching to another approach"
         normalized.startsWith("Error executing ") ->
-            uiText("这一步执行时出了问题，正在根据返回结果继续修正", "This step hit an execution issue; continuing to fix it from the result")
+            "This step hit an execution issue; continuing to fix it from the result"
         else -> normalized
     }
 }
@@ -6848,20 +6757,14 @@ private fun friendlyLlmFailureMessage(raw: String): String {
     return when {
         lowered.contains("not connected to the query engine") ||
             lowered.contains("must call connect() before attempting to query data") ->
-            uiText(
-                "当前聊天网关没有接到可直接对话的查询引擎，chat 能力配置错了，不能继续拿它做回复总结",
-                "The current chat gateway is not connected to a query engine, so it cannot summarize the reply.",
-            )
+            "The current chat gateway is not connected to a query engine, so it cannot summarize the reply."
         lowered.contains("authentication error") || lowered.contains("api error 401") ->
-            uiText(
-                "当前聊天网关鉴权失败，或者你填的接口并不是可直接对话的 chat 入口",
-                "The current chat gateway failed authentication, or the endpoint is not a usable chat endpoint.",
-            )
-        else -> uiText("模型这一步返回异常，当前请求没有完成", "The model response failed, so this request was not completed.")
+            "The current chat gateway failed authentication, or the endpoint is not a usable chat endpoint."
+        else -> "The model response failed, so this request was not completed."
     }
 }
 
-// 从长结果里抽一条用户真正看得懂的判断，避免展开前只看到“读了很多结果”。
+// Reduce long technical output to one useful progress statement when appropriate.
 private fun summarizeTechnicalResultForUser(skillId: String?, rawText: String): String? {
     val normalized = rawText
         .lineSequence()
@@ -6878,11 +6781,11 @@ private fun summarizeTechnicalResultForUser(skillId: String?, rawText: String): 
     if (normalized.isBlank()) return null
     return when (skillId) {
         "web_search", "fetch_url", "web_browse", "web_content", "web_js" ->
-            uiText("已经拿到候选内容，下一步会筛掉无关信息，只保留结论", "Candidate content is available; next, irrelevant information will be filtered out.")
+            "Candidate content is available; next, irrelevant information will be filtered out."
         "see_screen", "screenshot", "read_screen", "bg_screenshot", "bg_read_screen" ->
-            uiText("已经看清当前界面，下一步会直接判断该点哪里", "The current screen is visible; next, the agent will decide where to act.")
+            "The current screen is visible; next, the agent will decide where to act."
         "tap", "long_click", "scroll", "input_text", "navigate" ->
-            uiText("已经拿到操作后的界面反馈，下一步会确认目标是否达成", "Screen feedback is available; next, the agent will confirm whether the goal was reached.")
+            "Screen feedback is available; next, the agent will confirm whether the goal was reached."
         "app_manager", "ui_builder" -> null
         else -> normalized.take(120)
     }
