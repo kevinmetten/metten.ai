@@ -33,6 +33,13 @@ class ExplicitUserFactExtractorTest {
             "profile.dislikes",
             "unnecessary confirmation dialogs",
         )
+        assertFact("I don't like verbose answers", "profile.dislikes", "verbose answers")
+        assertFact("I dislike popups", "profile.dislikes", "popups")
+        assertFact(
+            "I hate unnecessary confirmation dialogs",
+            "profile.dislikes",
+            "unnecessary confirmation dialogs",
+        )
         assertFact(
             "From now on, keep your answers short",
             "profile.preferred_style",
@@ -154,6 +161,31 @@ class ExplicitUserFactExtractorTest {
             "From now on, I prefer concise answers",
             "profile.preferences",
             "concise answers",
+        )
+    }
+
+    @Test
+    fun `rejects temporary and deictic artifact reactions as dislikes`() {
+        listOf(
+            "I don't like this image",
+            "I don't like this result",
+            "I don't like this version",
+            "I dislike this version",
+            "I hate what you did here",
+            "I don't like it",
+            "I dislike that",
+            "I don't like the current page",
+            "I don't like this for this task",
+        ).forEach { text ->
+            assertFalse(
+                "Unexpected durable dislike for: $text",
+                ExplicitUserFactExtractor.extract(text).containsKey("profile.dislikes"),
+            )
+        }
+        assertFact(
+            "From now on, I don't like verbose answers",
+            "profile.dislikes",
+            "verbose answers",
         )
     }
 

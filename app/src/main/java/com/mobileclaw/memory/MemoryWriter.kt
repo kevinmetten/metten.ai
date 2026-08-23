@@ -265,12 +265,14 @@ internal object ExplicitUserFactExtractor {
 
         val normalizedPreferenceText = durablePrefixPattern.replace(trimmed, "")
         preferencePattern.find(normalizedPreferenceText)?.groupValues?.get(1)?.let { candidate ->
-            if (isDurablePreference(candidate, hasExplicitDurability(trimmed))) {
+            if (isDurablePreferenceCandidate(candidate, hasExplicitDurability(trimmed))) {
                 putClean("profile.preferences", candidate)
             }
         }
-        dislikePattern.find(trimmed)?.groupValues?.get(1)?.let {
-            putClean("profile.dislikes", it)
+        dislikePattern.find(normalizedPreferenceText)?.groupValues?.get(1)?.let { candidate ->
+            if (isDurablePreferenceCandidate(candidate, hasExplicitDurability(trimmed))) {
+                putClean("profile.dislikes", candidate)
+            }
         }
         extractPreferredStyle(trimmed)?.let {
             putClean("profile.preferred_style", it)
@@ -353,7 +355,7 @@ internal object ExplicitUserFactExtractor {
         return occupationTitlePattern.matches(lower)
     }
 
-    private fun isDurablePreference(candidate: String, explicitDurability: Boolean): Boolean {
+    private fun isDurablePreferenceCandidate(candidate: String, explicitDurability: Boolean): Boolean {
         if (explicitDurability) return true
         val lower = cleanValue(candidate).lowercase()
         if (lower.isBlank()) return false
