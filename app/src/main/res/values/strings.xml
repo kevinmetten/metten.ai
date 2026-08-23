@@ -1230,6 +1230,15 @@ You MUST respond in Simplified Chinese.
     <string name="workspace_no_active_memory">No task-scoped memory is active yet.</string>
     <string name="workspace_promote">Promote</string>
     <string name="workspace_delete">Delete</string>
+    <string name="workspace_areas">Workspace Areas</string>
+    <string name="workspace_no_areas">No workspace areas available.</string>
+    <string name="workspace_current_location">Current location</string>
+    <string name="workspace_area_root">Area root</string>
+    <string name="workspace_root">Root</string>
+    <string name="workspace_files">Files</string>
+    <string name="workspace_parent_directory">Parent directory</string>
+    <string name="workspace_empty_directory">This directory has no files to display.</string>
+    <string name="workspace_open_externally">Open externally</string>
     <string name="chat_working_update">Still working on this.</string>
     <string name="chat_checkpoint_done">Completed %1$d execution steps so far.</string>
     <string name="chat_checkpoint_started">Started with: %1$s</string>

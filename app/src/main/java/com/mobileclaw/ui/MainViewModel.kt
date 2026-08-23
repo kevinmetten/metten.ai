@@ -207,6 +207,7 @@ import com.mobileclaw.ui.profile.ProfileAiGeneration
 import com.mobileclaw.ui.workspace.SemanticFactLike
 import com.mobileclaw.ui.workspace.WorkspaceRuntimeCoordinator
 import com.mobileclaw.ui.workspace.WorkspaceRuntimeRecorder
+import com.mobileclaw.ui.workspace.WorkspacePresentationSemantics
 import com.mobileclaw.vpn.AppHttpProxy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -4913,18 +4914,18 @@ For pure conversational replies, greetings, explanations, and simple factual ans
         val taskCount = state.videoTasks.size + state.sessionStates.size + taskWorkspaces.count { it.status == "active" }
 
         return listOf(
-            workspaceArea("roles", "角色区域", "角色核心、技能、记忆与切换沉淀", state.availableRoles.size, "已接入角色列表"),
-            workspaceArea("user_memory", "用户角色沉淀区域", "用户自己的长期记忆、画像和偏好", semanticFacts.size, "已接入语义记忆"),
-            workspaceArea("work", "工作区域", "AI 生成文件、任务产物和工作集", taskWorkspaces.size, "复用现有任务工作空间"),
-            workspaceArea("sessions", "会话区域", "聊天会话、上下文和运行记录", state.sessions.size, "已接入最近会话"),
-            workspaceArea("skills", "技能区域", "内置技能、用户技能和技能备注", state.allSkills.size, "技能市场可见能力"),
-            workspaceArea("mcp", "MCP 区域", "公开 MCP 接入后安装出的工具能力", mcpSkills.size, "通过技能化方式接入"),
-            workspaceArea("models", "模型与网关区域", "角色使用的模型、网关和本地模型配置", configuredModelCount + installedLocalModels, modelWorkspaceStatus(configSnapshot, installedLocalModels)),
-            workspaceArea("media", "媒体资源区域", "图片、视频、MiniAPP 与 AI 页面产物", mediaCount, "聚合可见媒体产物"),
-            workspaceArea("system", "系统工作区域", "权限、控制台、VPN、缓存与运行配置", configSnapshot.gateways.size, "网关与系统配置可管理"),
-            workspaceArea("tasks", "任务运行区域", "视频任务、活跃运行态和任务 workspace", taskCount, "汇总当前运行线索"),
-            workspaceArea("play", "玩法区域", "AI 小镇、角色互动和未来玩法状态", state.agentTown.rooms.size, "AI 小镇入口暂隐藏"),
-            workspaceArea("backup", "导入导出区域", "角色、MiniAPP、AI 页面等可迁移资源包", portablePackageCount, if (portablePackageCount > 0) "已接入资源包目录" else "等待导出资源包"),
+            workspaceArea("roles", "Roles", "Role definitions, skills, memory, and role-specific state", state.availableRoles.size, "Connected to the role catalog"),
+            workspaceArea("user_memory", "User Memory", "Long-term user memory, profile facts, and preferences", semanticFacts.size, "Connected to semantic memory"),
+            workspaceArea("work", "Work", "AI-generated files, task artifacts, and workspaces", taskWorkspaces.size, "Uses existing task workspaces"),
+            workspaceArea("sessions", "Sessions", "Chat sessions, context, and runtime records", state.sessions.size, "Connected to recent sessions"),
+            workspaceArea("skills", "Skills", "Built-in skills, user skills, and skill notes", state.allSkills.size, "Visible skill capabilities"),
+            workspaceArea("mcp", "MCP", "Tools installed through configured MCP integrations", mcpSkills.size, "Exposed through the skill system"),
+            workspaceArea("models", "Models & Gateways", "Cloud gateways, assigned models, and local models", configuredModelCount + installedLocalModels, modelWorkspaceStatus(configSnapshot, installedLocalModels)),
+            workspaceArea("media", "Media", "Images, videos, MiniAPPs, and AI Page artifacts", mediaCount, "Aggregates visible media artifacts"),
+            workspaceArea("system", "System", "Permissions, console data, VPN, runtime cache, and configuration", configSnapshot.gateways.size, "Gateway and system configuration available"),
+            workspaceArea("tasks", "Task Runtime", "Active task state, video tasks, recipes, replays, and workspaces", taskCount, "Summarizes current runtime activity"),
+            workspaceArea("play", "Play", "Agent Town and related role-interaction state", state.agentTown.rooms.size, "Agent Town data available"),
+            workspaceArea("backup", "Import & Export", "Portable role, MiniAPP, AI Page, and workspace packages", portablePackageCount, if (portablePackageCount > 0) "Portable packages available" else "Waiting for exported packages"),
         )
     }
 
@@ -4939,15 +4940,15 @@ For pure conversational replies, greetings, explanations, and simple factual ans
             id = id,
             title = title,
             description = description,
-            countLabel = "${count} 项",
+            countLabel = WorkspacePresentationSemantics.itemCount(count),
             statusLabel = status,
         )
 
     private fun modelWorkspaceStatus(snapshot: ConfigSnapshot, installedLocalModels: Int): String = when {
-        snapshot.localNativeOnly -> "本地原生优先，已安装 $installedLocalModels 个本地模型"
-        snapshot.localModelEnabled -> "本地模型启用，已安装 $installedLocalModels 个本地模型"
-        snapshot.gateways.isNotEmpty() -> "当前网关：${snapshot.activeGateway?.name ?: snapshot.activeGatewayId ?: "默认"}"
-        else -> "未配置网关"
+        snapshot.localNativeOnly -> "Local-native mode; $installedLocalModels local ${if (installedLocalModels == 1) "model" else "models"} installed"
+        snapshot.localModelEnabled -> "Local model enabled; $installedLocalModels local ${if (installedLocalModels == 1) "model" else "models"} installed"
+        snapshot.gateways.isNotEmpty() -> "Active gateway: ${snapshot.activeGateway?.name ?: snapshot.activeGatewayId ?: "Default"}"
+        else -> "No gateway configured"
     }
 
     private fun workspacePortablePackageCount(): Int {
@@ -4970,7 +4971,7 @@ For pure conversational replies, greetings, explanations, and simple factual ans
                     path = root.name.ifBlank { root.absolutePath },
                     absolutePath = root.absolutePath,
                     isDirectory = true,
-                    sizeLabel = "目录",
+                    sizeLabel = "Directory",
                     updatedLabel = formatWorkspaceFileTime(root.lastModified()),
                     preview = root.absolutePath,
                 )
@@ -5025,7 +5026,7 @@ For pure conversational replies, greetings, explanations, and simple factual ans
                     path = file.name + if (file.isDirectory) "/" else "",
                     absolutePath = file.absolutePath,
                     isDirectory = file.isDirectory,
-                    sizeLabel = if (file.isDirectory) "目录" else formatWorkspaceFileSize(file.length()),
+                    sizeLabel = if (file.isDirectory) "Directory" else formatWorkspaceFileSize(file.length()),
                     updatedLabel = formatWorkspaceFileTime(file.lastModified()),
                     preview = if (file.isFile) workspaceFilePreview(file) else file.absolutePath,
                 )
@@ -5035,13 +5036,13 @@ For pure conversational replies, greetings, explanations, and simple factual ans
             .orEmpty()
 
     private fun workspaceFilePreview(file: File): String {
-        if (file.length() > 256_000L) return "文件较大，仅展示元信息。"
+        if (file.length() > 256_000L) return "Large file; showing metadata only."
         val name = file.name.lowercase(Locale.getDefault())
         val textLike = listOf(".md", ".txt", ".json", ".jsonl", ".html", ".css", ".js", ".xml", ".yml", ".yaml", ".csv", ".log")
             .any { name.endsWith(it) }
-        if (!textLike) return "二进制或媒体文件，仅展示元信息。"
+        if (!textLike) return "Binary or media file; showing metadata only."
         return runCatching { file.readText().take(1600).ifBlank { "(empty)" } }
-            .getOrDefault("无法读取该文件内容。")
+            .getOrDefault("Could not read this file.")
     }
 
     private fun formatWorkspaceFileSize(bytes: Long): String = when {
@@ -5051,7 +5052,7 @@ For pure conversational replies, greetings, explanations, and simple factual ans
     }
 
     private fun formatWorkspaceFileTime(timestamp: Long): String =
-        if (timestamp <= 0L) "未知时间" else SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(timestamp))
+        if (timestamp <= 0L) "Unknown time" else SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(timestamp))
 
     fun promoteWorkspaceFact(memoryKey: String) {
         viewModelScope.launch(Dispatchers.IO) {
