@@ -22,12 +22,12 @@ data class Role(
     companion object {
         val DEFAULT = Role(
             id = "general",
-            name = "通用助手",
-            description = "按用户任务自动进入对应模式，可按需调度所有可用能力",
+            name = "General Assistant",
+            description = "Coordinates available capabilities according to the user's task.",
             avatar = RoleAvatarDefaults.GENERAL,
             systemPromptAddendum = "Act as the user's general runtime coordinator. You may use any available MobileClaw capability when it directly serves the user's goal, while respecting actual Android/system availability.",
             preferredTaskTypes = listOf(TaskType.CHAT, TaskType.GENERAL),
-            keywords = listOf("聊天", "问答", "通用", "chat", "general"),
+            keywords = listOf("chat", "conversation", "assistant", "general", "question", "answer"),
             isBuiltin = true,
         )
 
@@ -35,62 +35,62 @@ data class Role(
             DEFAULT,
             Role(
                 id = "coder",
-                name = "代码专家",
-                description = "专注于编程、调试、脚本和自动化任务",
+                name = "Code Expert",
+                description = "Focuses on programming, debugging, scripting, and automation.",
                 avatar = RoleAvatarDefaults.CODER,
                 systemPromptAddendum = "You are an expert software engineer. Use code, files, phone control, web, MCP, and other MobileClaw capabilities whenever they help solve the user's goal. Keep changes scoped, verify with builds/tests when possible, and report command results clearly.",
                 preferredTaskTypes = listOf(TaskType.CODE_EXECUTION, TaskType.FILE_CREATE),
-                keywords = listOf("代码", "编程", "脚本", "调试", "编译", "bug", "shell", "python", "gradle"),
+                keywords = listOf("code", "programming", "script", "debug", "compile", "bug", "shell", "python", "gradle"),
                 isBuiltin = true,
             ),
             Role(
                 id = "web_agent",
-                name = "网络助手",
-                description = "专注于网络搜索、信息抓取和网页浏览",
+                name = "Web Assistant",
+                description = "Focuses on web search, research, information retrieval, and browsing.",
                 avatar = RoleAvatarDefaults.WEB,
                 systemPromptAddendum = "You specialize in web research, but you may use any MobileClaw capability needed to complete the user's goal. Prefer source-backed answers and summarize findings concisely.",
                 preferredTaskTypes = listOf(TaskType.WEB_RESEARCH),
-                keywords = listOf("搜索", "查询", "网页", "资料", "新闻", "最新", "research", "search", "browse"),
+                keywords = listOf("search", "research", "web", "website", "sources", "news", "latest", "browse"),
                 isBuiltin = true,
             ),
             Role(
                 id = "phone_operator",
-                name = "手机操控",
-                description = "专注于控制 Android 界面、点击、滑动和应用操作",
+                name = "Phone Operator",
+                description = "Focuses on Android UI control, tapping, scrolling, and app operation.",
                 avatar = RoleAvatarDefaults.PHONE,
                 systemPromptAddendum = "You specialize in VLM phone-control tasks. Use the observe -> act -> verify loop. Start with see_screen, use screenshot only when markers are unusable, then take a concrete action before observing again. Coordinates from see_screen/screenshot are image pixels; tap/scroll/long_click map them to device pixels. Verify target app state with foreground package/activity from tool results or phone_status.",
                 preferredTaskTypes = listOf(TaskType.PHONE_CONTROL),
-                keywords = listOf("手机", "打开", "点击", "滑动", "输入", "长按", "屏幕", "app", "android"),
+                keywords = listOf("phone", "android", "open", "tap", "click", "scroll", "swipe", "type", "screen", "app"),
                 isBuiltin = true,
             ),
             Role(
                 id = "creator",
-                name = "创意助手",
-                description = "专注于原生页面、MiniAPP 程序、图片生成和内容创作",
+                name = "Creative Assistant",
+                description = "Focuses on native pages, MiniAPPs, media generation, and content or artifact creation.",
                 avatar = RoleAvatarDefaults.CREATOR,
                 systemPromptAddendum = "You specialize in IMAGE_GENERATION, APP_BUILD, and FILE_CREATE tasks. Respect conversation context before creating anything: follow-up messages like continue/change/optimize usually modify the current artifact, and questions or feedback should be answered directly. For explicit page/dashboard/form/panel/screen creation or update requests, prefer ui_builder to create or update an AI Native Page. Use app_manager only for explicit app/mini-app/program/game or custom HTML/JS/Python/SQLite runtime needs. Never return raw code or HTML when a creation tool can create the artifact. For PPT/PPTX, Word/DOCX, Excel/XLSX, and PDF, always use generate_document and provide structured JSON content; never hand-write office files with create_file or Python libraries. Produce complete usable outputs instead of long raw content in chat.",
                 preferredTaskTypes = listOf(TaskType.IMAGE_GENERATION, TaskType.APP_BUILD, TaskType.FILE_CREATE),
-                keywords = listOf("图片", "画图", "图标", "视频", "页面", "原生页面", "ai页面", "仪表盘", "应用", "miniapp", "html", "文档", "文件", "生成"),
+                keywords = listOf("image", "picture", "draw", "icon", "video", "page", "native page", "dashboard", "app", "miniapp", "html", "document", "file", "generate"),
                 isBuiltin = true,
             ),
             Role(
                 id = "skill_admin",
-                name = "技能管理员",
-                description = "专注于检查、创建、安装和整理 skill",
+                name = "Skill Manager",
+                description = "Focuses on inspecting, creating, installing, and organizing skills.",
                 avatar = RoleAvatarDefaults.SKILL,
                 systemPromptAddendum = "You specialize in skill management. Inspect the current skill inventory before changing it, and use any MobileClaw capability needed to install, test, repair, or organize skills.",
                 preferredTaskTypes = listOf(TaskType.SKILL_MANAGEMENT),
-                keywords = listOf("skill", "技能", "能力", "安装", "创建技能", "技能市场"),
+                keywords = listOf("skill", "capability", "install", "create skill", "skill market"),
                 isBuiltin = true,
             ),
             Role(
                 id = "vpn_operator",
-                name = "VPN 管理员",
-                description = "专注于 VPN 开关、节点选择、订阅和连接状态诊断",
+                name = "VPN Manager",
+                description = "Focuses on VPN switching, proxy or node selection, subscriptions, and connection diagnostics.",
                 avatar = RoleAvatarDefaults.VPN,
                 systemPromptAddendum = "You specialize in VPN and proxy tasks. Use vpn_control, phone control, web, files, and other MobileClaw capabilities as needed for setup, diagnosis, and operation.",
                 preferredTaskTypes = listOf(TaskType.VPN_CONTROL),
-                keywords = listOf("vpn", "代理", "节点", "订阅", "全局", "连接", "mihomo", "clash"),
+                keywords = listOf("vpn", "proxy", "node", "subscription", "connect", "network", "mihomo", "clash"),
                 isBuiltin = true,
             ),
         )
@@ -137,19 +137,7 @@ fun Role.effectiveModelBinding(): RoleModelBinding? {
     return binding ?: RoleModelBinding.fromLegacy(modelOverride)
 }
 
-fun Role.localizedName(language: String): String {
-    if (language != "en" || !isBuiltin) return name
-    return when (id) {
-        "general" -> "General Assistant"
-        "coder" -> "Code Expert"
-        "web_agent" -> "Web Assistant"
-        "phone_operator" -> "Phone Operator"
-        "creator" -> "Creative Assistant"
-        "skill_admin" -> "Skill Manager"
-        "vpn_operator" -> "VPN Manager"
-        else -> name
-    }
-}
+fun Role.localizedName(@Suppress("UNUSED_PARAMETER") language: String): String = name
 
 object RoleAvatarDefaults {
     const val GENERAL = "role:general"

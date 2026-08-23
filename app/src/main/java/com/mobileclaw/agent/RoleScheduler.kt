@@ -89,7 +89,7 @@ object RoleScheduler {
             reasons += "keywords=${keywordHits.take(5).joinToString(",")}"
         }
         val inferredHits = inferNeedles(taskType)
-            .filter { roleText.contains(it) || normalizedGoal.contains(it) && roleText.contains(it.take(2)) }
+            .filter { roleText.contains(it) }
             .distinct()
         if (inferredHits.isNotEmpty()) {
             score += inferredHits.size.coerceAtMost(4) * 8
@@ -108,12 +108,7 @@ object RoleScheduler {
     private fun shouldKeepCurrentRole(memoryContext: String, taskType: TaskType, currentRole: Role): Boolean {
         if (memoryContext.isBlank()) return false
         val lower = memoryContext.lowercase()
-        val noAutoSwitch = lower.contains("不要乱切人") ||
-            lower.contains("不要自动切角色") ||
-            lower.contains("不要乱切角色") ||
-            lower.contains("乱切人") ||
-            lower.contains("乱切角色") ||
-            lower.contains("no auto role switch") ||
+        val noAutoSwitch = lower.contains("no auto role switch") ||
             lower.contains("agent.behavior.keep_current_role") ||
             lower.contains("keep current role")
         if (!noAutoSwitch) return false
@@ -139,15 +134,15 @@ object RoleScheduler {
     }
 
     private fun inferNeedles(taskType: TaskType): List<String> = when (taskType) {
-        TaskType.PHONE_CONTROL -> listOf("手机", "android", "操作", "点击", "屏幕")
-        TaskType.WEB_RESEARCH -> listOf("搜索", "研究", "网页", "资料", "新闻", "research")
-        TaskType.FILE_CREATE -> listOf("文件", "文档", "写作", "生成", "file")
-        TaskType.APP_BUILD -> listOf("应用", "app", "html", "页面", "工具")
-        TaskType.IMAGE_GENERATION -> listOf("图片", "图像", "画图", "设计", "image")
-        TaskType.VPN_CONTROL -> listOf("vpn", "代理", "节点", "订阅", "网络")
-        TaskType.SKILL_MANAGEMENT -> listOf("skill", "技能", "能力", "安装", "创建")
-        TaskType.CODE_EXECUTION -> listOf("代码", "编程", "脚本", "shell", "python")
+        TaskType.PHONE_CONTROL -> listOf("android", "phone", "screen", "tap", "control")
+        TaskType.WEB_RESEARCH -> listOf("research", "search", "web", "source", "news")
+        TaskType.FILE_CREATE -> listOf("file", "document", "write", "generate")
+        TaskType.APP_BUILD -> listOf("app", "page", "dashboard", "html", "build")
+        TaskType.IMAGE_GENERATION -> listOf("image", "picture", "draw", "design", "generate")
+        TaskType.VPN_CONTROL -> listOf("vpn", "proxy", "node", "subscription", "network")
+        TaskType.SKILL_MANAGEMENT -> listOf("skill", "capability", "install", "create")
+        TaskType.CODE_EXECUTION -> listOf("code", "programming", "script", "shell", "python")
         TaskType.CHAT,
-        TaskType.GENERAL -> listOf("聊天", "通用", "助手")
+        TaskType.GENERAL -> listOf("chat", "conversation", "assistant", "general")
     }
 }
