@@ -6,8 +6,6 @@ import androidx.room.Index
 import androidx.room.Insert
 import androidx.room.PrimaryKey
 import androidx.room.Query
-import com.mobileclaw.ui.group.GROUP_CHANNEL_PUBLIC
-import com.mobileclaw.ui.group.GROUP_VISIBILITY_PUBLIC
 
 data class GroupMessageGroupCount(
     val groupId: String,
@@ -31,8 +29,8 @@ data class GroupMessageEntity(
     val senderAvatar: String,
     val text: String,
     val attachmentsJson: String = "[]",
-    val channelId: String = GROUP_CHANNEL_PUBLIC,
-    val visibility: String = GROUP_VISIBILITY_PUBLIC,
+    val channelId: String = "public",
+    val visibility: String = "public",
     val createdAt: Long = System.currentTimeMillis(),
 )
 
