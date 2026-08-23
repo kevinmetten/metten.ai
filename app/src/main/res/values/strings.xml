@@ -75,9 +75,12 @@
     <string name="btn_back">Return</string>
 
     <!-- Drawer -->
+    <string name="common_you">You</string>
+    <string name="common_create">Create</string>
+    <string name="attachment_label_file">File</string>
+    <string name="attachment_label_file_list">File list</string>
     <string name="drawer_new_session">New Conversation</string>
     <string name="drawer_recent">Recent conversations</string>
-    <string name="drawer_groups">Group</string>
     <string name="drawer_apps">CMS / Applications</string>
     <string name="drawer_console">CONTROL CONSOLE</string>
     <string name="drawer_roles">Role</string>
@@ -89,21 +92,7 @@
     <string name="drawer_minutes_ago">%d minutes ago</string>
     <string name="drawer_yesterday">YESTERDAY</string>
 
-    <!-- Groups page -->
-    <string name="groups_title">Group</string>
-    <string name="groups_empty_hint">Create a group to invite multiple AI characters to discuss and perform tasks together</string>
-    <string name="groups_empty">No groups yet</string>
-    <string name="groups_you">you.</string>
-    <string name="group_new_title">Create Groups</string>
-    <string name="group_field_name">Group Name</string>
-    <string name="group_field_name_hint">Enter Group Name</string>
-    <string name="group_field_icon">CHOOSE ICON</string>
-    <string name="group_field_members">Select members (at least 1)</string>
-    <string name="group_create">Create</string>
 
-    <!-- Group chat -->
-    <string name="group_chat_hint">Message, can @ members...</string>
-    <string name="group_mention_label">@ Mention members</string>
 
     <!-- Browser page -->
     <string name="browser_address_hint">Search or type in a URL…</string>
@@ -379,8 +368,6 @@ Example: "Create an expense tracker app with a database"</string>
     <string name="dimension_edit">Edit</string>
     <string name="drawer_edit">Edit user config</string>
     <string name="dynamic_ui_input">Enter content...</string>
-    <string name="group_chat_df1fd9">You</string>
-    <string name="group_chat_1fd02a">User</string>
     <string name="help_c182e7">PLAY</string>
     <string name="help_7820e3">Step 1: Configure the API</string>
     <string name="help_tap">Click the top left drawer menu → ⚙️ setting and fill in the API Base URL and API Key (OpenAI, DeepSeek and other compatible interfaces are supported).</string>
@@ -413,7 +400,7 @@ Example: "Create an expense tracker app with a database"</string>
     <string name="help_select">After selecting🌐 Web Assistant, the Agent will prioritize web browsing tools</string>
     <string name="help_tap_3">Click on the top model name chip to quickly switch between models. Or simply tell Agent, “Please use DeepSeek to help me with this task”</string>
     <string name="help_a8e691">Support: gpt-4o/gpt-4o-mini/deepseek-chat/deepseek-reasoner, etc.</string>
-    <string name="help_fddab2">Custom Groups</string>
+    <string name="help_fddab2">Custom Roles</string>
     <string name="help_a442fd">Click "+" on the role page to create a new role, which allows you to set exclusive system prompts, forced loading skills, and model preferences.</string>
     <string name="help_835192">Skills &amp; Extensions</string>
     <string name="help_ed18e0">Built-in Skills</string>
@@ -445,7 +432,6 @@ Example: "Create an expense tracker app with a database"</string>
     <string name="help_dc024f">Having trouble? On the Settings page, you can view the API configuration status and server connectivity.</string>
     <string name="home_859362">Chat</string>
     <string name="home_c478b1">Profile</string>
-    <string name="home_df9abd">Groups</string>
     <string name="role_card_generating">Generating</string>
     <string name="role_card_current">Current role</string>
     <string name="role_card_label">Role card</string>
@@ -823,20 +809,16 @@ Example: "Create an expense tracker app with a database"</string>
     <string name="classic_agents">Team</string>
     <string name="classic_tools">Tools</string>
     <string name="classic_workspace_desc">Files, apps, pages, and generated results.</string>
-    <string name="classic_agents_desc">Members, group chats, and personal records.</string>
     <string name="classic_tools_desc">Connections, browsing, and extensions.</string>
     <string name="classic_mini_apps_desc">HTML mini apps.</string>
     <string name="classic_ai_pages_desc">Native pages for repeated workflows.</string>
     <string name="classic_video_desc">Generate videos and review pending video tasks.</string>
     <string name="classic_roles_desc">Choose, edit, and organize assistants.</string>
-    <string name="classic_group_chat_desc">Group conversations and team workflows.</string>
     <string name="classic_skills_desc">Manage installed skills and injection levels.</string>
     <string name="classic_skill_market_desc">Download and install more MobileClaw skills.</string>
     <string name="classic_codex_desc">Setup guide for connecting MobileClaw to desktop Codex.</string>
     <string name="classic_browser">Browser</string>
     <string name="classic_browser_desc">Open web pages and send page context to the agent.</string>
-    <string name="classic_single_chat">Single chat</string>
-    <string name="classic_group_chat">Group chat</string>
     <string name="classic_local">Local</string>
     <string name="classic_mini_apps">Mini apps</string>
     <string name="classic_default_user">MobileClaw User</string>
@@ -855,8 +837,6 @@ Example: "Create an expense tracker app with a database"</string>
     <string name="settings_recommended">Recommended</string>
     <string name="settings_enabled">Enabled</string>
     <string name="settings_go_configure">Open settings</string>
-    <string name="group_status_working">working…</string>
-    <string name="group_status_typing">typing…</string>
     <string name="aipage_not_found">Page not found: %s</string>
     <string name="role_field_scheduler_keywords">Scheduler keywords</string>
     <string name="role_field_scheduler_keywords_hint">stocks, earnings, Xiaohongshu, fitness</string>
@@ -869,26 +849,6 @@ Example: "Create an expense tracker app with a database"</string>
     <string name="perm_notification_desc">Recommended for long-running tasks and VPN status updates</string>
     <string name="perm_background_title">Background running</string>
     <string name="perm_background_desc">Recommended to prevent long-running tasks from being killed by the system</string>
-    <string name="group_attachment_image">Image attachment</string>
-    <string name="group_attachment_web">Web page: %s</string>
-    <string name="group_attachment_link">Link: %s</string>
-    <string name="group_attachment_search">Search results: %1$s (%2$d)</string>
-    <string name="group_attachment_permission">Permission request: %s</string>
-    <string name="group_attachment_file_list">File list: %d files</string>
-    <string name="group_label_image">Image</string>
-    <string name="group_label_file">File</string>
-    <string name="group_label_web">Web page</string>
-    <string name="group_label_link">Link</string>
-    <string name="group_label_search">Search results</string>
-    <string name="group_label_file_list">File list</string>
-    <string name="group_label_permission">Permission request</string>
-    <string name="group_prompt_image">Image (%s)</string>
-    <string name="group_prompt_file">File (%1$s, %2$s, %3$d bytes)</string>
-    <string name="group_prompt_html">HTML (%1$s, %2$s)</string>
-    <string name="group_prompt_web">Web page (%1$s, %2$s)</string>
-    <string name="group_prompt_search">Search results (%1$s, %2$d pages)</string>
-    <string name="group_prompt_file_list">File list (%d files)</string>
-    <string name="group_prompt_permission">Permission request (%s)</string>
     <string name="settings_adb_commands_with_note">ADB commands (%s):</string>
     <string name="settings_done">Granted</string>
     <string name="settings_not">Not granted</string>
@@ -1047,7 +1007,6 @@ You MUST respond in Simplified Chinese.
     <string name="vm_1acb86">• Very short: 1-2 sentences. This is a group message, not a report. Do not start with headings, lists, or templates.</string>
     <string name="vm_93c334">• Have personality: reflect your role, and do not repeat what others said.</string>
     <string name="vm_689bf5">=== Rules ===</string>
-    <string name="vm_427e4c">• In a real group chat, you do not need to answer every message. If it is unrelated or you have nothing to add, reply: [PASS]</string>
     <string name="vm_a8c3ee">• Speak when you have something to say. Do not force it; [PASS] is a normal choice</string>
     <string name="vm_704d6a">• If you want someone to continue, naturally mention @their name in your message</string>
     <string name="vm_e1d388">• If you do not @ anyone, your turn ends here</string>
@@ -1277,7 +1236,6 @@ You MUST respond in Simplified Chinese.
     <string name="sticker_favorites_empty">No favorite stickers yet.</string>
     <string name="sticker_favorite_action">Save</string>
     <string name="sticker_unfavorite_action">Remove</string>
-    <string name="group_members_addable">Add members</string>
     <string name="cache_title">Cache management</string>
     <string name="cache_subtitle">Clear generated files and runtime caches by category</string>
     <string name="cache_total">Reclaimable storage</string>

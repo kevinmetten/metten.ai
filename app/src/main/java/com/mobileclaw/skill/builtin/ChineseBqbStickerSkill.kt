@@ -18,7 +18,7 @@ class ChineseBqbStickerSkill(private val app: ClawApplication) : Skill {
         name = "ChineseBQB Stickers",
         nameZh = "中文表情包",
         description = "Conversational expression tool: search and send Chinese meme stickers from the built-in ChineseBQB source. " +
-            "Use proactively when your reply has a matching emotion or meme reaction, especially jokes, teasing, celebration, awkwardness, comfort, thanks, surprise, speechless moments, or playful group chat. " +
+            "Use proactively when your reply has a matching emotion or meme reaction, especially jokes, teasing, celebration, awkwardness, comfort, thanks, surprise, speechless moments, or playful conversations. " +
             "Prefer action=search with a short emotional query such as 哈哈, 笑死, 牛, 离谱, 尴尬, 无语, 摸鱼, 生气, 谢谢, 安慰, 庆祝. " +
             "Send at most one sticker in a turn, only when it genuinely fits your text; avoid stickers for serious, professional, or safety-critical answers. " +
             "Actions: random | search | categories | refresh. random/search can return an image attachment.",

@@ -24,7 +24,6 @@ import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Image
@@ -106,7 +105,6 @@ fun clawIconForSymbol(symbol: String?): ImageVector {
         value in setOf("values") -> Icons.Outlined.Security
         value in setOf("capability") -> Icons.Outlined.BatterySaver
         value in setOf("spiritual") -> Icons.Outlined.AutoFixHigh
-        value in setOf("👥", "group", "groups", "群聊", "成员") -> Icons.Outlined.Group
         value in setOf("🎭", "role", "roles", "角色") -> Icons.Outlined.TheaterComedy
         value in setOf("📱", "📲", "phone", "mobile", "app", "apps", "手机", "应用") -> Icons.Outlined.PhoneAndroid
         value in setOf("🛠", "🛠️", "tool", "tools", "skill", "skills", "技能") -> Icons.Outlined.Build

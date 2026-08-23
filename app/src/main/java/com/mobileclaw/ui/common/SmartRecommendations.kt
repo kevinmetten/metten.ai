@@ -32,7 +32,7 @@ internal fun buildSmartRecommendations(
         str(R.string.vm_785abc),
         str(R.string.vm_18a481),
         "html",
-        str(R.string.group_create),
+        str(R.string.common_create),
         str(R.string.vm_8cdf04),
     )
     val nonAppEpisodes = episodes.filter { ep ->

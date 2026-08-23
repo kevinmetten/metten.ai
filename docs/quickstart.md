@@ -17,8 +17,8 @@ Use a real device when testing phone control. Emulators are useful for basic UI 
 ## 2. Build
 
 ```bash
-git clone https://github.com/eggbrid2/mobileClaw.git
-cd mobileClaw
+git clone https://github.com/kevinmetten/metten.ai.git
+cd metten.ai
 ./scripts/assemble_debug.sh
 ```
 
@@ -120,8 +120,8 @@ Use [docs/recipes/rom-compatibility-report.md](recipes/rom-compatibility-report.
 ## 2. 构建
 
 ```bash
-git clone https://github.com/eggbrid2/mobileClaw.git
-cd mobileClaw
+git clone https://github.com/kevinmetten/metten.ai.git
+cd metten.ai
 ./scripts/assemble_debug.sh
 ```
 

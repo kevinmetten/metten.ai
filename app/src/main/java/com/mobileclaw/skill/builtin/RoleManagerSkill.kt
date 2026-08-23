@@ -41,7 +41,7 @@ class RoleManagerSkill(
         name = "Role Manager",
         description = "Create, list, update, delete, and activate agent roles (personas). " +
             "Each role has one role image field (avatar image/icon key), name, description, optional system prompt addendum, " +
-            "scheduler keywords, preferred task types, forced skill IDs, optional gateway/model binding, and open group chat bubble theme DSL. " +
+            "scheduler keywords, preferred task types, forced skill IDs, optional gateway/model binding, and an optional chat bubble theme DSL. " +
             "Use an image path/content URI/data URI, or a role icon key like role:custom. This single field is used everywhere the role image appears. " +
             "Actions: list, create, update, delete, activate, export_package, import_package.",
         parameters = listOf(
@@ -59,7 +59,7 @@ class RoleManagerSkill(
             SkillParam("gateway_id", "string", "Optional configured gateway id for this role's chat model.", required = false),
             SkillParam("gateway_name", "string", "Optional configured gateway name for this role's chat model.", required = false),
             SkillParam("gateway_model", "string", "Optional chat model from the selected gateway.", required = false),
-            SkillParam("bubble_preset", "string", "Group chat bubble preset: minimal | ink | paper | outline | glass | neon", required = false),
+            SkillParam("bubble_preset", "string", "Chat bubble preset: minimal | ink | paper | outline | glass | neon", required = false),
             SkillParam("bubble_background", "string", "Optional hex color for this role's AI chat bubble, e.g. #0A0A0A or #F7F7F4", required = false),
             SkillParam("bubble_background_image", "string", "Optional local/content/data image reference for this role's bubble background.", required = false),
             SkillParam("bubble_gradient", "string", "Optional comma-separated hex colors for a native bubble gradient.", required = false),
@@ -92,7 +92,7 @@ class RoleManagerSkill(
             SkillParam(
                 "bubble_style_json",
                 "object",
-                "Full AI-generated group chat bubble theme. Prefer native renderer with Markdown support. Supported keys include renderer/htmlTemplate/htmlHeightDp/htmlAllowJs/htmlAllowNetwork/htmlTransparent, colors, radiusDp and per-corner radii, pattern, legacy decoration fields, decorations[] for multiple relative-position local decorations, animation, font fields, textAnimation, padding, shadow(none|soft|glow), shadowColor, shadowAlpha, shadowElevationDp, shadowOffsetXDp, shadowOffsetYDp, imageMode. Use HTML only when native Markdown/style fields cannot express the bubble.",
+                "Full AI-generated chat bubble theme. Prefer native renderer with Markdown support. Supported keys include renderer/htmlTemplate/htmlHeightDp/htmlAllowJs/htmlAllowNetwork/htmlTransparent, colors, radiusDp and per-corner radii, pattern, legacy decoration fields, decorations[] for multiple relative-position local decorations, animation, font fields, textAnimation, padding, shadow(none|soft|glow), shadowColor, shadowAlpha, shadowElevationDp, shadowOffsetXDp, shadowOffsetYDp, imageMode. Use HTML only when native Markdown/style fields cannot express the bubble.",
                 required = false,
             ),
         ),

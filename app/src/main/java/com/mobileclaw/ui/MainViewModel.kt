@@ -4720,7 +4720,7 @@ For pure conversational replies, greetings, explanations, and simple factual ans
             val factsText = facts.entries.joinToString("\n") { (k, v) -> "- ${k.removePrefix("profile.")}: $v" }
             val foundationalMemory = buildUserMemoryContextForPrompt("生成用户画像总结", TaskType.GENERAL).take(1600)
             val prompt = """
-你是一位专业心理分析师。基于以下用户画像数据，写一段人格分析（约200字），用第二人称（str(R.string.group_chat_df1fd9)）表达，语气温暖而专业。
+你是一位专业心理分析师。基于以下用户画像数据，写一段人格分析（约200字），用第二人称（str(R.string.common_you)）表达，语气温暖而专业。
 
 请包含：
 1. MBTI人格类型推断（如 INTJ、ENFP 等）及一句核心说明

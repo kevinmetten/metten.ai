@@ -2992,7 +2992,7 @@ private fun FileListCard(attachment: SkillAttachment.FileList, context: android.
             ) { ClawSymbolIcon("folder", tint = c.text, modifier = Modifier.size(18.dp)) }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    attachment.directory.ifBlank { str(R.string.group_label_file_list) },
+                    attachment.directory.ifBlank { str(R.string.attachment_label_file_list) },
                     color = c.text,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,

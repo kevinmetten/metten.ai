@@ -45,7 +45,7 @@ import com.mobileclaw.ui.LocalClawColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-// Attachment cards share one visual language so chat and group chat do not drift into different message systems.
+// Attachment cards share one visual language so chat surfaces do not drift into different message systems.
 @Composable
 fun MediaAttachmentCardFrame(
     modifier: Modifier = Modifier,
@@ -130,7 +130,7 @@ fun DocumentAttachmentCard(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                attachment.mimeType.ifBlank { str(R.string.group_label_file) },
+                attachment.mimeType.ifBlank { str(R.string.attachment_label_file) },
                 color = c.subtext,
                 fontSize = 10.sp,
                 maxLines = 1,
