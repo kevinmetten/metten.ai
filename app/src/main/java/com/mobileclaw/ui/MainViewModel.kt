@@ -168,6 +168,7 @@ import com.mobileclaw.ui.image.ImageGenerationRequest
 import com.mobileclaw.ui.image.ImagePromptAiAction
 import com.mobileclaw.ui.video.VideoGenerationRequest
 import com.mobileclaw.ui.video.VideoPromptAiAction
+import com.mobileclaw.ui.skills.SkillNoteGeneration
 import com.mobileclaw.ui.workspace.WorkspaceAreaUi
 import com.mobileclaw.ui.workspace.WorkspaceFileEntryUi
 import com.mobileclaw.workspace.WorkspaceArtifactState
@@ -4778,7 +4779,7 @@ For pure conversational replies, greetings, explanations, and simple factual ans
         if (_uiState.value.skillNoteGenerating == skillId) return
         _uiState.update { it.copy(skillNoteGenerating = skillId) }
         viewModelScope.launch(Dispatchers.IO) {
-            val prompt = "你是AI工具说明撰写专家。请用中文为以下能力写一条简洁实用的用户备注（30字以内），帮助用户理解其使用场景和价值。\n\n能力名称：$skillName\n能力描述：$description\n\n直接输出备注文字，不要加任何前缀或解释。"
+            val prompt = SkillNoteGeneration.buildPrompt(skillName, description)
             val note = runCatching {
                 llm.chat(ChatRequest(
                     messages = listOf(Message(role = "user", content = prompt)),
