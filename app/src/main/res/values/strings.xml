@@ -1011,16 +1011,6 @@ You MUST respond in Simplified Chinese.
     <string name="vm_e1d388">• If you do not @ anyone, your turn ends here</string>
     <string name="vm_abc7c8">• Follow the conversation language</string>
     <string name="vm_8f6718">• Call tools only when someone explicitly asks you to perform a task, not during casual chat</string>
-    <string name="vm_008363">Based on the data</string>
-    <string name="vm_1b9366">You are a professional psychological analyst skilled in personality analysis and self-awareness.</string>
-    <string name="vm_empty">No known information yet</string>
-    <string name="vm_9c4af5">Question text</string>
-    <string name="vm_22565a">This question detects an XX tendency</string>
-    <string name="vm_628112">Option A</string>
-    <string name="vm_d37944">Option B</string>
-    <string name="vm_ad93b3">Option C</string>
-    <string name="vm_2855b8">Option D</string>
-    <string name="vm_8bf4bd">You are a professional psychologist. Output strict JSON only.</string>
     <string name="vm_not_">Unknown error</string>
     <string name="vm_e9e805">email</string>
     <string name="vm_485c3a">SMS</string>

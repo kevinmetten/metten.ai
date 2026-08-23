@@ -202,6 +202,7 @@ import com.mobileclaw.vpn.VpnManager
 import com.mobileclaw.skill.builtin.RunPythonSkill
 import com.mobileclaw.skill.executor.ShellSkill
 import com.mobileclaw.ui.profile.ProfileDimension
+import com.mobileclaw.ui.profile.ProfileAiGeneration
 import com.mobileclaw.ui.workspace.SemanticFactLike
 import com.mobileclaw.ui.workspace.WorkspaceRuntimeCoordinator
 import com.mobileclaw.ui.workspace.WorkspaceRuntimeRecorder
@@ -4689,29 +4690,12 @@ For pure conversational replies, greetings, explanations, and simple factual ans
         }
         viewModelScope.launch(Dispatchers.IO) {
             val factsText = facts.entries.joinToString("\n") { (k, v) -> "- ${k.removePrefix("profile.")}: $v" }
-            val foundationalMemory = buildUserMemoryContextForPrompt("生成用户画像总结", TaskType.GENERAL).take(1600)
-            val prompt = """
-你是一位专业心理分析师。基于以下用户画像数据，写一段人格分析（约200字），用第二人称（str(R.string.common_you)）表达，语气温暖而专业。
-
-请包含：
-1. MBTI人格类型推断（如 INTJ、ENFP 等）及一句核心说明
-2. 3-4个核心人格特质关键词
-3. 沟通与社交风格特点
-4. 主要优势与潜在成长空间
-5. 一句画龙点睛的总结
-
-用户画像数据：
-$factsText
-
-全局记忆约束：
-$foundationalMemory
-
-注意：直接开始分析，用流畅自然的语言，不要说str(R.string.vm_008363)之类的套话。如果数据较少，基于已有信息大胆推断。
-""".trimIndent()
+            val foundationalMemory = buildUserMemoryContextForPrompt("Generate a user profile summary", TaskType.GENERAL).take(1600)
+            val prompt = ProfileAiGeneration.buildPersonalitySummaryPrompt(factsText, foundationalMemory)
             val summary = runCatching {
                 llm.chat(ChatRequest(
                     messages = listOf(
-                        Message(role = "system", content = str(R.string.vm_1b9366)),
+                        Message(role = "system", content = ProfileAiGeneration.PERSONALITY_SYSTEM_INSTRUCTION),
                         Message(role = "user", content = prompt),
                     ),
                     stream = false,
@@ -4728,48 +4712,27 @@ $foundationalMemory
         val relevantFacts = facts.entries
             .filter { it.key.startsWith("profile.$dimensionId.") || it.key.startsWith("profile.personality.") || it.key.startsWith("profile.cognitive.") }
             .joinToString("\n") { (k, v) -> "- ${k.removePrefix("profile.")}: $v" }
-            .ifBlank { str(R.string.vm_empty) }
-        val foundationalMemory = buildUserMemoryContextForPrompt("生成 $dimensionTitle 心理测试题", TaskType.GENERAL).take(1600)
-        val prompt = """
-你是专业心理学家。请为"$dimensionTitle"维度生成5道深度心理测试题，持续深入了解用户的潜在特征。
-
-当前已知用户信息：
-$relevantFacts
-
-全局记忆约束：
-$foundationalMemory
-
-要求：
-- 问题要有深度，能揭示潜在心理特征，避免表面化
-- 每题4个答案选项，各选项之间有细微差别，能区分不同心理倾向
-- 结合已知信息，探索尚未了解的方面，不要重复已知内容
-- 语言自然，贴近真实心理量表的风格
-
-严格输出JSON数组（无markdown，无额外文字）：
-[{"question":str(R.string.vm_9c4af5),"hint":str(R.string.vm_22565a),"answers":[str(R.string.vm_628112),str(R.string.vm_d37944),str(R.string.vm_ad93b3),str(R.string.vm_2855b8)],"factKey":"profile.${dimensionId}.xxx"}]
-""".trimIndent()
+            .ifBlank { "No known information yet." }
+        val foundationalMemory = buildUserMemoryContextForPrompt(
+            "Generate self-reflection questions for the $dimensionTitle dimension",
+            TaskType.GENERAL,
+        ).take(1600)
+        val prompt = ProfileAiGeneration.buildDimensionQuizPrompt(
+            dimensionId = dimensionId,
+            dimensionTitle = dimensionTitle,
+            relevantFacts = relevantFacts,
+            foundationalMemory = foundationalMemory,
+        )
         val content = runCatching {
             llm.chat(ChatRequest(
                 messages = listOf(
-                    Message(role = "system", content = str(R.string.vm_8bf4bd)),
+                    Message(role = "system", content = ProfileAiGeneration.QUIZ_SYSTEM_INSTRUCTION),
                     Message(role = "user", content = prompt),
                 ),
                 stream = false,
             )).content?.trim() ?: ""
         }.getOrDefault("")
-        return runCatching {
-            val raw = content.trimStart().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
-            val arr = JsonParser.parseString(raw).asJsonArray
-            arr.map { el ->
-                val obj = el.asJsonObject
-                AiQuizQuestion(
-                    question = obj["question"]?.asString ?: "",
-                    hint     = obj["hint"]?.asString ?: "",
-                    answers  = obj["answers"]?.asJsonArray?.map { it.asString } ?: emptyList(),
-                    factKey  = obj["factKey"]?.asString ?: "profile.$dimensionId.misc",
-                )
-            }.filter { it.question.isNotBlank() && it.answers.size >= 2 }
-        }.getOrDefault(emptyList())
+        return ProfileAiGeneration.parseDimensionQuiz(content, dimensionId)
     }
 
     fun generateDimensionQuiz(dimensionId: String, dimensionTitle: String) {
