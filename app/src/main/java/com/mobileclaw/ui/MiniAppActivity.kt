@@ -97,7 +97,6 @@ class MiniAppActivity : ComponentActivity() {
             ClawTheme(
                 darkTheme = config.darkTheme,
                 accentColor = config.accentColor,
-                language = config.language,
             ) {
                 MiniAppScreen(
                     appId = appId,

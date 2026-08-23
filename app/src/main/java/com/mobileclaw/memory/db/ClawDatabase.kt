@@ -210,6 +210,13 @@ private val MIGRATION_13_14 = object : Migration(13, 14) {
     }
 }
 
+private val MIGRATION_14_15 = object : Migration(14, 15) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("DROP TABLE IF EXISTS group_game_events")
+        db.execSQL("DROP TABLE IF EXISTS group_messages")
+    }
+}
+
 private fun SupportSQLiteDatabase.addColumnIfMissing(table: String, column: String, definition: String) {
     query("PRAGMA table_info(`$table`)").use { cursor ->
         val nameIndex = cursor.getColumnIndex("name")
@@ -266,12 +273,10 @@ private val MIGRATION_2_3 = object : Migration(2, 3) {
         ConversationEntity::class,
         SessionEntity::class,
         SessionMessageEntity::class,
-        GroupMessageEntity::class,
-        GroupGameEventEntity::class,
         SubscriptionEntity::class,
         VideoGenerationTaskEntity::class,
     ],
-    version = 14,
+    version = 15,
     exportSchema = true,
 )
 abstract class ClawDatabase : RoomDatabase() {
@@ -280,8 +285,6 @@ abstract class ClawDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDao
     abstract fun sessionDao(): SessionDao
     abstract fun sessionMessageDao(): SessionMessageDao
-    abstract fun groupMessageDao(): GroupMessageDao
-    abstract fun groupGameEventDao(): GroupGameEventDao
     abstract fun subscriptionDao(): SubscriptionDao
     abstract fun videoGenerationTaskDao(): VideoGenerationTaskDao
 
@@ -308,6 +311,7 @@ abstract class ClawDatabase : RoomDatabase() {
                     MIGRATION_11_12,
                     MIGRATION_12_13,
                     MIGRATION_13_14,
+                    MIGRATION_14_15,
                 )
                 .build().also { INSTANCE = it }
             }

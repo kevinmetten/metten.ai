@@ -28,40 +28,11 @@ data class ToolSelectionResult(
     val confidence: Float,
 )
 
-class AiToolSelector(
-    private val llm: LlmGateway,
-) {
-    suspend fun select(input: ToolSelectionInput): ToolSelectionResult? {
-        val knownIds = input.availableSkills.map { it.id }.toSet()
-        val raw = try {
-            llm.chat(
-                ChatRequest(
-                    messages = listOf(
-                        Message(
-                            role = "system",
-                            content = "You are MobileClaw's tool selector. Select only the tools needed for this turn. Return one strict JSON object only.",
-                        ),
-                        Message(role = "user", content = buildPrompt(input)),
-                    ),
-                    tools = emptyList(),
-                    stream = false,
-                )
-            ).content.orEmpty()
-        } catch (t: Throwable) {
-            Log.e(TAG, "Tool selection failed for taskType=${input.taskType} goal=${input.goal.take(160)}", t)
-            return null
-        }
-        val parsed = parse(raw, knownIds) ?: return null
-        val blocked = input.blockedToolIds.toSet()
-        val selected = parsed.selectedToolIds
-            .filter { it in knownIds }
-            .filterNot { it in blocked }
-            .distinct()
-            .take(MAX_SELECTED_TOOLS)
-        return parsed.copy(selectedToolIds = selected)
-    }
+internal object AiToolSelectionContract {
+    const val MAX_DIRECTORY_TOOLS = 90
+    const val MAX_SELECTED_TOOLS = 10
 
-    private fun buildPrompt(input: ToolSelectionInput): String = """
+    fun buildPrompt(input: ToolSelectionInput): String = """
 Select the smallest useful MobileClaw tool set for the current execution goal.
 
 Goal:
@@ -76,43 +47,49 @@ ${input.roleSummary.take(900)}
 Context summary:
 ${input.contextSummary.take(1500)}
 
-Preferred tool ids from role/route:
+Preferred tool IDs from role or route:
 ${(input.preferredToolIds + input.routeToolHints).distinct().joinToString(", ").ifBlank { "none" }}
 
-Blocked tool ids:
+Blocked tool IDs:
 ${input.blockedToolIds.joinToString(", ").ifBlank { "none" }}
 
 Available tool directory:
 ${toolDirectory(input.availableSkills)}
 
 Rules:
-- This is only a tool selection step. Do not execute tools and do not answer the user.
+- This is only a tool-selection step. Do not execute tools and do not answer the user.
 - Select tools by semantic fit, not keywords.
-- Prefer a small set, usually 1-6 tools. Include dependencies needed to complete the job.
-- If the role preferred tools are relevant, include them. If they are irrelevant, ignore them.
-- Do not select blocked tools.
-- Return an empty selected_tool_ids array only when no tool should be injected and a direct model answer is enough.
+- Select the smallest useful set, generally 1-6 tools. Include dependencies needed to complete the job.
+- Include preferred tools only when they are relevant; ignore them when they are not relevant.
+- Never select blocked tools.
+- Return an empty selected_tool_ids array when no tool is needed and a direct model answer is sufficient.
+- selected_tool_ids must contain exact IDs from the available directory. Never translate or rewrite a tool ID.
+- Write reason as concise English regardless of the language of the user's task.
+- Write every execution_plan item as concise operational English regardless of the language of the user's task.
+- Return one JSON object only. selected_tool_ids and execution_plan must be proper JSON arrays.
 
 Return JSON only:
 {
   "selected_tool_ids": ["read_file", "create_file"],
-  "reason": "short operational reason",
-  "execution_plan": ["read the current file", "patch the relevant content", "verify the result"],
+  "reason": "The task requires reading and updating a file.",
+  "execution_plan": ["Read the current file", "Patch the relevant content", "Verify the result"],
   "confidence": 0.82
 }
 """.trimIndent()
 
-    private fun toolDirectory(skills: List<SkillMeta>): String =
+    fun toolDirectory(skills: List<SkillMeta>): String =
         skills
             .filterNot { it.internalTool }
             .sortedWith(compareBy<SkillMeta> { it.injectionLevel }.thenBy { it.id })
             .take(MAX_DIRECTORY_TOOLS)
             .joinToString("\n") { skill ->
                 val categories = skill.categories.joinToString(",") { it.name.lowercase() }
-                "- ${skill.id}: ${skill.nameZh ?: skill.name}; type=${skill.type}; categories=${categories.ifBlank { "none" }}; ${skill.descriptionZh ?: skill.description}".take(260)
+                val name = skill.name.ifBlank { skill.id }
+                val description = skill.description.ifBlank { "No English description available." }
+                "- ${skill.id}: $name; type=${skill.type}; categories=${categories.ifBlank { "none" }}; $description".take(260)
             }
 
-    private fun parse(raw: String, knownIds: Set<String>): ToolSelectionResult? {
+    fun parse(raw: String, knownIds: Set<String>): ToolSelectionResult? {
         val jsonText = raw.extractJsonObjectBlock() ?: return null
         val obj = runCatching { JsonParser.parseString(jsonText).asJsonObject }.getOrNull() ?: return null
         val selected = obj.stringList("selected_tool_ids")
@@ -137,7 +114,7 @@ Return JSON only:
         val element = get(name)?.takeIf { !it.isJsonNull } ?: return emptyList()
         return when {
             element.isJsonArray -> element.asJsonArray.toStringList()
-            element.isJsonPrimitive -> element.asString.split(',', '，').map { it.trim() }.filter { it.isNotBlank() }
+            element.isJsonPrimitive -> element.asString.split(',').map { it.trim() }.filter { it.isNotBlank() }
             else -> emptyList()
         }
     }
@@ -156,10 +133,42 @@ Return JSON only:
         val end = lastIndexOf('}')
         return if (start >= 0 && end > start) substring(start, end + 1) else null
     }
+}
+
+class AiToolSelector(
+    private val llm: LlmGateway,
+) {
+    suspend fun select(input: ToolSelectionInput): ToolSelectionResult? {
+        val knownIds = input.availableSkills.map { it.id }.toSet()
+        val raw = try {
+            llm.chat(
+                ChatRequest(
+                    messages = listOf(
+                        Message(
+                            role = "system",
+                            content = "You are MobileClaw's tool selector. Select only the tools needed for this turn. Return one strict JSON object only.",
+                        ),
+                        Message(role = "user", content = AiToolSelectionContract.buildPrompt(input)),
+                    ),
+                    tools = emptyList(),
+                    stream = false,
+                )
+            ).content.orEmpty()
+        } catch (t: Throwable) {
+            Log.e(TAG, "Tool selection failed for taskType=${input.taskType} goal=${input.goal.take(160)}", t)
+            return null
+        }
+        val parsed = AiToolSelectionContract.parse(raw, knownIds) ?: return null
+        val blocked = input.blockedToolIds.toSet()
+        val selected = parsed.selectedToolIds
+            .filter { it in knownIds }
+            .filterNot { it in blocked }
+            .distinct()
+            .take(AiToolSelectionContract.MAX_SELECTED_TOOLS)
+        return parsed.copy(selectedToolIds = selected)
+    }
 
     private companion object {
         private const val TAG = "AiToolSelector"
-        private const val MAX_DIRECTORY_TOOLS = 90
-        private const val MAX_SELECTED_TOOLS = 10
     }
 }

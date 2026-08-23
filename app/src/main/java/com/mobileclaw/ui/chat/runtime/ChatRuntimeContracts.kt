@@ -1,6 +1,7 @@
 package com.mobileclaw.ui.chat.runtime
 
 import com.google.gson.JsonObject
+import com.mobileclaw.agent.RoleWorkspaceMarkdownSchema
 import com.mobileclaw.agent.Role
 import com.mobileclaw.agent.TaskType
 import com.mobileclaw.ui.ContextualTaskIntent
@@ -225,21 +226,21 @@ data class RoleExecutionProtocol(
     fun toMarkdown(): String = buildString {
         appendLine("# Chat Execution Protocol")
         appendLine()
-        appendLine("## Runtime Contract")
+        appendLine(RoleWorkspaceMarkdownSchema.heading(RoleWorkspaceMarkdownSchema.ChatProtocol.RUNTIME_CONTRACT))
         appendLine("- Role id: $roleId")
         appendLine("- Protocol version: $version")
-        appendMarkdownSection("Input Understanding", inputUnderstanding)
-        appendMarkdownSection("Context Reading", contextReading)
-        appendMarkdownSection("Memory Policy", memoryPolicy)
-        appendMarkdownSection("Skill Policy", skillPolicy)
-        appendMarkdownSection("Response Policy", responsePolicy)
-        appendMarkdownSection("Persistence Policy", persistencePolicy)
+        appendMarkdownSection(RoleWorkspaceMarkdownSchema.ChatProtocol.INPUT_UNDERSTANDING, inputUnderstanding)
+        appendMarkdownSection(RoleWorkspaceMarkdownSchema.ChatProtocol.CONTEXT_READING, contextReading)
+        appendMarkdownSection(RoleWorkspaceMarkdownSchema.ChatProtocol.MEMORY_POLICY, memoryPolicy)
+        appendMarkdownSection(RoleWorkspaceMarkdownSchema.ChatProtocol.SKILL_POLICY, skillPolicy)
+        appendMarkdownSection(RoleWorkspaceMarkdownSchema.ChatProtocol.RESPONSE_POLICY, responsePolicy)
+        appendMarkdownSection(RoleWorkspaceMarkdownSchema.ChatProtocol.PERSISTENCE_POLICY, persistencePolicy)
     }.trimEnd() + "\n"
 
     private fun StringBuilder.appendMarkdownSection(title: String, content: String) {
         appendLine()
         appendLine("## $title")
-        appendLine(content.trim().ifBlank { "- 待定义。" })
+        appendLine(content.trim().ifBlank { "- Not defined." })
     }
 }
 
@@ -248,13 +249,13 @@ object RoleExecutionProtocolParser {
         val sections = splitMarkdownSections(markdown)
         return RoleExecutionProtocol(
             roleId = roleId,
-            version = sections["Runtime Contract"]?.let(::extractVersion) ?: 1,
-            inputUnderstanding = sections["Input Understanding"].orEmpty(),
-            contextReading = sections["Context Reading"].orEmpty(),
-            memoryPolicy = sections["Memory Policy"].orEmpty(),
-            skillPolicy = sections["Skill Policy"].orEmpty(),
-            responsePolicy = sections["Response Policy"].orEmpty(),
-            persistencePolicy = sections["Persistence Policy"].orEmpty(),
+            version = sections[RoleWorkspaceMarkdownSchema.ChatProtocol.RUNTIME_CONTRACT]?.let(::extractVersion) ?: 1,
+            inputUnderstanding = sections[RoleWorkspaceMarkdownSchema.ChatProtocol.INPUT_UNDERSTANDING].orEmpty(),
+            contextReading = sections[RoleWorkspaceMarkdownSchema.ChatProtocol.CONTEXT_READING].orEmpty(),
+            memoryPolicy = sections[RoleWorkspaceMarkdownSchema.ChatProtocol.MEMORY_POLICY].orEmpty(),
+            skillPolicy = sections[RoleWorkspaceMarkdownSchema.ChatProtocol.SKILL_POLICY].orEmpty(),
+            responsePolicy = sections[RoleWorkspaceMarkdownSchema.ChatProtocol.RESPONSE_POLICY].orEmpty(),
+            persistencePolicy = sections[RoleWorkspaceMarkdownSchema.ChatProtocol.PERSISTENCE_POLICY].orEmpty(),
             rawMarkdown = markdown,
         )
     }

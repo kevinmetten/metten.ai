@@ -43,7 +43,6 @@ class AiPageActivity : ComponentActivity() {
             ClawTheme(
                 darkTheme = configFlow.darkTheme,
                 accentColor = configFlow.accentColor,
-                language = configFlow.language,
             ) {
                 val c = LocalClawColors.current
                 if (def != null) {

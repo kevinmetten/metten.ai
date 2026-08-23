@@ -1333,7 +1333,7 @@ private fun findRelatedTasks(dimensionId: String, episodes: List<EpisodeEntity>)
         "emotional"   -> listOf(str(R.string.profile_29c0a6), str(R.string.profile_0218cb), str(R.string.profile_54177d), str(R.string.profile_3945f3), str(R.string.profile_f16b17), str(R.string.profile_df6d77), str(R.string.profile_bb725f))
         "social"      -> listOf(str(R.string.profile_d38a08), str(R.string.profile_c0abbf), str(R.string.profile_9d5323), str(R.string.profile_cfbf6f), str(R.string.profile_8b8588), str(R.string.profile_c31f48), str(R.string.profile_send))
         "values"      -> listOf(str(R.string.profile_73e825), str(R.string.profile_0debf5), str(R.string.profile_021ac9), str(R.string.profile_9a018b), str(R.string.profile_aefcbf), str(R.string.profile_not), str(R.string.profile_3ad828))
-        "capability"  -> listOf(str(R.string.profile_06e004), str(R.string.profile_4d7dc6), str(R.string.group_create), str(R.string.profile_1a6aa2), str(R.string.app_launcher_done), str(R.string.profile_38164c), str(R.string.profile_710510))
+        "capability"  -> listOf(str(R.string.profile_06e004), str(R.string.profile_4d7dc6), str(R.string.common_create), str(R.string.profile_1a6aa2), str(R.string.app_launcher_done), str(R.string.profile_38164c), str(R.string.profile_710510))
         "spiritual"   -> listOf(str(R.string.profile_21d68b), str(R.string.profile_70bca7), str(R.string.profile_3ad828), str(R.string.profile_4baafe), str(R.string.profile_bb725f), str(R.string.profile_29d7cb))
         else          -> emptyList()
     }

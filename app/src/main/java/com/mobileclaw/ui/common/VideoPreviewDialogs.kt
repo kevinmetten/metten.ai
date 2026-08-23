@@ -56,7 +56,7 @@ import com.mobileclaw.str
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-// Chat and group chat share the same in-app video preview path so playback, saving, and fallback behavior stay aligned.
+// Chat surfaces share the same in-app video preview path so playback, saving, and fallback behavior stay aligned.
 @Composable
 fun VideoAttachmentCard(
     attachment: SkillAttachment.FileData,

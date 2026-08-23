@@ -8,24 +8,12 @@ import com.mobileclaw.llm.Message
 import com.mobileclaw.memory.db.ConversationEntity
 import com.mobileclaw.memory.db.EpisodeEntity
 
-/**
- * Extracts structured long-term memory facts from two sources:
- *  1. Conversation history (chat RAG) — called after each task
- *  2. Task execution patterns (episode history) — called on manual refresh
- *
- * Results are stored in SemanticMemory under profile/preference/rule/correction/
- * failure/lesson/project/tool-policy keys.
- */
+/** Extracts conservative, structured long-term memories from conversations and episodes. */
 class UserProfileExtractor(
     private val llm: LlmGateway,
     private val semanticMemory: SemanticMemory,
     private val conversationMemory: ConversationMemory,
 ) {
-    private val gson = Gson()
-
-    // ── Public API ────────────────────────────────────────────────────────────
-
-    /** Called after each task completes. Uses recent conversation history. */
     suspend fun extractAndUpdate(recentGoal: String, recentSummary: String, taskId: String? = null) {
         val taskMessages = taskId?.takeIf { it.isNotBlank() }?.let {
             runCatching { conversationMemory.recentContextForTask(it, limit = 24) }.getOrDefault(emptyList())
@@ -36,28 +24,29 @@ class UserProfileExtractor(
             runCatching { conversationMemory.recentUserMessages(limit = 30) }.getOrDefault(emptyList())
         }
         if (messages.isEmpty() && recentGoal.isBlank()) return
-        val snippet = buildConversationSnippet(messages, recentGoal, recentSummary)
-        val facts = runCatching { callLlmConversation(snippet) }.getOrDefault(emptyList())
+        val context = UserProfileExtractionSupport.buildConversationSnippet(messages, recentGoal, recentSummary)
+        val facts = runCatching { callLlm(UserProfileExtractionSupport.conversationPrompt(context)) }
+            .getOrDefault(emptyList())
         facts.forEach { persistFact(it) }
     }
 
-    /** Called on manual refresh. Infers profile from task execution patterns. */
     suspend fun extractFromEpisodes(episodes: List<EpisodeEntity>) {
         if (episodes.size < 3) return
-        val analysis = buildEpisodeAnalysis(episodes)
-        val facts = runCatching { callLlmEpisodes(analysis) }.getOrDefault(emptyList())
+        val analysis = UserProfileExtractionSupport.buildEpisodeAnalysis(episodes)
+        val facts = runCatching { callLlm(UserProfileExtractionSupport.episodePrompt(analysis)) }
+            .getOrDefault(emptyList())
         facts.forEach { persistFact(it) }
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
     private suspend fun persistFact(fact: ProfileFact) {
-        if (isAllowedMemoryKey(fact.key) && fact.value.isNotBlank()) {
+        val key = fact.key.trim()
+        val value = fact.value.trim()
+        if (isAllowedMemoryKey(key) && value.isNotBlank()) {
             semanticMemory.set(
-                key = fact.key,
-                value = fact.value,
+                key = key,
+                value = value,
                 confidence = fact.confidence.coerceIn(0f, 1f),
-                type = SemanticMemory.inferType(fact.key),
+                type = SemanticMemory.inferType(key),
                 source = "memory_extractor",
             )
         }
@@ -73,81 +62,94 @@ class UserProfileExtractor(
             key.startsWith("project.") ||
             key.startsWith("tool.policy.")
 
-    private fun buildConversationSnippet(
+    private suspend fun callLlm(prompt: String): List<ProfileFact> {
+        val content = runCatching {
+            llm.chat(
+                ChatRequest(
+                    messages = listOf(Message(role = "user", content = prompt)),
+                    stream = false,
+                ),
+            ).content
+        }.getOrNull() ?: return emptyList()
+        return UserProfileExtractionSupport.parseFactsJson(content)
+    }
+}
+
+internal data class ProfileFact(val key: String, val value: String, val confidence: Float)
+
+internal object UserProfileExtractionSupport {
+    private val gson = Gson()
+    private val fencedJson = Regex("""^```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```[ \t]*$""", RegexOption.IGNORE_CASE)
+
+    internal fun buildConversationSnippet(
         messages: List<ConversationEntity>,
         goal: String,
         summary: String,
     ): String = buildString {
         if (goal.isNotBlank()) {
-            appendLine("最新任务: $goal")
-            if (summary.isNotBlank()) appendLine("任务结果: $summary")
+            appendLine("Current task: $goal")
+            if (summary.isNotBlank()) appendLine("Task result: $summary")
         }
         if (messages.isNotEmpty()) {
-            appendLine("近期对话:")
-            messages.takeLast(20).forEach { msg ->
-                val prefix = when (msg.role) { "user" -> "用户"; "agent" -> "AI"; else -> "[观察]" }
-                appendLine("$prefix: ${msg.content.take(200)}")
+            appendLine("Recent conversation:")
+            messages.takeLast(20).forEach { message ->
+                val label = when (message.role) {
+                    "user" -> "User"
+                    "agent", "assistant" -> "Assistant"
+                    else -> "Observation"
+                }
+                appendLine("$label: ${message.content.take(200)}")
             }
         }
     }
 
-    private fun buildEpisodeAnalysis(episodes: List<EpisodeEntity>): String {
-        val total = episodes.size
+    internal fun buildEpisodeAnalysis(episodes: List<EpisodeEntity>): String {
         val successCount = episodes.count { it.success }
-
-        val allSkills = episodes.flatMap { ep ->
-            runCatching { gson.fromJson(ep.skillsUsed, Array<String>::class.java).toList() }
+        val allSkills = episodes.flatMap { episode ->
+            runCatching { gson.fromJson(episode.skillsUsed, Array<String>::class.java).toList() }
                 .getOrDefault(emptyList())
         }
-        val skillFreq = allSkills.groupingBy { it }.eachCount()
+        val skillFrequency = allSkills.groupingBy { it }.eachCount()
             .entries.sortedByDescending { it.value }.take(10)
-
-        // Skill-to-trait mapping
-        val skillTraits = buildString {
-            skillFreq.forEach { (skill, count) ->
-                val trait = when {
-                    skill.startsWith("web_")            -> "→ 信息检索能力强"
-                    skill == "shell"                    -> "→ 具备技术操作能力"
-                    skill == "memory"                   -> "→ 注重知识积累"
-                    skill == "see_screen"               -> "→ 依赖视觉分析"
-                    skill == "navigate"                 -> "→ 频繁使用多个应用"
-                    skill.startsWith("bg_")             -> "→ 使用后台自动化"
-                    skill == "screenshot"               -> "→ 习惯截图记录"
-                    skill == "tap" || skill == "scroll" -> "→ 活跃的界面操作"
-                    else                                -> ""
-                }
-                if (trait.isNotEmpty()) appendLine("  $skill($count)次 $trait")
-            }
-        }
-
-        // Goal text analysis
-        val avgLen = if (episodes.isEmpty()) 0.0 else episodes.map { it.goalText.length }.average()
-        val goals = episodes.take(8).joinToString("\n") { ep ->
-            "  ${if (ep.success) "✓" else "✗"} ${ep.goalText.take(50)}"
-        }
-
-        // App interaction inference
-        val webGoals = episodes.count { ep ->
-            ep.skillsUsed.contains("web_search") || ep.skillsUsed.contains("fetch_url") || ep.skillsUsed.contains("web_browse")
-        }
-        val techGoals = episodes.count { ep -> ep.skillsUsed.contains("shell") }
-        val visionGoals = episodes.count { ep -> ep.skillsUsed.contains("see_screen") || ep.skillsUsed.contains("screenshot") }
+        val averageGoalLength = episodes.map { it.goalText.length }.average().toInt()
+        val webCount = episodes.count { it.hasAnySkill("web_search", "fetch_url", "web_browse") }
+        val technicalCount = episodes.count { it.hasAnySkill("shell") }
+        val visualCount = episodes.count { it.hasAnySkill("see_screen", "screenshot") }
 
         return buildString {
-            appendLine("任务统计: 共 $total 个，成功率 ${successCount * 100 / total}%")
-            appendLine("平均任务复杂度: ${avgLen.toInt()} 字符")
-            appendLine("网络相关任务: $webGoals 个，技术操作: $techGoals 个，视觉分析: $visionGoals 个")
-            appendLine("技能使用分析:")
-            append(skillTraits)
-            appendLine("近期任务示例:")
-            appendLine(goals)
+            appendLine("Task statistics: ${episodes.size} total; $successCount successful; ${successCount * 100 / episodes.size}% success rate")
+            appendLine("Average task length: $averageGoalLength characters")
+            appendLine("Web-related tasks: $webCount")
+            appendLine("Technical operations: $technicalCount")
+            appendLine("Visual-analysis tasks: $visualCount")
+            appendLine("Skill usage:")
+            skillFrequency.forEach { (skill, count) ->
+                val pattern = observedUsagePattern(skill)
+                appendLine("  $skill: $count${if (pattern.isEmpty()) "" else " ($pattern)"}")
+            }
+            appendLine("Recent task examples:")
+            episodes.take(8).forEach { episode ->
+                appendLine("  ${if (episode.success) "SUCCESS" else "FAILURE"}: ${episode.goalText.take(50)}")
+            }
         }
     }
 
-    // ── LLM calls ─────────────────────────────────────────────────────────────
+    private fun EpisodeEntity.hasAnySkill(vararg skills: String): Boolean = skills.any { skillsUsed.contains(it) }
+
+    private fun observedUsagePattern(skill: String): String = when {
+        skill.startsWith("web_") -> "frequent web research usage"
+        skill == "shell" -> "technical command-line usage"
+        skill == "memory" -> "knowledge-retention workflow usage"
+        skill == "see_screen" -> "visual screen-analysis usage"
+        skill == "navigate" -> "multi-app navigation usage"
+        skill.startsWith("bg_") -> "background automation usage"
+        skill == "screenshot" -> "screenshot-based workflow usage"
+        skill == "tap" || skill == "scroll" -> "active UI interaction usage"
+        else -> ""
+    }
 
     private val keysHint = """
-可用key（选最相关的填写，每次最多8条）:
+Available keys (choose only the most relevant; return at most 8 facts):
 profile.physio.health / profile.physio.fitness / profile.physio.appearance / profile.physio.medical
 profile.personality.temperament / profile.personality.style / profile.personality.emotion_pattern
 profile.cognitive.thinking / profile.cognitive.learning / profile.cognitive.perspective
@@ -162,63 +164,72 @@ correction.recent.<short_name>
 failure.<domain>.<short_name>
 lesson.<domain>.<short_name>
 project.mobileclaw.<short_name>
-tool.policy.<tool_or_domain>.<short_name>""".trimIndent()
+tool.policy.<tool_or_domain>.<short_name>
+    """.trimIndent()
 
-    private suspend fun callLlmConversation(context: String): List<ProfileFact> {
-        val prompt = """
-你是 MobileClaw 的长期记忆分析师，根据以下对话记录提取会影响后续 AI 判断的稳定记忆。
+    internal fun conversationPrompt(context: String): String = """
+You analyze recent conversation for durable information that will materially improve future assistance.
+
 $context
 
 $keysHint
 
-规则：
-- 只输出有充分依据的条目，不要臆测。
-- 用户明确纠错、长期偏好、禁止项、工具策略，比人格画像更重要。
-- 用户说“以后/不要/必须/我希望/你老是”时，优先沉淀为 rule/preference/correction/tool.policy。
-- value 用简短中文（40字内），只输出 JSON 数组。
-示例：[{"key":"preference.chat.style","value":"喜欢直接执行，少废话","confidence":0.9},{"key":"tool.policy.image_understanding.no_web_search","value":"用户上传图片询问内容时不要默认网页搜索","confidence":0.95}]""".trimIndent()
+High priority evidence:
+- Explicit user corrections and behavioral instructions.
+- Durable preferences, prohibitions, requirements, and tool-use policies.
+- Stable user facts and important reusable project context.
 
-        return callLlm(prompt)
-    }
+Lower priority or excluded evidence:
+- Speculative personality profiling, one-time states, temporary emotions, and transient task instructions.
+- Do not infer health, beliefs, emotional condition, or other sensitive attributes from weak proxies.
 
-    private suspend fun callLlmEpisodes(analysis: String): List<ProfileFact> {
-        val prompt = """
-你是 MobileClaw 的长期记忆分析师，根据用户的 AI 任务历史提取稳定偏好、失败经验和工具策略。
+Rules:
+- Do not guess. Prefer explicit user statements over inference, and return no fact when evidence is insufficient.
+- Do not infer a durable fact from a one-off request or turn the current task into a permanent preference.
+- Corrections and explicit behavioral instructions matter more than broad personality characterization.
+- Durable wording can include always, never, from now on, going forward, in the future, remember that, you keep, do not, and you must, but interpret it in context.
+- "I want a PDF" is a current request, while "I prefer PDFs for reports" may be durable.
+- "I don't like this version" is transient, while "I don't like verbose answers" may be durable.
+- Return a JSON array only, with no Markdown or surrounding prose, and at most 8 facts.
+- Each item must use a listed key, a confidence from 0.0 to 1.0, and a concise factual English value of no more than about 40 words.
+
+Example:
+[{"key":"preference.chat.style","value":"Prefers concise, direct answers.","confidence":0.9},{"key":"tool.policy.image_understanding.no_web_search","value":"Inspect uploaded images directly unless the user explicitly requests online research.","confidence":0.95}]
+    """.trimIndent()
+
+    internal fun episodePrompt(analysis: String): String = """
+You analyze repeated task-history patterns to extract durable, reusable operational memory.
+
 $analysis
 
 $keysHint
 
-根据技能使用频率、任务类型、成功率推断用户的能力、认知和性格特征。
-同时识别反复失败的任务模式，沉淀为 failure/lesson/tool.policy。
-只输出有充分依据的条目，value用简短中文（40字内），只输出JSON数组。""".trimIndent()
+Rules:
+- Require sufficient evidence across repeated episodes; a one-off success or failure normally produces no fact.
+- Prioritize repeated failure patterns, reusable lessons, and recurring tool or workflow policies.
+- Describe skill frequencies as observed usage patterns, not as personality, intelligence, health, beliefs, or emotional traits.
+- Do not infer unsupported sensitive or psychological conclusions from tool use, task length, or success rate.
+- A repeated pattern may support failure.<domain>.*, lesson.<domain>.*, or tool.policy.<domain>.* when warranted.
+- Do not guess; return no fact when evidence is insufficient.
+- Return a JSON array only, with no Markdown or surrounding prose, and at most 8 facts.
+- Each item must use a listed key, a confidence from 0.0 to 1.0, and a concise factual English value of no more than about 40 words.
+    """.trimIndent()
 
-        return callLlm(prompt)
-    }
-
-    private suspend fun callLlm(prompt: String): List<ProfileFact> {
-        val content = runCatching {
-            llm.chat(ChatRequest(
-                messages = listOf(Message(role = "user", content = prompt)),
-                stream = false,
-            )).content
-        }.getOrNull() ?: return emptyList()
-        return parseFactsJson(content)
-    }
-
-    private fun parseFactsJson(raw: String): List<ProfileFact> {
-        val json = raw.trim().let {
-            if (it.startsWith("```")) it.lines().drop(1).dropLast(1).joinToString("\n") else it
-        }
+    internal fun parseFactsJson(raw: String): List<ProfileFact> {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty()) return emptyList()
+        val json = fencedJson.matchEntire(trimmed)?.groupValues?.get(1)
+            ?: if (trimmed.startsWith("```")) return emptyList() else trimmed
         return runCatching {
-            JsonParser.parseString(json).asJsonArray.mapNotNull { elem ->
-                val obj = elem.asJsonObject
-                val key = obj.get("key")?.asString ?: return@mapNotNull null
-                val value = obj.get("value")?.asString ?: return@mapNotNull null
-                val confidence = obj.get("confidence")?.asFloat ?: 0.5f
+            JsonParser.parseString(json).asJsonArray.mapNotNull { element ->
+                val objectValue = runCatching { element.asJsonObject }.getOrNull() ?: return@mapNotNull null
+                val key = runCatching { objectValue.get("key")?.asString?.trim() }.getOrNull()
+                    ?: return@mapNotNull null
+                val value = runCatching { objectValue.get("value")?.asString?.trim() }.getOrNull()
+                    ?: return@mapNotNull null
+                val confidence = runCatching { objectValue.get("confidence")?.asFloat }.getOrNull() ?: 0.5f
                 if (key.isBlank() || value.isBlank()) null else ProfileFact(key, value, confidence)
             }
         }.getOrDefault(emptyList())
     }
-
-    private data class ProfileFact(val key: String, val value: String, val confidence: Float)
 }

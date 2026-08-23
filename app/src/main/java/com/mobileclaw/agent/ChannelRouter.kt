@@ -32,7 +32,7 @@ class ChannelRouter {
         hasImage: Boolean = false,
         hasFile: Boolean = false,
         roleId: String = "general",
-        language: String = "zh",
+        @Suppress("UNUSED_PARAMETER") language: String = "en",
         aiPrimary: ChannelType? = null,
         aiSupporting: List<ChannelType> = emptyList(),
         aiToolHints: List<String> = emptyList(),
@@ -86,7 +86,7 @@ class ChannelRouter {
             supporting = supporting.filterNot { it == primary },
             toolHints = toolHints,
             userVisibleSummary = aiUserVisibleSteps.takeIf { it.isNotEmpty() }?.joinToString(" / ")
-                ?: buildUserSummary(primary, supporting.filterNot { it == primary }, language),
+                ?: buildUserSummary(primary, supporting.filterNot { it == primary }),
         )
     }
 
@@ -106,58 +106,54 @@ class ChannelRouter {
     }
 
     private fun isMemoryGoal(text: String): Boolean =
-        text.contains("记住") ||
-            text.contains("记忆") ||
-            text.contains("偏好") ||
-            text.contains("配置") ||
-            text.contains("默认") ||
-            text.contains("忘掉") ||
-            text.contains("删除记忆") ||
-            text.contains("保存为默认") ||
-            text.contains("以后都") ||
+        text.matchesAny(
+            "remember this", "remember that", "remember my", "save this preference", "save my preference",
+            "my preference", "use this as the default", "make this the default", "always do this",
+            "from now on", "forget this", "forget that", "delete this memory", "remove this memory",
+            "delete the memory", "remove the memory",
+        ) ||
             text.contains("user_config") ||
             text.contains("user_profile")
 
-    private fun isSelfEvolutionGoal(text: String): Boolean =
-        text.contains("自我升级") ||
-            text.contains("自我进化") ||
-            text.contains("自我修复") ||
-            text.contains("升级自己") ||
-            text.contains("修复自己") ||
-            text.contains("纠错") ||
-            text.contains("改进自身") ||
-            text.contains("改造自己") ||
-            text.contains("角色") ||
-            text.contains("技能") ||
-            text.contains("工具")
+    private fun isSelfEvolutionGoal(text: String): Boolean {
+        if (text.matchesAny(
+                "improve yourself", "upgrade yourself", "repair yourself", "fix yourself",
+                "fix your behavior", "repair your behavior", "improve your behavior", "change your behavior",
+            )) return true
+        val changeIntent = text.matchesAny("update", "change", "modify", "improve", "repair", "fix", "upgrade")
+        val ownedCapability = text.matchesAny(
+            "your skills", "your tools", "your capabilities", "your role configuration", "your persona configuration",
+            "the agent's skills", "the agent's tools", "the agent's capabilities", "agent behavior",
+        )
+        return changeIntent && ownedCapability
+    }
 
-    private fun buildUserSummary(primary: ChannelType, supporting: List<ChannelType>, language: String): String {
-        val english = language == "en"
-        val primaryLabel = channelLabel(primary, english)
-        val supportLabel = supporting.joinToString(if (english) ", " else "、") { channelLabel(it, english) }
+    private fun buildUserSummary(primary: ChannelType, supporting: List<ChannelType>): String {
+        val primaryLabel = channelLabel(primary)
+        val supportLabel = supporting.joinToString(", ") { channelLabel(it) }
         return when {
-            english && supportLabel.isBlank() -> "Primary channel: $primaryLabel"
-            english -> "Primary channel: $primaryLabel; supporting channels: $supportLabel"
-            supportLabel.isBlank() -> "主通道：$primaryLabel"
-            else -> "主通道：$primaryLabel；辅助通道：$supportLabel"
+            supportLabel.isBlank() -> "Primary channel: $primaryLabel"
+            else -> "Primary channel: $primaryLabel; supporting channels: $supportLabel"
         }
     }
 
-    private fun channelLabel(channel: ChannelType, english: Boolean): String = when (channel) {
-        ChannelType.CHAT -> if (english) "Chat" else "聊天"
-        ChannelType.INFO -> if (english) "Capability directory" else "能力目录"
-        ChannelType.MEMORY -> if (english) "Memory" else "记忆"
-        ChannelType.SKILL -> if (english) "Skills" else "技能"
-        ChannelType.SELF_EVOLUTION -> if (english) "Self-improvement" else "自我升级"
-        ChannelType.PLAN -> if (english) "Planning" else "计划"
-        ChannelType.ARTIFACT -> if (english) "Artifacts" else "产物"
-        ChannelType.PHONE -> if (english) "Phone control" else "手机操作"
-        ChannelType.WEB -> if (english) "Web research" else "网页查找"
-        ChannelType.MEDIA -> if (english) "Media generation" else "媒体生成"
+    private fun channelLabel(channel: ChannelType): String = when (channel) {
+        ChannelType.CHAT -> "Chat"
+        ChannelType.INFO -> "Capability directory"
+        ChannelType.MEMORY -> "Memory"
+        ChannelType.SKILL -> "Skills"
+        ChannelType.SELF_EVOLUTION -> "Self-improvement"
+        ChannelType.PLAN -> "Planning"
+        ChannelType.ARTIFACT -> "Artifacts"
+        ChannelType.PHONE -> "Phone control"
+        ChannelType.WEB -> "Web research"
+        ChannelType.MEDIA -> "Media generation"
         ChannelType.VPN -> "VPN"
-        ChannelType.CODE -> if (english) "Code execution" else "代码执行"
+        ChannelType.CODE -> "Code execution"
     }
 
-    private fun String.anyContains(vararg needles: String): Boolean =
-        needles.any { contains(it, ignoreCase = true) }
+    private fun String.matchesAny(vararg phrases: String): Boolean = phrases.any { phrase ->
+        val pattern = phrase.trim().split(Regex("\\s+")).joinToString("\\s+") { Regex.escape(it) }
+        Regex("(?<![a-z0-9_])$pattern(?![a-z0-9_])").containsMatchIn(this)
+    }
 }

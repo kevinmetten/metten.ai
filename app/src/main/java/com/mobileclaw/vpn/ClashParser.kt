@@ -29,7 +29,7 @@ object ClashParser {
     @Suppress("UNCHECKED_CAST")
     private fun parseYamlProxy(p: Map<String, Any>): ProxyConfig? {
         val name = p["name"] as? String ?: return null
-        if (isSubscriptionInfoNode(name)) return null
+        if (SubscriptionMetadataNodeDetector.isMetadataNode(name)) return null
         val server = p["server"] as? String ?: return null
         val port = (p["port"] as? Number)?.toInt() ?: return null
         val network = normalizeNetwork(p["network"] as? String ?: "tcp")
@@ -310,16 +310,6 @@ object ClashParser {
     private fun normalizeNetwork(value: String): String = when (value.lowercase()) {
         "h2", "http" -> "http"
         else -> value.lowercase()
-    }
-
-    private fun isSubscriptionInfoNode(name: String): Boolean {
-        val normalized = name.trim()
-        return normalized.startsWith("网址") ||
-            normalized.startsWith("剩余流量") ||
-            normalized.startsWith("过期时间") ||
-            normalized.startsWith("官网") ||
-            normalized.startsWith("订阅") ||
-            normalized.startsWith("回家页")
     }
 
     private fun stringList(value: Any?): List<String> = when (value) {

@@ -68,7 +68,7 @@ object TaskPlanner {
         llm: LlmGateway,
         goal: String,
         taskType: TaskType,
-        language: String = "auto",
+        language: String = "en",
         priorContext: String = "",
     ): TaskPlan {
         val prompt = """
@@ -83,14 +83,16 @@ Recent chat context:
 ${priorContext.take(2400)}
 
 Output format:
-Summary: ...
+Summary: <one-line summary>
 Steps:
-1. ...
-2. ...
-3. ...
-Success criteria: ...
+1. <step>
+2. <step>
+3. <step>
+Success criteria: <one-line criterion>
 
 Rules:
+- Use the English labels "Summary:", "Steps:", and "Success criteria:" exactly as shown.
+- Do not add text before or after the structured plan.
 - Keep 3-6 steps.
 - Generate the todo steps from BOTH the current user goal and the recent chat context, especially the last 10 chat records if provided.
 - Treat short follow-ups like "continue", "change it", "optimize", "not this", or "do the previous one" as references to the recent context, not standalone tasks.
@@ -117,29 +119,40 @@ Rules:
             ""
         }
 
-        return parsePlan(response, taskType)
-            ?: fallbackPlan(goal, taskType)
+        return parseOrFallback(response, goal, taskType)
     }
 
-    private fun parsePlan(raw: String, taskType: TaskType): TaskPlan? {
+    internal fun parseOrFallback(raw: String, goal: String, taskType: TaskType): TaskPlan =
+        parsePlan(raw, taskType) ?: fallbackPlan(goal, taskType)
+
+    internal fun parsePlan(raw: String, taskType: TaskType): TaskPlan? {
         if (raw.isBlank()) return null
         val lines = raw.lines().map { it.trim() }.filter { it.isNotBlank() }
-        val summary = lines.firstOrNull { it.startsWith("Summary:", ignoreCase = true) || it.startsWith("概要") }
-            ?.substringAfter(":")
-            ?.trim()
-            ?.ifBlank { null }
-            ?: lines.firstOrNull().orEmpty().take(180)
-        val steps = lines
-            .filter { it.matches(Regex("""^\d+[\.)、]\s+.+""")) || it.startsWith("- ") }
-            .map { it.replace(Regex("""^\d+[\.)、]\s+"""), "").removePrefix("- ").trim() }
-            .filter { it.isNotBlank() }
-            .take(6)
-        val criteria = lines.firstOrNull { it.startsWith("Success criteria:", ignoreCase = true) || it.startsWith("成功") }
-            ?.substringAfter(":")
-            ?.trim()
-            ?.ifBlank { null }
+        val summaryPattern = Regex("^summary\\s*:\\s*(.+)$", RegexOption.IGNORE_CASE)
+        val stepsHeaderPattern = Regex("^steps\\s*:\\s*$", RegexOption.IGNORE_CASE)
+        val criteriaPattern = Regex("^success\\s+criteria\\s*:\\s*(.+)$", RegexOption.IGNORE_CASE)
+        val summaryIndex = lines.indexOfFirst { summaryPattern.matches(it) }
+        val stepsHeaderIndex = lines.indexOfFirst { stepsHeaderPattern.matches(it) }
+        if (summaryIndex != 0 || stepsHeaderIndex != 1) return null
+
+        val summary = summaryPattern.matchEntire(lines[summaryIndex])
+            ?.groupValues?.get(1)?.trim()?.take(180)?.ifBlank { null }
+            ?: return null
+        val criteriaIndex = lines.indexOfFirst { criteriaPattern.matches(it) }
+        if (criteriaIndex >= 0 && criteriaIndex != lines.lastIndex) return null
+        val stepLines = lines.subList(stepsHeaderIndex + 1, if (criteriaIndex > stepsHeaderIndex) criteriaIndex else lines.size)
+        val numberedStepPattern = Regex("^\\d+[.)]\\s+(.+)$")
+        val bulletStepPattern = Regex("^-\\s+(.+)$")
+        val parsedSteps = stepLines.map { line ->
+            numberedStepPattern.matchEntire(line)?.groupValues?.get(1)
+                ?: bulletStepPattern.matchEntire(line)?.groupValues?.get(1)
+        }
+        if (parsedSteps.any { it == null }) return null
+        val steps = parsedSteps.filterNotNull().map(String::trim).filter(String::isNotBlank).take(6)
+        val criteria = criteriaIndex.takeIf { it > stepsHeaderIndex }
+            ?.let { criteriaPattern.matchEntire(lines[it])?.groupValues?.get(1)?.trim()?.ifBlank { null } }
             ?: "The user goal is satisfied and the result is verified."
-        return TaskPlan(taskType, summary.ifBlank { "Execute the user task." }, steps.ifEmpty { fallbackPlan("", taskType).steps }, criteria)
+        return TaskPlan(taskType, summary, steps.ifEmpty { fallbackPlan("", taskType).steps }, criteria)
     }
 
     private fun fallbackPlan(goal: String, taskType: TaskType): TaskPlan = when (taskType) {
@@ -162,86 +175,204 @@ Rules:
 
 object TaskClassifier {
     fun classify(goal: String, hasImage: Boolean = false, hasFile: Boolean = false): TaskType {
-        val text = goal.lowercase()
-        if (hasImage && text.anyContains("打开", "启动", "点击", "滑动", "滚动", "输入", "长按", "返回", "主页", "发微信", "发短信", "打电话", "操作手机", "控制手机", "看屏幕", "读屏幕", "点一下", "按一下", "帮我点", "帮我操作", "open ", "launch ", "click ", "tap ", "scroll ")) {
-            return TaskType.PHONE_CONTROL
-        }
+        val text = goal.lowercase().replace(Regex("\\s+"), " ").trim()
+        if (hasImage && hasPhoneControlIntent(text, hasScreenContext = true)) return TaskType.PHONE_CONTROL
         if (hasImage) return TaskType.GENERAL
         if (hasFile) return TaskType.FILE_CREATE
 
-        if (text.anyContains("vpn", "代理", "翻墙", "节点", "订阅", "全局")) return TaskType.VPN_CONTROL
-        if (text.anyContains("打开", "启动", "点击", "滑动", "滚动", "输入", "长按", "返回", "主页", "发微信", "发短信", "打电话", "操作手机", "控制手机", "看屏幕", "读屏幕", "open ", "launch ", "click ")) {
-            return TaskType.PHONE_CONTROL
-        }
+        if (hasVpnControlIntent(text)) return TaskType.VPN_CONTROL
+        if (hasPhoneControlIntent(text)) return TaskType.PHONE_CONTROL
         if (looksLikePhoneAppOperation(text)) return TaskType.PHONE_CONTROL
         if (isFollowUpOnly(text)) return TaskType.GENERAL
         if (hasExplicitWebResearchIntent(text)) return TaskType.WEB_RESEARCH
         if (hasExplicitImageGenerationIntent(text)) return TaskType.IMAGE_GENERATION
         if (hasExplicitPageBuildIntent(text)) return TaskType.APP_BUILD
-        if (text.anyContains("做个app", "做一个app", "创建应用", "小应用", "网页应用", "miniapp", "mini app", "html", "game", "calculator", "小游戏", "程序")) return TaskType.APP_BUILD
+        if (hasExplicitAppBuildIntent(text)) return TaskType.APP_BUILD
         if (hasExplicitFileIntent(text)) return TaskType.FILE_CREATE
-        if (text.anyContains("role", "persona", "角色", "人设", "创建角色", "新建角色", "修改角色", "角色管理", "切换角色")) return TaskType.SKILL_MANAGEMENT
-        if (text.anyContains("skill", "技能", "安装能力", "创建技能", "技能市场", "自我升级", "自我进化", "自我修复", "升级自己", "纠错", "修复自己", "改进自身")) return TaskType.SKILL_MANAGEMENT
-        if (text.anyContains("shell", "python", "脚本", "执行命令", "运行代码", "pip")) return TaskType.CODE_EXECUTION
+        if (hasSkillManagementIntent(text)) return TaskType.SKILL_MANAGEMENT
+        if (hasCodeExecutionIntent(text)) return TaskType.CODE_EXECUTION
         return TaskType.GENERAL
     }
 
-    private fun String.anyContains(vararg needles: String): Boolean = needles.any { contains(it) }
-
     private fun hasExplicitPageBuildIntent(text: String): Boolean {
-        if (text.anyContains("创建页面", "生成页面", "做个页面", "做一个页面", "新建页面", "设计页面", "开发页面", "搭建页面")) return true
-        if (text.anyContains("创建原生页面", "生成原生页面", "创建ai页面", "生成ai页面", "aipage", "ai native page")) return true
-        val pageNoun = text.anyContains("页面", "原生页面", "ai页面", "dashboard", "仪表盘", "表单", "管理页")
-        val buildVerb = text.anyContains("创建", "生成", "做个", "做一个", "新建", "设计", "开发", "搭建", "build", "create")
-        return pageNoun && buildVerb
+        val pageNoun = text.matchesAny(
+            "page", "screen", "dashboard", "form", "admin page", "management page", "settings page",
+            "native page", "ai page", "aipage",
+        )
+        return pageNoun && text.hasCreationVerb()
     }
 
     private fun hasExplicitWebResearchIntent(text: String): Boolean {
-        if (text.anyContains("不要搜索", "别搜索", "不用搜索", "不要联网", "别联网", "不用联网", "按上面", "基于上面")) return false
-        if (text.anyContains("联网搜索", "网页搜索", "搜索网页", "搜一下", "查一下资料", "找来源", "找资料", "浏览网页", "web research", "web search", "search web", "browse web")) return true
-        if (text.anyContains("新闻", "最新", "官网", "网页", "research", "search", "browse")) return true
-        return text.anyContains("搜索") && !text.anyContains("搜索框", "搜索按钮", "搜索页面")
+        if (text.matchesAny(
+                "don't search the web", "do not search the web", "don't browse", "do not browse",
+                "don't go online", "do not go online", "use what i gave you", "use the information above",
+                "based only on the above", "based only on the previous content",
+            )) return false
+        if (text.matchesAny("search box", "search field", "search button", "search screen", "search page") &&
+            text.matchesAny("tap", "click", "press", "type", "enter", "open", "scroll")) return false
+        return text.matchesAny(
+            "search the web", "search online", "web search", "browse the web", "research online",
+            "find sources", "find reliable sources", "look this up online", "look it up online",
+            "official website", "official source", "latest news", "current news",
+        )
     }
 
     private fun looksLikePhoneAppOperation(text: String): Boolean {
-        val appHit = text.anyContains(
-            "美团", "微信", "支付宝", "抖音", "淘宝", "京东", "高德", "百度地图", "小红书", "b站", "哔哩",
-            "饿了么", "大众点评", "拼多多", "闲鱼", "微博", "qq", "快手",
-            "meituan", "wechat", "alipay", "douyin", "taobao", "jd", "maps", "eleme",
+        if (isInformationalQuestion(text)) return false
+        val appTarget = text.matchesAny(
+            "gmail", "google maps", "maps", "settings", "messages", "whatsapp", "telegram",
+            "chrome", "browser", "instagram", "facebook", "amazon", "youtube", "spotify",
+        ) || Regex("\\b(?:in|on|using)\\s+(?:the\\s+)?[a-z0-9._-]+\\s+app\\b|\\b(?:the|an|my)\\s+app\\b").containsMatchIn(text)
+        val appAction = text.matchesAny(
+            "find", "search", "order", "buy", "send", "enter", "select", "choose", "navigate",
+            "check", "book", "post", "play", "message", "nearby",
         )
-        if (!appHit) return false
-        val actionHit = text.anyContains(
-            "帮我到", "帮我在", "到", "在", "找", "搜", "搜索", "附近", "下单", "点单", "购买", "发送",
-            "发给", "输入", "看一下", "查一下", "进入", "切到", "替我",
-            "find", "search", "nearby", "order", "send", "enter",
-        )
-        return actionHit
+        return appTarget && appAction
     }
 
     private fun hasExplicitImageGenerationIntent(text: String): Boolean {
-        if (text.anyContains("这张图片", "这个图片", "图片里", "图里", "看图", "识别图片", "分析图片", "描述图片", "what is in the image", "describe image")) return false
-        if (text.anyContains("生成图片", "生成一张", "画图", "画一张", "绘制", "出图", "生图", "做张图", "生成图标", "生成视频", "image generation", "generate image", "draw ")) return true
-        val mediaNoun = text.anyContains("图片", "图像", "图标", "海报", "封面", "插画", "视频", "icon", "poster", "video")
-        val createVerb = text.anyContains("生成", "创建", "设计", "制作", "画", "做一个", "做个", "create", "generate", "design")
-        return mediaNoun && createVerb
+        if (text.matchesAny(
+                "describe this image", "describe the image", "what's in this picture", "what is in this picture",
+                "what is in the image", "analyze this image", "analyse this image", "identify what is shown",
+                "recognize this image", "read this image",
+            )) return false
+        val mediaNoun = text.matchesAny("image", "picture", "illustration", "poster", "icon", "logo", "cover", "video", "animation")
+        val generationVerb = text.matchesAny("generate", "create", "draw", "design", "make", "produce", "render")
+        return mediaNoun && generationVerb
     }
 
     private fun hasExplicitFileIntent(text: String): Boolean {
-        if (text.anyContains("这个文件是什么", "解释文件", "读取文件", "看看文件", "文件内容是什么")) return true
-        val officeNoun = text.anyContains("ppt", "pptx", "docx", "word", "xlsx", "excel", "pdf", "csv", "markdown", "md")
-        val createVerb = text.anyContains("生成", "创建", "写", "导出", "保存", "做一个", "做个", "制作", "整理成", "create", "generate", "export", "save")
+        if (text.matchesAny("read this file", "explain this file", "inspect this file", "what is in this file", "list files")) return true
+        val officeNoun = text.matchesAny("file", "document", "report", "ppt", "pptx", "docx", "word", "xlsx", "excel", "pdf", "csv", "markdown")
+        val createVerb = text.matchesAny("create", "generate", "export", "save", "write", "produce", "convert")
         if (officeNoun && createVerb) return true
-        return text.anyContains("创建文件", "生成文件", "写入文件", "保存文件", "导出文件", "生成文档", "创建文档")
+        return false
     }
 
     private fun isFollowUpOnly(text: String): Boolean {
         val normalized = text.trim()
         if (normalized.length > 40) return false
-        return normalized.anyContains(
-            "继续", "接着", "然后呢", "详细说", "改一下", "改下", "优化下", "优化一下", "不是这个",
-            "不是这样", "不对", "换个方式", "换成", "改成", "按上面", "基于上面", "就这个", "它",
-            "this", "that", "continue", "change it", "update it", "not this",
+        return normalized in setOf(
+            "continue", "keep going", "next", "try again", "retry", "change it", "update it", "fix it",
+            "improve it", "optimize it", "optimise it", "not this", "that's wrong", "that is wrong",
+            "try another way", "use this", "use that", "do the previous one", "based on the above",
         )
+    }
+
+    private fun hasPhoneControlIntent(text: String, hasScreenContext: Boolean = false): Boolean {
+        if (isInformationalQuestion(text)) return false
+        if (hasAppLaunchIntent(text)) return true
+
+        val explicitDeviceAction = text.matchesAny(
+            "go back", "go home", "send a message", "send a text", "make a call", "place a call",
+            "operate the phone", "control the phone", "use my phone", "use the phone",
+            "inspect the current screen", "read the current screen", "look at the current screen",
+        ) || Regex("^call\\s+(?!stack\\b)[a-z0-9]").containsMatchIn(text)
+        if (explicitDeviceAction) return true
+
+        val directionalGesture = Regex("^(?:please\\s+)?(?:scroll\\s+(?:up|down)|swipe\\s+(?:left|right|up|down))(?:\\b|$)")
+            .containsMatchIn(text)
+        if (directionalGesture) return true
+
+        val uiTarget = "(?:button|field|text\\s+box|message\\s+box|input|menu|tab|screen|page|settings|app|icon|item|option|control|link)"
+        val targetedUiAction = Regex(
+            "^(?:please\\s+)?(?:tap|click|press|long\\s+press|select|choose)\\s+(?:the\\s+)?(?:[a-z0-9_-]+\\s+){0,4}$uiTarget\\b",
+        ).containsMatchIn(text)
+        if (targetedUiAction) return true
+
+        val targetedTextEntry = Regex(
+            "^(?:please\\s+)?(?:type|enter)\\s+.+?\\s+(?:into|in)\\s+(?:the\\s+)?(?:[a-z0-9_-]+\\s+){0,3}$uiTarget\\b",
+        ).containsMatchIn(text)
+        if (targetedTextEntry) return true
+
+        val contextualAction = Regex("^(?:please\\s+)?(?:tap|click|press|swipe|scroll|select|choose)\\s+(?:this|that)(?:\\b|$)")
+            .containsMatchIn(text)
+        if (contextualAction) return true
+
+        return hasScreenContext && Regex("^(?:please\\s+)?(?:tap|click|press|swipe|scroll|type|select|choose|enter)\\b")
+            .containsMatchIn(text)
+    }
+
+    private fun hasAppLaunchIntent(text: String): Boolean {
+        val request = Regex("^(?:please\\s+)?(open|launch|start)\\s+(.+?)[.!?]?$")
+            .matchEntire(text) ?: return false
+        val verb = request.groupValues[1]
+        if (verb.isBlank()) return false
+        val rawTarget = request.groupValues[2].trim().removePrefix("the ")
+        val target = rawTarget
+            .substringBefore(" and ")
+            .substringBefore(" then ")
+            .trim()
+        if (target.isBlank() || target.split(Regex("\\s+")).size > 4) return false
+
+        val explicitApp = target.endsWith(" app")
+        val commonSystemTarget = target in setOf(
+            "gmail", "google maps", "maps", "settings", "messages", "chrome", "browser", "calculator",
+            "camera", "calendar", "clock", "spotify",
+        )
+        if (verb == "start") return explicitApp || commonSystemTarget
+        if (explicitApp || commonSystemTarget) return true
+
+        if (target.startsWith("a ") || target.startsWith("an ")) return false
+        val rejectedTargets = setOf(
+            "source", "source code", "source software", "source licensing", "bank account", "account",
+            "marketing campaign", "campaign", "business", "discussion", "conversation", "report", "document",
+            "attached pdf", "pdf", "file", "folder", "project", "repository", "repo", "website", "web page",
+            "link", "url",
+        )
+        if (target in rejectedTargets) return false
+        val targetWords = target.split(Regex("\\s+"))
+        val rejectedWords = setOf(
+            "source", "account", "campaign", "business", "discussion", "report", "document", "pdf", "file",
+            "folder", "project", "repository", "repo", "website", "link", "url",
+        )
+        if (targetWords.any { it in rejectedWords || it.endsWith("ing") }) return false
+        return Regex("^[a-z0-9][a-z0-9+._'-]*(?:\\s+[a-z0-9][a-z0-9+._'-]*){0,3}$").matches(target)
+    }
+
+    private fun hasVpnControlIntent(text: String): Boolean {
+        if (isInformationalQuestion(text)) return false
+        val vpnContext = text.matchesAny("vpn", "proxy", "vpn subscription", "vpn node", "vpn server")
+        val controlIntent = text.matchesAny(
+            "connect", "disconnect", "enable", "disable", "turn on", "turn off", "change", "switch", "select",
+            "configure", "set up", "setup", "import", "subscribe", "check status", "show status",
+        )
+        return vpnContext && controlIntent
+    }
+
+    private fun hasExplicitAppBuildIntent(text: String): Boolean {
+        val artifactNoun = text.matchesAny("app", "mini app", "miniapp", "web app", "game", "program", "calculator app")
+        return artifactNoun && text.hasCreationVerb()
+    }
+
+    private fun hasSkillManagementIntent(text: String): Boolean {
+        val subsystem = text.matchesAny("role", "persona", "skill", "skill marketplace", "capability", "agent behavior", "own behavior")
+        val management = text.matchesAny(
+            "create", "add", "edit", "update", "change", "switch", "manage", "install", "remove", "delete",
+            "repair", "fix", "improve", "upgrade",
+        )
+        return subsystem && management
+    }
+
+    private fun hasCodeExecutionIntent(text: String): Boolean {
+        if (isInformationalQuestion(text)) return false
+        val execution = text.matchesAny("run", "execute", "install", "invoke")
+        val codeTarget = text.matchesAny("python", "script", "shell", "command", "code", "pip", "terminal")
+        return execution && codeTarget
+    }
+
+    private fun isInformationalQuestion(text: String): Boolean =
+        text.startsWith("explain ") || text.startsWith("what is ") || text.startsWith("what are ") ||
+            text.startsWith("why ") || text.startsWith("how does ") || text.startsWith("how do ") ||
+            text.startsWith("how can ") || text.startsWith("tell me about ") ||
+            text.startsWith("describe how ")
+
+    private fun String.hasCreationVerb(): Boolean =
+        matchesAny("create", "build", "make", "design", "develop", "generate", "implement")
+
+    private fun String.matchesAny(vararg phrases: String): Boolean = phrases.any { phrase ->
+        val pattern = phrase.trim().split(Regex("\\s+")).joinToString("\\s+") { Regex.escape(it) }
+        Regex("(?<![a-z0-9_])$pattern(?![a-z0-9_])").containsMatchIn(this)
     }
 }
 
@@ -495,22 +626,18 @@ object TaskToolPolicy {
             append(' ')
             append(meta.name.lowercase())
             append(' ')
-            append(meta.nameZh.orEmpty().lowercase())
-            append(' ')
             append(meta.description.lowercase())
-            append(' ')
-            append(meta.descriptionZh.orEmpty().lowercase())
             append(' ')
             append(meta.tags.joinToString(" ").lowercase())
             append(' ')
             append(meta.categories.joinToString(" ") { it.name.lowercase() })
         }
-        val directNames = listOf(meta.id, meta.name, meta.nameZh.orEmpty())
+        val directNames = listOf(meta.id, meta.name)
             .map { it.lowercase().trim() }
             .filter { it.length >= 2 }
         if (directNames.any { it in text || text in it }) return true
         val goalTerms = text
-            .split(Regex("""[\s,，。.!?！？;；:：/\\|()\[\]{}"'`~]+"""))
+            .split(Regex("[\\p{Z}\\p{P}\\p{S}\\p{C}]+"))
             .map { it.trim() }
             .filter { it.length >= 2 }
         if (goalTerms.any { it in seed }) return true
@@ -525,29 +652,24 @@ object TaskToolPolicy {
         if (memoryContext.isBlank()) return allowed
         val lower = memoryContext.lowercase()
         var result = allowed
-        val noWeb = lower.contains("不要搜索") ||
-            lower.contains("不要网页搜索") ||
-            lower.contains("不要联网") ||
-            lower.contains("不用联网") ||
-            lower.contains("no web search") ||
+        val noWeb = lower.contains("no web search") ||
+            lower.contains("do not search the web") ||
+            lower.contains("don't search the web") ||
+            lower.contains("do not browse") ||
             lower.contains("offline only") ||
             lower.contains("no_web_search") ||
-            lower.contains("image_understanding.no_web_search") ||
-            (lower.contains("网页搜索") && listOf("不该", "不希望", "老是", "总是", "经常", "不停").any { lower.contains(it) })
+            lower.contains("image_understanding.no_web_search")
         if (noWeb && taskType != TaskType.WEB_RESEARCH) {
             result = result.filterNot { it in listOf("web_search", "fetch_url", "web_browse", "web_content", "web_js") }
         }
-        val noPhone = lower.contains("不要操作手机") || lower.contains("no phone control")
+        val noPhone = lower.contains("no phone control") || lower.contains("do not control the phone")
         if (noPhone && taskType != TaskType.PHONE_CONTROL) {
             result = result.filterNot { it in listOf("see_screen", "screenshot", "tap", "scroll", "input_text", "long_click", "navigate", "phone_status") }
         }
-        val preferNativePage = lower.contains("页面优先生成原生页面") ||
-            lower.contains("优先生成原生页面") ||
-            lower.contains("ai native page") ||
+        val preferNativePage = lower.contains("ai native page") ||
+            lower.contains("prefer native page") ||
             lower.contains("native page first")
-        val preferMiniApp = lower.contains("程序优先生成miniapp") ||
-            lower.contains("优先生成miniapp") ||
-            lower.contains("prefer miniapp")
+        val preferMiniApp = lower.contains("prefer miniapp")
         if (taskType == TaskType.APP_BUILD) {
             result = when {
                 preferNativePage && !preferMiniApp -> result.sortedBy { if (it == "ui_builder") 0 else 1 }
@@ -564,9 +686,9 @@ object TaskToolPolicy {
         val artifactPreference = detectArtifactToolPreferenceFromGoal(text)
         val preferred = when (taskType) {
             TaskType.PHONE_CONTROL -> when {
-                text.anyContains("截图", "看屏幕", "识别", "布局", "界面", "坐标", "当前页面") ->
+                text.anyContains("screenshot", "screen", "read screen", "inspect screen", "layout", "interface", "ui", "coordinates") ->
                     listOf("see_screen", "screenshot", "phone_status")
-                text.anyContains("点击", "tap", "打开", "选择", "进入", "切换", "提交") ->
+                text.anyContains("tap", "click", "open", "select", "choose", "enter", "switch", "submit", "press") ->
                     listOf(
                         "see_screen",
                         "phone_status",
@@ -579,7 +701,7 @@ object TaskToolPolicy {
                         "long_click",
                         "input_text",
                     )
-                text.anyContains("输入", "搜索", "填写", "键入", "type") ->
+                text.anyContains("type", "input", "enter", "fill", "search") ->
                     listOf("input_text", "tap", "see_screen")
                 else -> listOf(
                     "see_screen",
@@ -596,16 +718,16 @@ object TaskToolPolicy {
                 )
             }
             TaskType.WEB_RESEARCH -> when {
-                text.anyContains("搜索", "查找", "研究", "找到", "资料", "来源", "新闻", "最新") ->
+                text.anyContains("search", "find", "research", "source", "sources", "news", "latest", "current") ->
                     listOf("web_search", "web_browse", "fetch_url", "web_content")
-                text.anyContains("抓取", "网页", "打开", "页面", "提取", "阅读") ->
+                text.anyContains("fetch", "page", "website", "open", "extract", "read", "browse") ->
                     listOf("fetch_url", "web_browse", "web_content", "web_js")
                 else -> listOf("web_search", "fetch_url", "web_browse", "web_content")
             }
             TaskType.FILE_CREATE -> when {
-                text.anyContains("ppt", "pptx", "word", "doc", "docx", "excel", "xlsx", "pdf", "文档", "报告") ->
+                text.anyContains("ppt", "pptx", "word", "doc", "docx", "excel", "xlsx", "pdf", "document", "report") ->
                     listOf("generate_document", "create_html", "read_file", "list_files")
-                text.anyContains("html", "页面", "预览", "报告") ->
+                text.anyContains("html", "page", "preview", "report") ->
                     listOf("create_html", "create_file", "read_file", "list_files")
                 else -> listOf("create_file", "read_file", "list_files", "generate_document", "create_html")
             }
@@ -614,33 +736,33 @@ object TaskToolPolicy {
                     listOf("app_manager", "read_file", "create_file", "list_files", "create_html")
                 artifactPreference == ArtifactToolPreference.AI_PAGE ->
                     listOf("ui_builder", "read_file", "create_file", "list_files")
-                text.anyContains("页面", "原生", "native", "ui", "dashboard", "settings", "列表", "卡片") ->
+                text.anyContains("page", "native", "native page", "ui", "dashboard", "settings", "list", "card", "form", "panel") ->
                     listOf("ui_builder", "read_file", "create_file", "list_files")
-                text.anyContains("miniapp", "程序", "应用", "游戏", "webview", "html") ->
+                text.anyContains("miniapp", "mini app", "program", "application", "app", "game", "webview", "html", "javascript", "canvas") ->
                     listOf("app_manager", "read_file", "create_file", "list_files", "create_html")
                 else -> listOf("ui_builder", "app_manager", "create_html", "read_file", "create_file", "list_files")
             }
             TaskType.IMAGE_GENERATION -> when {
-                text.anyContains("icon", "头像", "图标", "logo") ->
+                text.anyContains("icon", "avatar", "logo", "image", "picture") ->
                     listOf("generate_icon", "generate_image")
-                text.anyContains("视频", "动图", "animation") ->
+                text.anyContains("video", "animation", "animated") ->
                     listOf("generate_video")
                 else -> listOf("generate_image", "generate_icon", "generate_video")
             }
             TaskType.VPN_CONTROL -> listOf("vpn_control")
             TaskType.SKILL_MANAGEMENT -> when {
-                text.anyContains("查看", "检查", "inventory", "现有", "是否已经有") ->
+                text.anyContains("check", "inspect", "inventory", "existing", "list") ->
                     listOf("skill_check", "skill_notes")
-                text.anyContains("安装", "市场", "search", "导入", "获取") ->
+                text.anyContains("install", "market", "search", "import", "get", "add") ->
                     listOf("skill_market", "quick_skill", "create_skill")
-                text.anyContains("角色", "切换", "persona", "自我升级", "调整") ->
+                text.anyContains("role", "switch", "persona", "self-upgrade", "adjust", "modify") ->
                     listOf("role_manager", "switch_role", "skill_check")
                 else -> listOf("skill_check", "quick_skill", "skill_market", "create_skill", "skill_notes", "role_manager", "switch_role")
             }
             TaskType.CODE_EXECUTION -> when {
-                text.anyContains("python", "脚本", "代码") ->
+                text.anyContains("python", "script", "code") ->
                     listOf("run_python", "shell", "pip_install")
-                text.anyContains("安装", "依赖", "pip") ->
+                text.anyContains("install", "dependency", "dependencies", "pip", "package") ->
                     listOf("pip_install", "run_python", "shell")
                 else -> listOf("shell", "run_python", "pip_install", "read_file", "create_file", "list_files")
             }
@@ -649,19 +771,19 @@ object TaskToolPolicy {
                     listOf("app_manager", "read_file", "create_file", "list_files", "create_html", "ui_builder")
                 artifactPreference == ArtifactToolPreference.AI_PAGE ->
                     listOf("ui_builder", "app_manager", "create_html", "read_file", "create_file", "list_files")
-                text.anyContains("记忆", "记住", "偏好", "配置", "用户画像") ->
+                text.anyContains("memory", "remember", "preference", "preferences", "config", "configuration", "profile") ->
                     listOf("memory", "user_profile", "user_config")
-                text.anyContains("角色", "切换", "persona", "风格") ->
+                text.anyContains("role", "switch", "persona", "style") ->
                     listOf("role_manager", "switch_role", "memory")
-                text.anyContains("技能", "skill", "创建技能", "能力") ->
+                text.anyContains("skill", "skills", "capability", "capabilities") ->
                     listOf("skill_check", "skill_market", "quick_skill", "create_skill", "skill_notes")
-                text.anyContains("miniapp", "mini app", "小程序", "程序", "应用", "game", "游戏", "webview", "html", "javascript", "canvas") ->
+                text.anyContains("miniapp", "mini app", "program", "application", "game", "webview", "html", "javascript", "canvas") ->
                     listOf("app_manager", "read_file", "create_file", "list_files", "create_html", "ui_builder")
-                text.anyContains("页面", "ui", "原生", "app", "应用中心") ->
+                text.anyContains("page", "ui", "native", "native page", "app center") ->
                     listOf("ui_builder", "app_manager", "create_html", "read_file", "create_file")
-                text.anyContains("图片", "图标", "头像", "视频", "bqb", "表情") ->
+                text.anyContains("image", "picture", "icon", "avatar", "video", "sticker", "meme", "reaction") ->
                     listOf("generate_image", "generate_icon", "generate_video", "sticker_bqb")
-                text.anyContains("网页", "搜索", "资料", "查找", "联网") ->
+                text.anyContains("web", "website", "search", "research", "source", "find", "online", "browse") ->
                     listOf("web_search", "fetch_url", "web_browse", "web_content", "web_js")
                 else -> allowed
             }
@@ -670,7 +792,7 @@ object TaskToolPolicy {
     }
 
     // When a continuation already carries an artifact contract or workspace anchor, prefer that tool
-    // over broad keyword matches like "页面" or "UI", which previously misrouted MiniAPP patch flows.
+    // over broad keyword matches like "page" or "UI", which previously misrouted MiniAPP patch flows.
     private fun detectArtifactToolPreferenceFromGoal(text: String): ArtifactToolPreference? = when {
         text.contains("artifact_type=miniapp") ||
             text.contains("current miniapp target:") ||

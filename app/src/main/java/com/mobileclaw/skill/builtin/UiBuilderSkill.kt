@@ -717,7 +717,7 @@ stdout → state[result_key]
 
 ### MobileClaw App Context
 Read structured app data that MobileClaw already has. Result is JSON stored in state[result_key].
-Domains: all, summary, memory, chat, groups, settings, skills, roles, pages, vpn.
+Domains: all, summary, memory, chat, settings, skills, roles, pages, vpn.
 Sensitive config values and API keys are redacted.
 {"type":"app_context","domain":"summary","limit":20,"result_key":"ctx"}
 {"type":"app_context","domain":"chat","limit":10,"result_key":"chat_json"}
@@ -784,7 +784,7 @@ ui_builder(action=create, title="天气查询", icon="weather",
 - Pages survive app restarts; state resets to initial values on each open.
 - Actions run on background thread; UI updates via Compose state flow.
 - Use ai_chat for LLM calls so pages inherit the app's default gateway safely.
-- AI pages can now build dashboards or tools from app memory, chats, group chats, settings, roles, skills, AI pages, and VPN summaries.
+- AI pages can now build dashboards or tools from app memory, chats, settings, roles, skills, AI pages, and VPN summaries.
 - Prefer app_context for reading MobileClaw data and skill_call for doing work through existing capabilities.
 - Call get_guide to see this reference; call list to see existing pages.
 """.trimIndent()

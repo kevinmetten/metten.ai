@@ -42,7 +42,7 @@ python3 scripts/mobileclaw_debug.py --serial 74c5f6ee triage "floating ball appe
 Analyze an existing artifact:
 
 ```bash
-python3 scripts/mobileclaw_debug.py analyze debug_artifacts/20260521_192316_smoke --problem "group chat crash"
+python3 scripts/mobileclaw_debug.py analyze debug_artifacts/20260521_192316_smoke --problem "phone-control tap missed"
 ```
 
 Operate the phone:

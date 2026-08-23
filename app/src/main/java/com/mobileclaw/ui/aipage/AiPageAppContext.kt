@@ -30,7 +30,6 @@ class AiPageAppContext(private val context: Context) {
                 "memory" -> mapOf("memory" to memory())
                 "memory_context", "memoryContext" -> mapOf("memoryContext" to memoryContext())
                 "chat", "chats" -> mapOf("chat" to chat(cappedLimit))
-                "groups", "group_chat", "group_chats" -> mapOf("groups" to groups(cappedLimit))
                 "settings", "config" -> mapOf("settings" to settings())
                 "skills" -> mapOf("skills" to skills())
                 "roles" -> mapOf("roles" to roles())
@@ -41,7 +40,6 @@ class AiPageAppContext(private val context: Context) {
                     "memory" to memory(),
                     "memoryContext" to memoryContext(),
                     "chat" to chat(cappedLimit),
-                    "groups" to groups(cappedLimit),
                     "settings" to settings(),
                     "skills" to skills(),
                     "roles" to roles(),
@@ -111,35 +109,6 @@ class AiPageAppContext(private val context: Context) {
                             "role" to it.role,
                             "text" to it.text.take(1200),
                             "hasImage" to (it.imageBase64 != null),
-                            "attachmentCount" to countJsonArray(it.attachmentsJson),
-                            "createdAt" to it.createdAt,
-                        )
-                    },
-                )
-            },
-        )
-    }
-
-    private suspend fun groups(limit: Int): Map<String, Any> {
-        val roles = app.roleManager.all().associateBy { it.id }
-        return mapOf(
-            "groups" to app.groupManager.all().take(limit).map { group ->
-                val recentMessages = runCatching { app.database.groupMessageDao().forGroup(group.id).takeLast(20) }
-                    .getOrDefault(emptyList())
-                mapOf(
-                    "id" to group.id,
-                    "name" to group.name,
-                    "emoji" to group.emoji,
-                    "members" to group.memberRoleIds.mapNotNull { id ->
-                        roles[id]?.let { role -> mapOf("id" to role.id, "name" to role.name, "avatar" to role.avatar) }
-                    },
-                    "createdAt" to group.createdAt,
-                    "updatedAt" to group.updatedAt,
-                    "recentMessages" to recentMessages.map {
-                        mapOf(
-                            "senderId" to it.senderId,
-                            "senderName" to it.senderName,
-                            "text" to it.text.take(1200),
                             "attachmentCount" to countJsonArray(it.attachmentsJson),
                             "createdAt" to it.createdAt,
                         )
@@ -279,7 +248,6 @@ class AiPageAppContext(private val context: Context) {
                 "semanticFactCount" to semanticCount,
                 "conversationMemoryCount" to conversationCount,
                 "chatSessionCount" to sessionCount,
-                "groupCount" to app.groupManager.all().size,
                 "roleCount" to app.roleManager.all().size,
                 "skillCount" to app.skillRegistry.all().count { !it.meta.internalTool },
                 "internalToolCount" to app.skillRegistry.all().count { it.meta.internalTool },

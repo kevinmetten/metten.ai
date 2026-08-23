@@ -1,8 +1,6 @@
 package com.mobileclaw.ui
 
-import android.content.Context
 import android.content.Intent
-import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
@@ -44,11 +42,6 @@ class MainActivity : ComponentActivity() {
     private var debugPageRequest by mutableStateOf<String?>(null)
     private var debugGoalRequest by mutableStateOf<String?>(null)
 
-    override fun attachBaseContext(newBase: Context) {
-        val language = ClawApplication.instance.agentConfig.language
-        super.attachBaseContext(wrapLocale(newBase, language))
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -81,13 +74,6 @@ class MainActivity : ComponentActivity() {
             val configSnapshot by uiState.config.collectAsState(initial = initialConfig)
 
             LaunchedEffect(Unit) {
-                vm.languageChanged.collect { lang ->
-                    ClawApplication.instance.applyLanguage(lang)
-                    recreate()
-                }
-            }
-
-            LaunchedEffect(Unit) {
                 vm.checkAppUpdateOnLaunch()
             }
 
@@ -95,7 +81,6 @@ class MainActivity : ComponentActivity() {
                 ClawTheme(
                     darkTheme = configSnapshot.darkTheme,
                     accentColor = configSnapshot.accentColor,
-                    language = configSnapshot.language,
                 ) {
                     val lightStatusBars = uiState.currentPage != AppPage.AI_TOWN && !configSnapshot.darkTheme
                     SideEffect {
@@ -226,13 +211,5 @@ class MainActivity : ComponentActivity() {
         private const val DEBUG_GOAL_EXTRA = "mobileclaw.debug.goal"
         private const val DEBUG_GOAL_B64_EXTRA = "mobileclaw.debug.goal.b64"
 
-        fun wrapLocale(context: Context, language: String): Context {
-            if (language == "auto" || language.isBlank()) return context
-            val locale = Locale.forLanguageTag(language)
-            Locale.setDefault(locale)
-            val config = Configuration(context.resources.configuration)
-            config.setLocale(locale)
-            return context.createConfigurationContext(config)
-        }
     }
 }

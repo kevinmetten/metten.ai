@@ -1,6 +1,7 @@
 package com.mobileclaw.ui.chat.runtime
 
 import com.mobileclaw.agent.Role
+import com.mobileclaw.agent.RoleWorkspaceMarkdownSchema
 import com.mobileclaw.agent.RoleWorkspaceSnapshot
 import com.mobileclaw.agent.RoleWorkspaceStore
 import com.mobileclaw.config.ConfigSnapshot
@@ -108,7 +109,7 @@ class RoleChatRuntimeBridge(
             appendLine("- Completion summary: ${plan.responsePolicy.completionSummaryMode}")
             appendLine("- Avoid capability listing: ${plan.responsePolicy.avoidCapabilityListing}")
             appendLine("- Allow UI blocks: ${plan.responsePolicy.allowUiBlocks}")
-            extractSection(core, "## 工作方法")
+            extractRoleWorkspaceSection(core, RoleWorkspaceMarkdownSchema.Core.WORKING_METHOD)
                 .ifBlank { profile.role.systemPromptAddendum }
                 .take(700)
                 .takeIf { it.isNotBlank() }
@@ -127,7 +128,7 @@ class RoleChatRuntimeBridge(
                     appendLine("### Chat Rules")
                     appendLine(it)
                 }
-            extractSection(memory, "## 稳定偏好")
+            extractRoleWorkspaceSection(memory, RoleWorkspaceMarkdownSchema.Memory.STABLE_PREFERENCES)
                 .take(500)
                 .takeIf { it.isNotBlank() }
                 ?.let {
@@ -159,13 +160,15 @@ class RoleChatRuntimeBridge(
             source = source,
         ).compiledPrompt
 
-    private fun extractSection(markdown: String, heading: String): String {
-        val lines = markdown.lines()
-        val start = lines.indexOfFirst { it.trim() == heading }
-        if (start < 0) return ""
-        return lines.drop(start + 1)
-            .takeWhile { !it.startsWith("## ") }
-            .joinToString("\n")
-            .trim()
-    }
+}
+
+internal fun extractRoleWorkspaceSection(markdown: String, section: String): String {
+    val heading = RoleWorkspaceMarkdownSchema.heading(section)
+    val lines = markdown.lines()
+    val start = lines.indexOfFirst { it.trim() == heading }
+    if (start < 0) return ""
+    return lines.drop(start + 1)
+        .takeWhile { !it.startsWith("## ") }
+        .joinToString("\n")
+        .trim()
 }

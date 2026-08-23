@@ -68,7 +68,7 @@ class MiniAppPreflightValidator(
                 issues += validatePythonBackend(code)
                 store.savePython(tempId, code)
             }
-            val webReport = normalizeTimeoutOnlyPreflight(
+            val webReport = MiniAppTimeoutPreflightNormalizer.normalize(
                 validateHtmlInHiddenWebView(tempId, html, mode),
                 mode,
             )
@@ -329,9 +329,12 @@ class MiniAppPreflightValidator(
         return hook + html
     }
 
-    private fun normalizeTimeoutOnlyPreflight(
+}
+
+internal object MiniAppTimeoutPreflightNormalizer {
+    fun normalize(
         report: MiniAppPreflightReport,
-        mode: Mode,
+        mode: MiniAppPreflightValidator.Mode,
     ): MiniAppPreflightReport {
         if (report.ok || report.issues.isEmpty()) return report
         val timeoutIssue = report.issues.firstOrNull { it.contains("preflight exceeded", ignoreCase = true) }
@@ -350,36 +353,15 @@ class MiniAppPreflightValidator(
         }
         if (hasErrorSignals) return report
 
-        val hasStartupReadySignal = logs.any { line ->
-            val lower = line.lowercase()
-            listOf(
-                "startup",
-                "page mounted",
-                "app mounted",
-                "mounted",
-                "ready",
-                "loaded",
-                "load complete",
-                "loaded complete",
-                "rendered",
-                "initialized",
-                "init complete",
-                "已生成",
-                "加载完成",
-                "已加载",
-                "已就绪",
-                "初始化完成",
-            ).any { token -> token in lower }
-        }
         val hasMeaningfulProgress = report.title.isNotBlank() || logs.isNotEmpty()
-        if (!hasStartupReadySignal && !hasMeaningfulProgress) return report
+        if (!hasMeaningfulProgress) return report
 
         return report.copy(
             ok = true,
             issues = emptyList(),
             warnings = (
                 report.warnings +
-                    "MiniAPP ${mode.name.lowercase()} preflight probe exceeded the timeout, but runtime logs indicate startup completed. Allowing create/open and keeping this as a warning."
+                    "MiniAPP ${mode.name.lowercase()} preflight probe exceeded the timeout, but a page title or runtime log indicates startup progress. Allowing create/open and keeping this as a warning."
                 ).distinct(),
         )
     }

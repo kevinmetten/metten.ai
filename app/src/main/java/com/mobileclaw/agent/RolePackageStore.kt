@@ -69,7 +69,7 @@ class RolePackageStore(
                 "includesAvatarAsset" to (avatarAsset != null).toString(),
             ),
         )
-        val outFile = targetFile ?: File(exportsDir, "${sanitizePackageName(role.name.ifBlank { role.id })}.$ROLE_PACKAGE_EXTENSION")
+        val outFile = targetFile ?: File(exportsDir, "${RolePackageNaming.sanitizePackageName(role.name.ifBlank { role.id })}.$ROLE_PACKAGE_EXTENSION")
         outFile.parentFile?.mkdirs()
         ZipOutputStream(outFile.outputStream().buffered()).use { zip ->
             zip.writeTextEntry("manifest.json", prettyGson.toJson(manifest))
@@ -124,7 +124,7 @@ class RolePackageStore(
         }
 
     private fun resolveImportId(preferredId: String, originalId: String, title: String, overwrite: Boolean): String {
-        val base = sanitizeRoleId(preferredId.ifBlank { originalId.ifBlank { title } })
+        val base = RolePackageNaming.sanitizeRoleId(preferredId.ifBlank { originalId.ifBlank { title } })
             .ifBlank { "role_${UUID.randomUUID().toString().take(8)}" }
         val existing = roleManager.get(base)
         if (existing == null || (overwrite && !existing.isBuiltin)) return base
@@ -154,7 +154,7 @@ class RolePackageStore(
             .firstOrNull { !it.isDirectory && it.name.startsWith("assets/avatar.") }
             ?: return null
         val ext = entry.name.substringAfterLast('.', "png").lowercase().filter { it.isLetterOrDigit() }.take(8).ifBlank { "png" }
-        val outFile = File(avatarDir, "${sanitizeRoleId(targetId)}.$ext")
+        val outFile = File(avatarDir, "${RolePackageNaming.sanitizeRoleId(targetId)}.$ext")
         return runCatching {
             outFile.parentFile?.mkdirs()
             zip.getInputStream(entry).use { input -> outFile.outputStream().use { output -> input.copyTo(output) } }
@@ -230,17 +230,6 @@ class RolePackageStore(
         }
     }
 
-    private fun sanitizePackageName(raw: String): String =
-        raw.trim().lowercase()
-            .replace(Regex("[^a-z0-9_\\-\\u4e00-\\u9fa5]+"), "_")
-            .trim('_')
-            .ifBlank { "role" }
-
-    private fun sanitizeRoleId(raw: String): String =
-        raw.trim().lowercase()
-            .replace(Regex("[^a-z0-9_]+"), "_")
-            .trim('_')
-            .take(48)
 
     private data class AvatarAsset(val path: String, val bytes: ByteArray)
 

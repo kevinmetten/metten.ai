@@ -58,6 +58,58 @@ data class RoleChatControlPlan(
     }
 }
 
+enum class RoleExecutionPreference {
+    AUTO,
+    DIRECT_FIRST,
+    AGENT_FIRST,
+}
+
+/** Stable editor-managed execution preference stored inside the Skill Policy section. */
+object RoleExecutionPreferenceProtocol {
+    private const val FIELD = "Execution mode"
+    private val fieldPattern = Regex(
+        pattern = """^\s*-?\s*$FIELD\s*:\s*(auto|direct_first|agent_first)\s*$""",
+        option = RegexOption.IGNORE_CASE,
+    )
+
+    fun parse(skillPolicy: String, responsePolicy: String = ""): RoleExecutionPreference {
+        skillPolicy.lineSequence().forEach { line ->
+            val value = fieldPattern.matchEntire(line)?.groupValues?.getOrNull(1)?.lowercase()
+                ?: return@forEach
+            return when (value) {
+                "direct_first" -> RoleExecutionPreference.DIRECT_FIRST
+                "agent_first" -> RoleExecutionPreference.AGENT_FIRST
+                else -> RoleExecutionPreference.AUTO
+            }
+        }
+
+        val prose = "$skillPolicy\n$responsePolicy".lowercase()
+        return when {
+            listOf("prefer agent", "agent first", "force agent").any(prose::contains) ->
+                RoleExecutionPreference.AGENT_FIRST
+            listOf("prefer direct", "direct chat first").any(prose::contains) ->
+                RoleExecutionPreference.DIRECT_FIRST
+            else -> RoleExecutionPreference.AUTO
+        }
+    }
+
+    fun update(skillPolicy: String, preference: RoleExecutionPreference): String {
+        val kept = skillPolicy.lineSequence()
+            .filterNot { fieldPattern.matches(it) }
+            .joinToString("\n")
+            .trimEnd()
+        val managedLine = when (preference) {
+            RoleExecutionPreference.AUTO -> ""
+            RoleExecutionPreference.DIRECT_FIRST -> "- $FIELD: direct_first"
+            RoleExecutionPreference.AGENT_FIRST -> "- $FIELD: agent_first"
+        }
+        return listOf(kept, managedLine)
+            .filter { it.isNotBlank() }
+            .joinToString("\n")
+            .trim()
+    }
+}
+
 object RoleChatControlPlanCompiler {
     fun compile(profile: RoleRuntimeProfile): RoleChatControlPlan {
         val protocol = profile.protocol
@@ -81,19 +133,17 @@ object RoleChatControlPlanCompiler {
             .distinct()
         val blockedToolIds = extractListAfterLabels(
             text = protocol.skillPolicy,
-            labels = listOf("Blocked tools", "blocked tools", "禁用技能", "禁止工具"),
+            labels = listOf("Blocked tools"),
         )
         val roleMemoryAllowed = protocol.memoryPolicy.isNotBlank() ||
             protocol.persistencePolicy.contains("memory.md", ignoreCase = true)
-        val journalAllowed = protocol.persistencePolicy.contains("journal.md", ignoreCase = true) ||
-            protocol.persistencePolicy.contains("工作日志")
+        val journalAllowed = protocol.persistencePolicy.contains("journal.md", ignoreCase = true)
         val contextPolicy = RoleContextPolicy(
             readRoleFiles = readFiles,
-            includeUserMemory = !allProtocolText.contains("no user memory") && !allProtocolText.contains("不读取用户记忆"),
-            includeRecentMessages = allProtocolText.contains("最近对话") ||
-                allProtocolText.contains("recent conversation") ||
-                allProtocolText.contains("recent messages"),
-            includeWorkspaceSummary = !allProtocolText.contains("no workspace") && !allProtocolText.contains("不读取工作区"),
+            includeUserMemory = !allProtocolText.contains("no user memory"),
+            includeRecentMessages = protocol.inputUnderstanding.isNotBlank() &&
+                !allProtocolText.contains("ignore recent"),
+            includeWorkspaceSummary = !allProtocolText.contains("no workspace"),
             maxRoleContextChars = when {
                 readFiles.size >= 5 -> 6200
                 readFiles.size >= 4 -> 5200
@@ -103,58 +153,57 @@ object RoleChatControlPlanCompiler {
         val toolPolicy = RoleToolPolicy(
             preferredToolIds = preferredToolIds,
             blockedToolIds = blockedToolIds,
-            allowMcp = !allProtocolText.contains("disable mcp") && !allProtocolText.contains("禁用 mcp"),
+            allowMcp = !allProtocolText.contains("disable mcp"),
             requireConfirmationForExternalTools = false,
         )
         val intentPolicy = RoleIntentPolicy(
             shortFollowUpMode = when {
-                allProtocolText.contains("不结合最近对话") || allProtocolText.contains("ignore recent") -> "latest_message_only"
-                allProtocolText.contains("最近对话") || allProtocolText.contains("short follow") || allProtocolText.contains("短句") -> "resolve_from_recent_context"
+                allProtocolText.contains("ignore recent") -> "latest_message_only"
+                protocol.inputUnderstanding.isNotBlank() -> "resolve_from_recent_context"
                 else -> "standard"
             },
-            currentMessagePriority = !allProtocolText.contains("历史优先") && !allProtocolText.contains("history first"),
+            currentMessagePriority = !allProtocolText.contains("history first"),
             artifactReferenceMode = if (
-                allProtocolText.contains("当前产物") ||
                 allProtocolText.contains("active artifact") ||
                 allProtocolText.contains("workspace")
             ) "active_artifact_aware" else "standard",
         )
         val responsePolicy = RoleResponsePolicy(
             style = extractResponseStyle(protocol.responsePolicy),
-            avoidCapabilityListing = !allProtocolText.contains("允许能力清单") &&
-                !allProtocolText.contains("list capabilities freely"),
+            avoidCapabilityListing = !allProtocolText.contains("list capabilities freely"),
             allowUiBlocks = allProtocolText.contains("ui block") ||
-                allProtocolText.contains("交互") ||
-                allProtocolText.contains("按钮") ||
-                allProtocolText.contains("表单"),
+                allProtocolText.contains("interactive block") ||
+                allProtocolText.contains("interactive form"),
             completionSummaryMode = when {
-                allProtocolText.contains("低打扰") || allProtocolText.contains("简短汇报") -> "compact"
-                allProtocolText.contains("详细汇报") || allProtocolText.contains("explain steps") -> "detailed"
+                allProtocolText.contains("low interruption") || allProtocolText.contains("compact summary") -> "compact"
+                allProtocolText.contains("detailed summary") || allProtocolText.contains("explain steps") -> "detailed"
                 else -> "balanced"
             },
         )
         val visibilityPolicy = RoleVisibilityPolicy(
             showTimelineForToolCalls = !allProtocolText.contains("silent tools") &&
-                !allProtocolText.contains("hide tool timeline") &&
-                !allProtocolText.contains("不展示工具过程") &&
-                !allProtocolText.contains("低打扰执行"),
+                !allProtocolText.contains("hide tool timeline"),
             showTimelineForMemoryWrites = (roleMemoryAllowed || journalAllowed) &&
-                !allProtocolText.contains("hide memory timeline") &&
-                !allProtocolText.contains("不展示记忆写入") &&
-                !allProtocolText.contains("静默写入记忆"),
-            exposeTraceByDefault = allProtocolText.contains("expose trace") || allProtocolText.contains("展示执行过程"),
+                !allProtocolText.contains("hide memory timeline"),
+            exposeTraceByDefault = allProtocolText.contains("expose trace"),
         )
         val persistencePolicy = RolePersistencePolicy(
             writeJournalOnCompletion = journalAllowed,
             allowRoleMemoryWrite = roleMemoryAllowed,
-            allowUserMemoryWrite = !allProtocolText.contains("no user memory write") && !allProtocolText.contains("不写用户记忆"),
+            allowUserMemoryWrite = !allProtocolText.contains("no user memory write"),
             memoryImportanceThreshold = extractMemoryThreshold(protocol).ifBlank {
                 "stable_preference_or_reusable_working_habit"
             },
         )
         return RoleChatControlPlan(
             roleProfile = profile,
-            executionModeHint = extractExecutionModeHint(allProtocolText),
+            executionModeHint = when (
+                RoleExecutionPreferenceProtocol.parse(protocol.skillPolicy, protocol.responsePolicy)
+            ) {
+                RoleExecutionPreference.AUTO -> null
+                RoleExecutionPreference.DIRECT_FIRST -> ChatExecutionMode.DIRECT_CHAT
+                RoleExecutionPreference.AGENT_FIRST -> ChatExecutionMode.AGENT
+            },
             contextPolicy = contextPolicy,
             toolPolicy = toolPolicy,
             intentPolicy = intentPolicy,
@@ -192,7 +241,7 @@ object RoleChatControlPlanCompiler {
         if (labelIndex < 0) return emptyList()
         return lines.drop(labelIndex + 1)
             .takeWhile { it.trim().startsWith("-") || it.trim().startsWith("*") || it.contains(",") }
-            .flatMap { line -> line.removePrefix("-").removePrefix("*").split(",", "，") }
+            .flatMap { line -> line.removePrefix("-").removePrefix("*").split(",") }
             .map { it.trim().trim('`', '\'', '"') }
             .filter { it.isNotBlank() }
             .distinct()
@@ -201,43 +250,18 @@ object RoleChatControlPlanCompiler {
     private fun extractMemoryThreshold(protocol: RoleExecutionProtocol): String {
         val line = protocol.persistencePolicy
             .lines()
-            .firstOrNull { it.contains("threshold", ignoreCase = true) || it.contains("阈值") }
+            .firstOrNull { it.contains("threshold", ignoreCase = true) }
             .orEmpty()
-        return line.substringAfter(":").substringAfter("：").trim()
-    }
-
-    private fun extractExecutionModeHint(text: String): ChatExecutionMode? {
-        val prefersAgent = listOf(
-            "prefer agent",
-            "agent first",
-            "force agent",
-            "进入 agent",
-            "优先 agent",
-            "优先工具",
-            "需要行动时进入工具",
-            "需要行动时进入 agent",
-            "执行类任务进入工具",
-            "执行类任务进入 agent",
-        ).any { text.contains(it) }
-        if (prefersAgent) return ChatExecutionMode.AGENT
-        val prefersDirect = listOf(
-            "prefer direct",
-            "direct chat first",
-            "直接回答优先",
-            "普通问答直接回答",
-            "简单问题直接回答",
-            "闲聊直接回答",
-        ).any { text.contains(it) }
-        if (prefersDirect) return ChatExecutionMode.DIRECT_CHAT
-        return null
+        return line.substringAfter(":").trim()
     }
 
     private fun extractResponseStyle(responsePolicy: String): String {
         val text = responsePolicy.lowercase()
         return when {
-            text.contains("直接") || text.contains("concise") || text.contains("简洁") -> "concise_direct"
-            text.contains("详细") || text.contains("thorough") -> "thorough"
-            text.contains("温和") || text.contains("warm") -> "warm"
+            text.contains("directly") || text.contains("concise") -> "concise_direct"
+            text.contains("detailed") || text.contains("thorough") -> "thorough"
+            text.contains("warm") -> "warm"
+            responsePolicy.isNotBlank() -> "concise_direct"
             else -> "role_default"
         }
     }
