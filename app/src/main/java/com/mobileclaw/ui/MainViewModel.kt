@@ -3490,11 +3490,7 @@ class MainViewModel : ViewModel() {
         executionContext: String,
         imageBase64: String?,
     ): DirectChatContext {
-        val langSection = when (config.language) {
-            "zh" -> str(R.string.vm_00cf2c)
-            "en" -> "\nYou MUST respond in English.\n"
-            else -> ""
-        }
+        val langSection = "\nYou MUST respond in English.\n"
         val roleSection = if (currentRole.id != "general" && currentRole.systemPromptAddendum.isNotBlank()) {
             "\n## Your Persona\n${currentRole.systemPromptAddendum.trim()}\n"
         } else ""
@@ -3506,11 +3502,7 @@ class MainViewModel : ViewModel() {
         val configSnapshot = config.snapshot()
         val localChatMode = configSnapshot.localNativeOnly || configSnapshot.localModelEnabled
         val imageInstruction = if (imageBase64 != null) {
-            if (config.language == "en") {
-                "\nThe user attached an image. Answer from the image itself. Do not search the web, do not call tools, and do not say you need external lookup unless the user explicitly asks for web research.\n"
-            } else {
-                "\n用户附带了一张图片。请直接根据图片本身回答。不要网页搜索，不要调用工具；除非用户明确要求联网查询，否则不要说需要外部检索。\n"
-            }
+            "\nThe user attached an image. Answer from the image itself. Do not search the web, do not call tools, and do not say you need external lookup unless the user explicitly asks for web research.\n"
         } else ""
         val directExecutionContext = if (imageBase64 != null) executionContext else ""
         val capabilityInfoInstruction =

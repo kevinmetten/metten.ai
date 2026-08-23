@@ -28,6 +28,19 @@ class MainExecutionSemanticsTest {
     }
 
     @Test
+    fun `execution intent matches whole words`() {
+        assertTrue(MainExecutionSemantics.hasExecutionIntent("open the settings app"))
+        assertTrue(MainExecutionSemantics.hasExecutionIntent("run the script"))
+        assertTrue(MainExecutionSemantics.hasExecutionIntent("search for the report"))
+        assertTrue(MainExecutionSemantics.hasExecutionIntent("connect the service"))
+
+        assertFalse(MainExecutionSemantics.hasExecutionIntent("Explain connection pooling"))
+        assertFalse(MainExecutionSemantics.hasExecutionIntent("The runner finished the race"))
+        assertFalse(MainExecutionSemantics.hasExecutionIntent("Describe a searchlight"))
+        assertFalse(MainExecutionSemantics.hasExecutionIntent("Discuss open-minded design"))
+    }
+
+    @Test
     fun `unknown unicode passes through without matching convenience routes`() {
         val goal = "اشرح لي هذه الفكرة"
         assertEquals("اشرح لي هذه الفكرة", goal)

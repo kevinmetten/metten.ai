@@ -1,6 +1,8 @@
 package com.mobileclaw.ui
 
 internal object MainExecutionSemantics {
+    private val tokenPattern = Regex("[\\p{L}\\p{N}_]+(?:-[\\p{L}\\p{N}_]+)*")
+
     private val capabilityQuestions = setOf(
         "what can you do",
         "what are your capabilities",
@@ -30,18 +32,16 @@ internal object MainExecutionSemantics {
         normalizeCommand(goal) in continuationCommands
 
     fun hasExplicitPhoneControlIntent(goal: String): Boolean {
-        val text = goal.trim().lowercase()
         return listOf(
             "control the phone",
             "operate the phone",
             "on my phone",
             "open app",
             "open the app",
-        ).any(text::contains)
+        ).any { goal.containsTokenPhrase(it) }
     }
 
     fun hasMemoryIntent(goal: String): Boolean {
-        val text = goal.lowercase()
         return listOf(
             "remember",
             "save this",
@@ -51,17 +51,22 @@ internal object MainExecutionSemantics {
             "my preferences",
             "my habit",
             "store in memory",
-        ).any(text::contains)
+        ).any { goal.containsTokenPhrase(it) }
     }
 
-    fun hasExecutionIntent(goal: String): Boolean {
-        val text = goal.lowercase()
-        return listOf(
+    fun hasExecutionIntent(goal: String): Boolean =
+        listOf(
             "create", "generate", "update", "modify", "fix", "run", "execute",
             "open", "search", "install", "connect", "continue",
-        ).any(text::contains)
-    }
+        ).any { goal.containsTokenPhrase(it) }
 
     private fun normalizeCommand(value: String): String =
         value.trim().lowercase().trimEnd('?', '!', '.')
+
+    private fun String.containsTokenPhrase(phrase: String): Boolean {
+        val tokens = tokenPattern.findAll(lowercase()).map { it.value }.toList()
+        val phraseTokens = tokenPattern.findAll(phrase.lowercase()).map { it.value }.toList()
+        if (phraseTokens.isEmpty() || phraseTokens.size > tokens.size) return false
+        return tokens.windowed(phraseTokens.size).any { it == phraseTokens }
+    }
 }
