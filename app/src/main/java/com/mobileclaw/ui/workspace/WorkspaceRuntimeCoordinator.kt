@@ -11,7 +11,6 @@ internal class WorkspaceRuntimeCoordinator(
     private val workspaceStore: WorkspaceStore,
 ) {
     private val sessionWorkspaces = mutableMapOf<String, String>()
-    private val groupWorkspaces = mutableMapOf<String, String>()
 
     fun ensureSessionBinding(
         sessionId: String,
@@ -34,56 +33,23 @@ internal class WorkspaceRuntimeCoordinator(
             ?: workspaceStore.currentForScope(scope)
                 ?.takeIf { shouldReuseSessionWorkspace(it, goal, taskType, intent) }
         val workspace = existing ?: workspaceStore.createWorkspace(
-            title = goal.take(40),
-            goal = goal.take(400),
+            title = WorkspacePromptSemantics.preserveContent(goal, 40),
+            goal = WorkspacePromptSemantics.preserveContent(goal, 400),
             scope = scope,
             tags = listOf(taskType.name.lowercase()),
         )
         sessionWorkspaces[sessionId] = workspace.id
-        workspaceStore.appendNote(workspace.id, "task_goal", goal.take(2000))
+        workspaceStore.appendNote(workspace.id, "task_goal", WorkspacePromptSemantics.preserveContent(goal, 2000))
         workspaceStore.writeCheckpoint(
             workspace.id,
             WorkspaceCheckpoint(
                 label = "task_start",
                 taskType = taskType.name,
-                summary = goal.take(200),
-                details = "Goal:\n${goal.take(2000)}",
+                summary = WorkspacePromptSemantics.preserveContent(goal, 200),
+                details = "Goal:\n${WorkspacePromptSemantics.preserveContent(goal, 2000)}",
             ),
         )
         bindWorkspaceArtifacts(sessionId, intent)
-    }
-
-    fun ensureGroupBinding(
-        groupId: String,
-        roleId: String,
-        taskType: TaskType,
-        goal: String,
-    ): String {
-        val key = "$groupId::$roleId"
-        val scope = "group:$groupId:role:$roleId"
-        val currentWorkspace = groupWorkspaces[key]?.let { workspaceStore.get(it) }
-        if (currentWorkspace != null && shouldReuseGroupWorkspace(currentWorkspace, goal, taskType)) {
-            return currentWorkspace.id
-        }
-        val existing = workspaceStore.currentForScope(scope)
-            ?.takeIf { shouldReuseGroupWorkspace(it, goal, taskType) }
-        val workspace = existing ?: workspaceStore.createWorkspace(
-            title = goal.take(40).ifBlank { "$groupId-$roleId" },
-            goal = goal.take(400),
-            scope = scope,
-            tags = listOf(taskType.name.lowercase(), "group"),
-        )
-        groupWorkspaces[key] = workspace.id
-        workspaceStore.writeCheckpoint(
-            workspace.id,
-            WorkspaceCheckpoint(
-                label = "group_task_start",
-                taskType = taskType.name,
-                summary = goal.take(200),
-                details = "Goal:\n${goal.take(2000)}",
-            ),
-        )
-        return workspace.id
     }
 
     fun resolveSessionWorkspaceId(sessionId: String): String? {
@@ -129,7 +95,7 @@ internal class WorkspaceRuntimeCoordinator(
         userGoal: String,
         executionGoal: String,
     ): String {
-        if (!isWorkspaceResumePrompt(userGoal)) return executionGoal
+        if (!WorkspacePromptSemantics.isResumePrompt(userGoal)) return executionGoal
         val workspaceId = resolveSessionWorkspaceId(sessionId) ?: return executionGoal
         val execution = workspaceStore.executionContext(workspaceId)
         val checkpoint = workspaceStore.latestCheckpointContent(workspaceId).orEmpty().take(2400)
@@ -189,24 +155,13 @@ internal class WorkspaceRuntimeCoordinator(
         intent: ContextualTaskIntent,
     ): Boolean {
         if (goal.isBlank()) return true
-        if (isWorkspaceResumePrompt(goal) || isWorkspaceFollowUpPrompt(goal)) return true
+        if (WorkspacePromptSemantics.isResumePrompt(goal) || WorkspacePromptSemantics.isFollowUpPrompt(goal)) return true
         if (workspaceMatchesIntentArtifact(workspace, intent)) return true
         val sameTaskType = workspace.tags.any { it.equals(taskType.name, ignoreCase = true) }
         if ((taskType == TaskType.CHAT || taskType == TaskType.GENERAL) && sameTaskType) {
             return true
         }
         return goalsAreRelated(workspace.goal, goal)
-    }
-
-    private fun shouldReuseGroupWorkspace(
-        workspace: WorkspaceManifest,
-        goal: String,
-        taskType: TaskType,
-    ): Boolean {
-        if (goal.isBlank()) return true
-        if (isWorkspaceResumePrompt(goal) || isWorkspaceFollowUpPrompt(goal)) return true
-        val sameTaskType = workspace.tags.any { it.equals(taskType.name, ignoreCase = true) }
-        return sameTaskType && goalsAreRelated(workspace.goal, goal)
     }
 
     private fun workspaceMatchesIntentArtifact(workspace: WorkspaceManifest, intent: ContextualTaskIntent): Boolean {
@@ -220,38 +175,13 @@ internal class WorkspaceRuntimeCoordinator(
         return aiPageMatch || miniAppMatch
     }
 
-    private fun isWorkspaceFollowUpPrompt(text: String): Boolean {
-        val normalized = text.trim().lowercase()
-        if (normalized.isBlank()) return false
-        return listOf(
-            "它", "这个", "这页", "这个页面", "这个ui", "这个应用", "这个app", "这个文件", "这个文档",
-            "刚才", "上面", "上一版", "前面", "然后", "改下", "改一下", "修改", "调整", "优化",
-            "美化", "完善", "更新", "换成", "改成", "别这样", "不是这样", "不对", "重做", "再来",
-            "继续做", "接着做", "沿用", "基于", "按这个", "照这个", "it", "this", "that", "previous",
-            "change it", "update it", "optimize", "not this",
-        ).any { normalized.contains(it) }
-    }
-
     private fun goalsAreRelated(existingGoal: String, newGoal: String): Boolean {
-        val existingTokens = workspaceGoalTokens(existingGoal)
-        val newTokens = workspaceGoalTokens(newGoal)
+        val existingTokens = WorkspacePromptSemantics.goalTokens(existingGoal)
+        val newTokens = WorkspacePromptSemantics.goalTokens(newGoal)
         if (existingTokens.isEmpty() || newTokens.isEmpty()) return false
         val overlap = existingTokens.intersect(newTokens)
         return overlap.size >= 2 || overlap.size.toFloat() / minOf(existingTokens.size, newTokens.size).toFloat() >= 0.34f
     }
-
-    private fun workspaceGoalTokens(text: String): Set<String> =
-        Regex("[\\p{L}\\p{N}_]{2,}")
-            .findAll(text.lowercase())
-            .map { it.value }
-            .filterNot {
-                it in setOf(
-                    "继续", "接着", "然后", "帮我", "一个", "这个", "那个", "一下", "please",
-                    "continue", "update", "change", "make", "build", "with", "that", "this",
-                )
-            }
-            .take(24)
-            .toSet()
 
     private fun currentScopedMemoryContext(
         sessionId: String,
@@ -270,13 +200,6 @@ internal class WorkspaceRuntimeCoordinator(
         return if (lines.isEmpty()) "" else "Active task memory:\n" + lines.joinToString("\n") { "- $it" }
     }
 
-    private fun isWorkspaceResumePrompt(text: String): Boolean {
-        val normalized = text.trim().lowercase()
-        return normalized in setOf(
-            "继续", "继续啊", "接着", "接着啊", "继续做", "继续执行", "go on", "continue",
-        ) || normalized.startsWith("继续") || normalized.startsWith("接着")
-    }
-
     private fun shouldUseWorkspace(taskType: TaskType): Boolean =
         taskType in setOf(
             TaskType.CHAT,
@@ -286,6 +209,91 @@ internal class WorkspaceRuntimeCoordinator(
             TaskType.CODE_EXECUTION,
             TaskType.SKILL_MANAGEMENT,
         )
+}
+
+internal object WorkspacePromptSemantics {
+    private val resumePrompts = setOf(
+        "continue",
+        "continue working",
+        "keep going",
+        "keep working",
+        "go on",
+        "resume",
+        "resume it",
+    )
+
+    private val directReferences = setOf(
+        "it",
+        "this",
+        "that",
+        "this page",
+        "this app",
+        "this file",
+        "this document",
+        "previous",
+        "previous version",
+        "above",
+        "same one",
+    )
+
+    private val followUpPrefixes = setOf(
+        "change it",
+        "update it",
+        "update this page",
+        "modify it",
+        "adjust it",
+        "improve it",
+        "optimize it",
+        "fix it",
+        "redo it",
+        "try again",
+        "not this",
+        "that's wrong",
+        "use this",
+        "use that",
+        "based on this",
+        "do the previous one",
+    )
+
+    private val goalStopwords = setOf(
+        "please",
+        "continue",
+        "update",
+        "change",
+        "make",
+        "build",
+        "with",
+        "that",
+        "this",
+        "then",
+        "help",
+        "create",
+    )
+
+    fun isFollowUpPrompt(text: String): Boolean {
+        val normalized = normalizeControlText(text)
+        if (normalized.isBlank()) return false
+        if (isResumePrompt(normalized) || normalized in directReferences) return true
+        if (normalized.length > 160) return false
+        return followUpPrefixes.any { prefix ->
+            normalized == prefix || normalized.startsWith("$prefix ")
+        }
+    }
+
+    fun isResumePrompt(text: String): Boolean = normalizeControlText(text) in resumePrompts
+
+    fun goalTokens(text: String): Set<String> =
+        Regex("[\\p{L}\\p{N}_]{2,}")
+            .findAll(text.lowercase())
+            .map { it.value }
+            .filterNot { it in goalStopwords }
+            .take(24)
+            .toSet()
+
+    fun preserveContent(text: String, maxLength: Int): String = text.take(maxLength)
+
+    private fun normalizeControlText(text: String): String =
+        text.trim().lowercase().replace(Regex("\\s+"), " ")
 }
 
 internal interface SemanticFactLike {
