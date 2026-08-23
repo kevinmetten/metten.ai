@@ -45,10 +45,15 @@ data class MemoryContextPacket(
     }
 }
 
-class MemoryContextBuilder(
-    private val semanticMemory: SemanticMemory,
-    private val userConfig: UserConfig,
+class MemoryContextBuilder private constructor(
+    private val semanticMemory: SemanticMemory?,
+    private val userConfig: UserConfig?,
+    @Suppress("UNUSED_PARAMETER") testableSnapshotBuilder: Unit,
 ) {
+    constructor(semanticMemory: SemanticMemory, userConfig: UserConfig) : this(semanticMemory, userConfig, Unit)
+
+    internal constructor() : this(null, null, Unit)
+
     suspend fun build(
         userMessage: String,
         taskType: TaskType,
@@ -60,14 +65,14 @@ class MemoryContextBuilder(
         val facts = if (fromSnapshot) {
             inMemoryFacts.map { (key, value) -> MemoryFact(key = key, value = value) }
         } else {
-            runCatching { semanticMemory.facts() }.getOrDefault(emptyList())
+            runCatching { requireNotNull(semanticMemory).facts() }.getOrDefault(emptyList())
         }
         val configs = inMemoryUserConfigEntries.ifEmpty {
-            runCatching { userConfig.allEntries() }.getOrDefault(emptyMap())
+            runCatching { requireNotNull(userConfig).allEntries() }.getOrDefault(emptyMap())
         }
         val packet = buildFromSnapshots(userMessage, taskType, configs, facts, activeSessionScopeId)
         if (!fromSnapshot) {
-            runCatching { semanticMemory.markUsed(packet.sourceKeys) }
+            runCatching { requireNotNull(semanticMemory).markUsed(packet.sourceKeys) }
         }
         return packet
     }
@@ -87,21 +92,21 @@ class MemoryContextBuilder(
     )
 
     fun buildFromSnapshots(
+        @Suppress("UNUSED_PARAMETER")
         userMessage: String,
         taskType: TaskType,
         userConfigEntries: Map<String, ConfigEntry>,
         facts: List<MemoryFact>,
         activeSessionScopeId: String? = null,
     ): MemoryContextPacket {
-        val query = userMessage.lowercase()
         val relevantFacts = facts
             .filter { it.enabled }
-            .filter { fact -> isRelevantMemory(fact.key, fact.value, query, taskType, activeSessionScopeId) }
+            .filter { fact -> isRelevantMemory(fact.key, fact.value, taskType, activeSessionScopeId) }
             .sortedWith(compareByDescending<MemoryFact> { memoryPriority(it, taskType) }.thenByDescending { it.updatedAt }.thenBy { it.key })
             .take(48)
 
         val explicitConfig = userConfigEntries.entries
-            .filter { (key, entry) -> shouldExposeUserConfig(key, entry.value) && isRelevantConfig(key, entry.value, query, taskType) }
+            .filter { (key, entry) -> shouldExposeUserConfig(key, entry.value) && isRelevantConfig(key, entry.value, taskType) }
             .sortedWith(compareByDescending<Map.Entry<String, ConfigEntry>> { configPriority(it.key, taskType) }.thenBy { it.key })
             .take(24)
             .map { (key, entry) ->
@@ -128,7 +133,14 @@ class MemoryContextBuilder(
                 .map { formatSessionMemory(it) }
                 .take(16),
             appFacts = relevantFacts
-                .filter { it.key.startsWith("project.") || it.key.startsWith("app.") || it.key.startsWith("skill.") || it.key.startsWith("model.") || it.key.startsWith("vpn.") }
+                .filter {
+                    it.key.startsWith("project.") ||
+                        it.key.startsWith("app.") ||
+                        it.key.startsWith("tool.phone.") ||
+                        it.key.startsWith("skill.") ||
+                        it.key.startsWith("model.") ||
+                        it.key.startsWith("vpn.")
+                }
                 .map { "${it.key}: ${it.value.take(220)}" }
                 .take(18),
             corrections = relevantFacts
@@ -140,14 +152,14 @@ class MemoryContextBuilder(
         )
     }
 
-    private fun isRelevantMemory(key: String, value: String, query: String, taskType: TaskType, activeSessionScopeId: String?): Boolean {
+    private fun isRelevantMemory(key: String, value: String, taskType: TaskType, activeSessionScopeId: String?): Boolean {
         if (value.isBlank()) return false
         if (isSensitiveKey(key)) return false
         if (key.startsWith("rule.") || key.startsWith("tool.policy.") || key.startsWith("agent.behavior.")) return true
         if (key.startsWith("profile.") || key.startsWith("user.") || key.startsWith("preference.")) return true
         if (key.startsWith("session.")) return activeSessionScopeId?.let { key.startsWith("session.$it.") } == true
         return when (taskType) {
-            TaskType.PHONE_CONTROL -> key.startsWith("app.") || key.startsWith("tool.phone.") || key.startsWith("failure.phone.") || query.contains("手机")
+            TaskType.PHONE_CONTROL -> key.startsWith("app.") || key.startsWith("tool.phone.") || key.startsWith("failure.phone.")
             TaskType.APP_BUILD -> key.startsWith("project.") || key.startsWith("preference.ui") || key.startsWith("ui.") || key.startsWith("failure.ui") || key.startsWith("skill.ui")
             TaskType.FILE_CREATE -> key.startsWith("preference.document") || key.startsWith("project.") || key.startsWith("failure.document")
             TaskType.IMAGE_GENERATION -> key.startsWith("preference.image") || key.startsWith("preference.ui") || key.startsWith("failure.image")
@@ -159,7 +171,7 @@ class MemoryContextBuilder(
         }
     }
 
-    private fun isRelevantConfig(key: String, value: String, query: String, taskType: TaskType): Boolean {
+    private fun isRelevantConfig(key: String, value: String, taskType: TaskType): Boolean {
         if (value.isBlank() || isSensitiveKey(key)) return false
         if (key.startsWith("user.") || key.startsWith("profile.") || key.startsWith("preference.") || key.startsWith("persona.")) return true
         if (key == "task.default_lang" || key == "task.tone") return true
@@ -167,7 +179,7 @@ class MemoryContextBuilder(
             TaskType.APP_BUILD -> key.startsWith("ui.") || key.startsWith("project.")
             TaskType.IMAGE_GENERATION -> key.startsWith("image.") || key.startsWith("ui.")
             TaskType.FILE_CREATE -> key.startsWith("document.") || key.startsWith("office.")
-            TaskType.WEB_RESEARCH -> key.startsWith("research.") || query.contains("搜索")
+            TaskType.WEB_RESEARCH -> key.startsWith("research.")
             TaskType.PHONE_CONTROL -> key.startsWith("phone.") || key.startsWith("app.")
             else -> false
         }
