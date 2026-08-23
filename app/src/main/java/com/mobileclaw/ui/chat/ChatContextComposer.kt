@@ -4,6 +4,37 @@ import com.mobileclaw.agent.TaskType
 import com.mobileclaw.llm.Message
 import com.mobileclaw.skill.SkillAttachment
 import com.mobileclaw.ui.ContextualTaskIntent
+import java.util.Locale
+
+internal object ChatArtifactContextSemantics {
+    private val artifactTokens = setOf(
+        "page",
+        "ui",
+        "ui_builder",
+        "miniapp",
+        "app_manager",
+        "html",
+        "webview",
+        "dashboard",
+        "form",
+        "screen",
+        "application",
+        "app",
+    )
+    private val artifactPhrases = setOf(
+        listOf("native", "page"),
+        listOf("mini", "app"),
+    )
+    private val tokenPattern = Regex("[\\p{L}\\p{N}]+(?:_[\\p{L}\\p{N}]+)*")
+
+    fun isArtifactTextRelevant(text: String): Boolean {
+        val tokens = tokenPattern.findAll(text)
+            .map { it.value.lowercase(Locale.ROOT) }
+            .toList()
+        return tokens.any { it in artifactTokens } ||
+            artifactPhrases.any { phrase -> tokens.windowed(phrase.size).any { it == phrase } }
+    }
+}
 
 internal class ChatContextComposer(
     private val effectiveMessages: () -> List<ChatMessage>,
@@ -103,17 +134,11 @@ internal class ChatContextComposer(
     ): Boolean {
         if (msg.attachments.any { it is SkillAttachment.HtmlData || it is SkillAttachment.FileData }) return true
         if (msg.logLines.any { it.skillId in setOf("ui_builder", "app_manager", "create_html", "create_file", "read_file") }) return true
-        val text = historyText(msg, compact = false, includeAttachmentSummary = true).lowercase()
+        val text = historyText(msg, compact = false, includeAttachmentSummary = true)
         val targetPage = intent.aiPage
         val targetApp = intent.miniApp
-        if (targetPage != null && (text.contains(targetPage.id.lowercase()) || text.contains(targetPage.title.lowercase()))) return true
-        if (targetApp != null && (text.contains(targetApp.id.lowercase()) || text.contains(targetApp.title.lowercase()))) return true
-        return text.contains("页面") ||
-            text.contains("ui_builder") ||
-            text.contains("miniapp") ||
-            text.contains("app_manager") ||
-            text.contains("html") ||
-            text.contains("原生页面") ||
-            text.contains("应用")
+        if (targetPage != null && listOf(targetPage.id, targetPage.title).any { it.isNotBlank() && text.contains(it, ignoreCase = true) }) return true
+        if (targetApp != null && listOf(targetApp.id, targetApp.title).any { it.isNotBlank() && text.contains(it, ignoreCase = true) }) return true
+        return ChatArtifactContextSemantics.isArtifactTextRelevant(text)
     }
 }
