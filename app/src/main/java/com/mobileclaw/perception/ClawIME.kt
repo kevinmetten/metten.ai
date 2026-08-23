@@ -19,7 +19,8 @@ class ClawIME : InputMethodService() {
 
         fun statusSummary(): String {
             val service = instance
-            val context = service ?: return "MobileClaw 输入法未启用或未被系统绑定。请在系统设置 > 语言和输入法中启用 MobileClaw 输入法，并切换为当前输入法。"
+            val context = service
+                ?: return "MobileClaw Keyboard is not active. Enable it in Android keyboard settings and select it as the current keyboard."
             return statusSummary(context)
         }
 
@@ -28,11 +29,15 @@ class ClawIME : InputMethodService() {
             val enabledInputMethods = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_INPUT_METHODS).orEmpty()
             val defaultInputMethod = Settings.Secure.getString(context.contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD).orEmpty()
             return when {
-                !enabledInputMethods.contains(context.packageName) -> "MobileClaw 输入法未启用。请在系统输入法设置中启用 MobileClaw 输入法。"
-                !defaultInputMethod.contains(context.packageName) -> "MobileClaw 输入法已启用，但不是当前输入法。请从输入法切换面板选择 MobileClaw 输入法。"
-                service == null -> "MobileClaw 输入法已被系统选中，但服务尚未连接。请点一下输入框或重新切换到 MobileClaw 输入法。"
-                currentConnectionUnavailable() -> "MobileClaw 输入法是当前输入法，但当前输入框没有可用 InputConnection。请先点击输入框让它获得焦点。"
-                else -> "MobileClaw 输入法可用。"
+                !enabledInputMethods.contains(context.packageName) ->
+                    "MobileClaw Keyboard is not enabled. Enable it in Android keyboard settings."
+                !defaultInputMethod.contains(context.packageName) ->
+                    "MobileClaw Keyboard is enabled but is not the current keyboard. Select MobileClaw from the keyboard switcher."
+                service == null ->
+                    "MobileClaw Keyboard is selected, but its service is not connected yet. Tap a text field or switch away and back to MobileClaw."
+                currentConnectionUnavailable() ->
+                    "MobileClaw Keyboard is current, but the focused field has no available InputConnection. Tap the text field to focus it first."
+                else -> "MobileClaw Keyboard is ready."
             }
         }
 
