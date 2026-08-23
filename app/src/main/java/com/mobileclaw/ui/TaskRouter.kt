@@ -1,7 +1,6 @@
 package com.mobileclaw.ui
 
 import android.util.Log
-import com.mobileclaw.ClawApplication
 import com.mobileclaw.agent.AiTaskRouteDecision
 import com.mobileclaw.agent.ChannelType
 import com.mobileclaw.agent.Role
@@ -162,9 +161,9 @@ class TaskRouter(
         reason: String,
     ): TaskRoute {
         val steps = listOf(
-            "先根据你刚才的话确认最合适的处理入口",
-            "再直接处理当前最核心的内容",
-            "如果中途需要网页、文件、手机或记忆能力，会自动接上对应能力",
+            "Determine the best way to handle the latest request",
+            "Address the core part of the task directly",
+            "Connect web, file, phone, or memory capabilities if needed",
         )
         return TaskRoute(
             taskType = TaskType.GENERAL,
@@ -457,10 +456,9 @@ class TaskRouter(
         if (recent.any { msg ->
                 msg.senderRoleId == "phone_operator" ||
                     msg.logLines.any { it.skillId in PHONE_CONTROL_SKILLS || it.text.contains("VLM_PHONE_CONTROL") } ||
-                    msg.text.contains("手机操控") ||
-                    msg.text.contains("打开 App") ||
-                    msg.text.contains("看屏幕") ||
-                    msg.text.contains("点击")
+                    messageContextText(msg).lowercase().containsAnyTerm(
+                        "vlm_phone_control", "foreground app", "phone control",
+                    )
             }) {
             return TaskType.PHONE_CONTROL
         }
@@ -471,10 +469,9 @@ class TaskRouter(
         messages.any { msg ->
             msg.senderRoleId == "phone_operator" ||
                 msg.logLines.any { it.skillId in PHONE_CONTROL_SKILLS || it.text.contains("VLM_PHONE_CONTROL") } ||
-                msg.text.contains("手机操控") ||
-                msg.text.contains("美团") ||
-                msg.text.contains("筛选") ||
-                msg.text.contains("附近")
+                messageContextText(msg).lowercase().containsAnyTerm(
+                    "vlm_phone_control", "foreground app", "phone control",
+                )
         }
 
     private fun inferTaskTypeFromMessage(msg: ChatMessage): TaskType? {
@@ -483,17 +480,17 @@ class TaskRouter(
         return when {
             msg.senderRoleId == "phone_operator" ||
                 skillIds.any { it in PHONE_CONTROL_SKILLS } ||
-                text.anyContainsLocal("vlm_phone_control", "手机操控", "前台应用", "foreground app") -> TaskType.PHONE_CONTROL
+                text.containsAnyTerm("vlm_phone_control", "phone control", "foreground app") -> TaskType.PHONE_CONTROL
             skillIds.any { it in APP_BUILD_SKILLS } ||
-                text.anyContainsLocal("ui_builder", "app_manager", "ai native page", "miniapp", "原生页面", "应用已创建") -> TaskType.APP_BUILD
+                text.containsAnyTerm("ui_builder", "app_manager", "ai native page", "miniapp") -> TaskType.APP_BUILD
             skillIds.any { it in FILE_SKILLS } ||
-                text.anyContainsLocal("generate_document", "create_file", "read_file", "file_list", "文件已", "文档") -> TaskType.FILE_CREATE
+                text.containsAnyTerm("generate_document", "create_file", "read_file", "file_list", "file", "document") -> TaskType.FILE_CREATE
             skillIds.any { it in WEB_SKILLS } ||
-                text.anyContainsLocal("web_search", "fetch_url", "web_browse", "search_results") -> TaskType.WEB_RESEARCH
+                text.containsAnyTerm("web_search", "fetch_url", "web_browse", "search_results") -> TaskType.WEB_RESEARCH
             skillIds.any { it in IMAGE_SKILLS } ||
-                text.anyContainsLocal("generate_image", "generate_icon", "图片已生成") -> TaskType.IMAGE_GENERATION
+                text.containsAnyTerm("generate_image", "generate_icon", "image generated") -> TaskType.IMAGE_GENERATION
             skillIds.any { it == "vpn_control" } ||
-                text.anyContainsLocal("vpn", "mihomo", "代理") -> TaskType.VPN_CONTROL
+                text.containsAnyTerm("vpn", "mihomo") -> TaskType.VPN_CONTROL
             skillIds.any { it in CODE_SKILLS } -> TaskType.CODE_EXECUTION
             else -> null
         }
@@ -591,9 +588,10 @@ class TaskRouter(
                 aiPrimaryChannel = ChannelType.ARTIFACT,
                 aiSupportingChannels = listOf(ChannelType.SKILL, ChannelType.MEMORY),
                 aiToolHints = listOf("app_manager", "read_file", "create_file", "list_files"),
-                userVisibleSteps = localizedSteps(
-                    zh = listOf("先理清这个 MiniAPP 具体要做什么", "把 MiniAPP 的页面和逻辑做出来或修好", "跑一轮检查后直接打开给你看"),
-                    en = listOf("Clarify what this MiniAPP should do", "Build or fix the MiniAPP screens and logic", "Run a check, then open the result"),
+                userVisibleSteps = listOf(
+                    "Clarify what this MiniAPP should do",
+                    "Build or fix the MiniAPP screens and logic",
+                    "Run a check, then open the result",
                 ),
             )
             isExplicitNativePageIntent(text) -> ContextualTaskIntent(
@@ -603,9 +601,10 @@ class TaskRouter(
                 aiPrimaryChannel = ChannelType.ARTIFACT,
                 aiSupportingChannels = listOf(ChannelType.SKILL, ChannelType.MEMORY),
                 aiToolHints = listOf("ui_builder", "read_file", "create_file", "list_files"),
-                userVisibleSteps = localizedSteps(
-                    zh = listOf("先理清这个原生页面需要展示什么", "把原生页面做出来或改到位", "检查效果后直接打开给你看"),
-                    en = listOf("Clarify what this native page should show", "Create or update the native page", "Check the result, then open it"),
+                userVisibleSteps = listOf(
+                    "Clarify what this native page should show",
+                    "Create or update the native page",
+                    "Check the result, then open it",
                 ),
             )
             else -> null
@@ -619,7 +618,7 @@ class TaskRouter(
         targetApp: String,
     ): List<String> {
         val cleaned = rawSteps
-            .map { it.trim().trimStart('-', '•', '*', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '、') }
+            .map { it.trim().trimStart { char -> char.isDigit() || char.isWhitespace() || char in setOf('-', '•', '*', '.') } }
             .filter { it.isNotBlank() }
             .map { rewriteGenericStep(it, taskType, normalizedGoal, targetApp) }
             .distinct()
@@ -637,110 +636,73 @@ class TaskRouter(
         val app = targetApp.takeIf { it.isNotBlank() } ?: extractQuotedTopic(normalizedGoal)
         val topic = extractQuotedTopic(normalizedGoal)
         return when {
-            normalized.contains("确认目标") || normalized.contains("确认页面") || normalized.contains("确认 miniapp") || normalized.contains("理清") ->
+            normalized.containsAnyTerm("confirm target", "confirm page", "clarify") ->
                 defaultVisibleSteps(taskType, normalizedGoal, targetApp).first()
-            normalized.contains("验证") || normalized.contains("检查结果") || normalized.contains("打开结果") ->
+            normalized.containsAnyTerm("validate", "check result", "open result") ->
                 defaultVisibleSteps(taskType, normalizedGoal, targetApp).last()
-            normalized.contains("继续推进") || normalized.contains("完善流程") || normalized.contains("继续处理") ->
+            normalized.containsAnyTerm("continue progress", "improve flow", "continue handling") ->
                 defaultVisibleSteps(taskType, normalizedGoal, targetApp).getOrElse(1) { step }
-            taskType == TaskType.PHONE_CONTROL && app != null && (normalized.contains("打开应用") || normalized.contains("目标应用")) ->
-                if (isEnglishUi()) "Open $app and get to the screen that needs action" else "先打开$app，进入真正要操作的界面"
-            taskType == TaskType.WEB_RESEARCH && topic != null && normalized.contains("查找") ->
-                if (isEnglishUi()) "Look up the most useful information about ${quoteTopic(topic)}" else "先查“$topic”里最直接有用的信息"
-            taskType == TaskType.CODE_EXECUTION && topic != null && normalized.contains("修复") ->
-                if (isEnglishUi()) "Find the key code issue in ${quoteTopic(topic)}" else "先把「$topic」里最关键的代码问题定位出来"
+            taskType == TaskType.PHONE_CONTROL && app != null && normalized.containsAnyTerm("open app", "target app") ->
+                "Open $app and get to the screen that needs action"
+            taskType == TaskType.WEB_RESEARCH && topic != null && normalized.containsAnyTerm("find", "look up") ->
+                "Look up the most useful information about ${quoteTopic(topic)}"
+            taskType == TaskType.CODE_EXECUTION && topic != null && normalized.containsAnyTerm("fix", "repair") ->
+                "Find the key code issue in ${quoteTopic(topic)}"
             else -> step
         }
     }
 
     private fun defaultVisibleSteps(taskType: TaskType?, normalizedGoal: String, targetApp: String): List<String> {
         val topic = extractQuotedTopic(normalizedGoal)
-        if (isEnglishUi()) {
-            return when (taskType) {
-                TaskType.PHONE_CONTROL -> listOf(
-                    if (targetApp.isNotBlank()) "Open $targetApp and find the place to act" else "Read the current screen and find the entry point",
-                    if (topic != null) "Handle the operation related to ${quoteTopic(topic)}" else "Continue the phone operation directly",
-                    "Check whether the screen changed as expected",
-                )
-                TaskType.WEB_RESEARCH -> listOf(
-                    if (topic != null) "Find the most useful information about ${quoteTopic(topic)}" else "Find the most relevant web information",
-                    "Filter out noise and keep the useful parts",
-                    "Summarize the result into something directly usable",
-                )
-                TaskType.APP_BUILD -> listOf(
-                    if (topic != null) "Clarify what ${quoteTopic(topic)} should become" else "Clarify what this page or app should look like",
-                    "Build the core screen, logic, or interaction",
-                    "Run a check, then open the working result",
-                )
-                TaskType.FILE_CREATE -> listOf(
-                    if (topic != null) "Organize the content needed for ${quoteTopic(topic)}" else "Organize what this file should contain",
-                    "Generate the file content",
-                    "Confirm it can be opened or edited further",
-                )
-                TaskType.CODE_EXECUTION -> listOf(
-                    if (topic != null) "Locate the key issue in ${quoteTopic(topic)}" else "Locate the most important code issue",
-                    "Patch the code and fill in the missing logic",
-                    "Run a check to confirm the change works",
-                )
-                else -> listOf(
-                    if (topic != null) "Handle the core part of ${quoteTopic(topic)}" else "Handle the core part of this request",
-                    if (topic != null) "Fill in anything still missing for ${quoteTopic(topic)}" else "Fill in anything still missing",
-                    "Return a result that is easy to understand and use",
-                )
-            }
-        }
         return when (taskType) {
             TaskType.PHONE_CONTROL -> listOf(
-                if (targetApp.isNotBlank()) "先打开$targetApp，找到这次要操作的位置" else "先看清当前界面和要操作的入口",
-                if (topic != null) "再直接处理「$topic」相关的操作" else "再直接把这次手机操作做下去",
-                "做完后再看界面有没有按预期变化",
+                if (targetApp.isNotBlank()) "Open $targetApp and find the place to act" else "Read the current screen and find the entry point",
+                if (topic != null) "Handle the operation related to ${quoteTopic(topic)}" else "Continue the phone operation directly",
+                "Check whether the screen changed as expected",
             )
             TaskType.WEB_RESEARCH -> listOf(
-                if (topic != null) "先查“$topic”里最直接有用的信息" else "先把最相关的网页信息找出来",
-                "再筛掉没用的内容，只保留真正有帮助的部分",
-                "最后把结果整理成你能直接用的结论",
+                if (topic != null) "Find the most useful information about ${quoteTopic(topic)}" else "Find the most relevant web information",
+                "Filter out noise and keep the useful parts",
+                "Summarize the result into something directly usable",
             )
             TaskType.APP_BUILD -> listOf(
-                if (topic != null) "先理清「$topic」到底要做成什么样" else "先理清这次要做的页面或程序长什么样",
-                "再把核心页面、逻辑或交互补到位",
-                "跑一轮检查后直接打开给你看实际效果",
+                if (topic != null) "Clarify what ${quoteTopic(topic)} should become" else "Clarify what this page or app should look like",
+                "Build the core screen, logic, or interaction",
+                "Run a check, then open the working result",
             )
             TaskType.FILE_CREATE -> listOf(
-                if (topic != null) "先整理「$topic」需要写进文件的内容" else "先整理这份文件真正要写什么",
-                "再把文件内容生成出来",
-                "最后确认它能不能直接打开或继续修改",
+                if (topic != null) "Organize the content needed for ${quoteTopic(topic)}" else "Organize what this file should contain",
+                "Generate the file content",
+                "Confirm it can be opened or edited further",
             )
             TaskType.CODE_EXECUTION -> listOf(
-                if (topic != null) "先定位「$topic」里最关键的问题" else "先定位当前最关键的代码问题",
-                "再直接修改代码并补齐缺的部分",
-                "跑一轮检查，确认这次改动有没有生效",
+                if (topic != null) "Locate the key issue in ${quoteTopic(topic)}" else "Locate the most important code issue",
+                "Patch the code and fill in the missing logic",
+                "Run a check to confirm the change works",
             )
             else -> listOf(
-                if (topic != null) "先处理「$topic」最核心的部分" else "先把这次需求里最核心的部分拿下来",
-                if (topic != null) "再把「$topic」里还没处理对的部分补上" else "再把还没处理对的部分补上",
-                "最后给你一个能直接理解和使用的结果",
+                if (topic != null) "Handle the core part of ${quoteTopic(topic)}" else "Handle the core part of this request",
+                if (topic != null) "Fill in anything still missing for ${quoteTopic(topic)}" else "Fill in anything still missing",
+                "Return a result that is easy to understand and use",
             )
         }
     }
 
     private fun extractQuotedTopic(text: String): String? {
         val clean = text.trim().replace('\n', ' ')
-        val quoted = Regex("[“\"']([^”\"']{2,32})[”\"']").find(clean)?.groupValues?.getOrNull(1)?.trim()
+        val quoted = Regex("[\\p{Pi}\\p{Pf}\"']([^\\p{Pi}\\p{Pf}\"']{2,32})[\\p{Pi}\\p{Pf}\"']")
+            .find(clean)?.groupValues?.getOrNull(1)?.trim()
         if (!quoted.isNullOrBlank()) return quoted
-        val compact = clean.split(Regex("[，。；,.;]"))
+        val compact = clean.split(Regex("[\\p{P}&&[^'_-]]+"))
             .map { it.trim() }
-            .firstOrNull { it.length in 4..28 && !it.contains("请") && !it.contains("帮我") && !it.contains("我想") }
+            .firstOrNull { candidate ->
+                candidate.length in 4..28 &&
+                    !candidate.lowercase().containsAnyTerm("please", "help me", "i want")
+            }
         return compact?.takeIf { it.isNotBlank() }
     }
 
-    private fun isEnglishUi(): Boolean =
-        ClawApplication.instance.agentConfig.language == "en"
-
-    private fun localizedSteps(zh: List<String>, en: List<String>): List<String> =
-        if (isEnglishUi()) en else zh
-
-    private fun quoteTopic(topic: String): String =
-        if (isEnglishUi()) "\"$topic\"" else "「$topic」"
+    private fun quoteTopic(topic: String): String = "\"$topic\""
 
     private fun explicitArtifactTaskType(goal: String): TaskType? {
         val text = goal.lowercase()
@@ -751,28 +713,24 @@ class TaskRouter(
     }
 
     private fun isExplicitMiniAppIntent(text: String): Boolean =
-        text.anyContainsLocal(
-            "miniapp", "mini app", "小程序", "程序", "应用", "app", "game", "游戏",
-            "webview", "html", "javascript", "js", "canvas", "sqlite", "python backend",
-            "网页应用", "浏览器运行",
-        ) &&
-            text.anyContainsLocal(
-                "创建", "生成", "做一个", "做个", "开发", "写一个", "搭建", "制作",
-                "新建", "build", "create", "make", "update", "修改", "改", "优化", "修复",
-            )
+        text.containsAnyTerm(
+            "miniapp", "mini app", "program", "application", "app", "game", "webview",
+            "html", "javascript", "js", "canvas", "sqlite", "python backend", "web app",
+        ) && text.containsAnyTerm(
+            "build", "create", "make", "develop", "update", "modify", "edit", "optimize", "fix",
+        )
 
     private fun isExplicitNativePageIntent(text: String): Boolean =
-        text.anyContainsLocal(
-            "原生页面", "ai页面", "ai native page", "native page", "页面", "dashboard", "仪表盘", "表单", "管理页",
-        ) &&
-            text.anyContainsLocal(
-                "创建", "生成", "做一个", "做个", "开发", "搭建", "制作",
-                "新建", "build", "create", "make", "update", "修改", "改", "优化", "修复",
-            )
+        !isExplicitMiniAppIntent(text) && text.containsAnyTerm(
+            "ai native page", "native page", "page", "dashboard", "form", "management page",
+            "settings page", "panel", "screen", "ui",
+        ) && text.containsAnyTerm(
+            "build", "create", "make", "develop", "update", "modify", "edit", "optimize", "fix",
+        )
 
     private fun recentFileContextIntent(goal: String, recentArtifact: SkillAttachment): ContextualTaskIntent {
         val taskType = when {
-            recentArtifact is SkillAttachment.HtmlData && goal.lowercase().anyContainsLocal("页面", "html", "网页", "预览", "样式", "布局") -> TaskType.APP_BUILD
+            recentArtifact is SkillAttachment.HtmlData && goal.lowercase().containsAnyTerm("page", "html", "web", "preview", "style", "layout", "ui") -> TaskType.APP_BUILD
             else -> TaskType.FILE_CREATE
         }
         return ContextualTaskIntent(
@@ -793,71 +751,37 @@ class TaskRouter(
     ): List<String> {
         val base = if (isGenericContinueOnly(latestGoal) || isContextualFollowUp(latestGoal)) anchorGoal else latestGoal
         val topic = extractQuotedTopic(base).orEmpty()
-        if (isEnglishUi()) {
-            return when (taskType) {
-                TaskType.PHONE_CONTROL -> listOf(
+        return when (taskType) {
+            TaskType.PHONE_CONTROL -> listOf(
                     if (targetApp.isNotBlank()) "Return to the current $targetApp operation" else "Continue the current phone operation",
                     if (topic.isNotBlank()) "Handle this step for ${quoteTopic(topic)}" else "Finish the step currently on screen",
                     "Check the screen change, then decide the next action",
                 )
-                TaskType.APP_BUILD -> listOf(
+            TaskType.APP_BUILD -> listOf(
                     if (topic.isNotBlank()) "Continue fixing the key part of ${quoteTopic(topic)}" else "Continue with the key part of this page or app",
                     "Fix what is still wrong in this pass",
                     "Run another check and show the result",
                 )
-                TaskType.FILE_CREATE -> listOf(
+            TaskType.FILE_CREATE -> listOf(
                     if (topic.isNotBlank()) "Continue filling in the content for ${quoteTopic(topic)}" else "Continue filling in the missing file content",
                     "Apply this change to the file",
                     "Confirm the result can be opened or edited further",
                 )
-                TaskType.WEB_RESEARCH -> listOf(
+            TaskType.WEB_RESEARCH -> listOf(
                     if (topic.isNotBlank()) "Find the remaining information for ${quoteTopic(topic)}" else "Find the missing key information",
                     "Filter out noisy information",
                     "Keep only the conclusion you can use directly",
                 )
-                TaskType.CODE_EXECUTION -> listOf(
+            TaskType.CODE_EXECUTION -> listOf(
                     if (topic.isNotBlank()) "Continue fixing the key issue in ${quoteTopic(topic)}" else "Continue fixing the most important code issue",
                     "Fill in missing logic or resolve the error",
                     "Run a check to confirm the fix works",
                 )
-                else -> listOf(
+            else -> listOf(
                     if (topic.isNotBlank()) "Continue handling ${quoteTopic(topic)}" else "Continue the previous task",
                     "Fill in what is wrong or unfinished",
                     "Return a more complete result",
                 )
-            }
-        }
-        return when (taskType) {
-            TaskType.PHONE_CONTROL -> listOf(
-                if (targetApp.isNotBlank()) "先回到${targetApp}当前这条操作线上" else "先接着当前手机操作往下走",
-                if (topic.isNotBlank()) "再直接处理「$topic」这一步" else "再把眼前这一步真正做完",
-                "做完后马上看界面变化，再决定下一下点哪里",
-            )
-            TaskType.APP_BUILD -> listOf(
-                if (topic.isNotBlank()) "先接着改「$topic」这块最关键的内容" else "先接着改当前页面或程序最关键的部分",
-                "再把这次不对的地方修到位",
-                "跑一轮效果检查后继续给你看结果",
-            )
-            TaskType.FILE_CREATE -> listOf(
-                if (topic.isNotBlank()) "先接着补「$topic」相关的文件内容" else "先接着补这份文件里缺的内容",
-                "再把这次要改的地方落到文件里",
-                "最后确认这份结果能不能直接打开或继续改",
-            )
-            TaskType.WEB_RESEARCH -> listOf(
-                if (topic.isNotBlank()) "先接着查「$topic」还缺的那部分信息" else "先接着找还没补齐的关键信息",
-                "再把噪音信息筛掉",
-                "最后只给你留下能直接用的结论",
-            )
-            TaskType.CODE_EXECUTION -> listOf(
-                if (topic.isNotBlank()) "先接着修「$topic」这块最关键的问题" else "先接着修当前最关键的代码问题",
-                "再补齐缺的逻辑或修掉报错",
-                "跑一轮检查，确认这次修复真的生效",
-            )
-            else -> listOf(
-                if (topic.isNotBlank()) "先接着处理「$topic」这件事" else "先接着处理你刚才那件事",
-                "再把这次不对或没做完的部分补上",
-                "最后给你一个更完整、直接能理解的结果",
-            )
         }
     }
 
@@ -882,16 +806,19 @@ class TaskRouter(
 
     private fun shouldUseRecentFileContext(text: String, attachment: SkillAttachment): Boolean {
         if (isLikelyStickerOrMediaAsset(attachment)) return false
-        val followUpSignals = text.anyContainsLocal(
-            "这个", "这份", "这个文件", "这个文档", "这个表", "这个表格", "这个ppt", "这个 ppt",
-            "这个pdf", "这个 html", "这个页面", "它", "上面", "刚才", "继续", "接着",
-            "修改", "改下", "改一下", "调整", "优化", "美化", "完善", "更新",
-            "打开", "保存", "导出", "预览", "另存", "修订",
+        val followUpSignals = text.containsAnyTerm(
+            "this", "this file", "this document", "this spreadsheet", "this ppt", "this pdf",
+            "this html", "this page", "it", "above", "previous", "continue", "keep going",
+            "modify", "edit", "change", "adjust", "optimize", "improve", "update", "open",
+            "save", "export", "preview", "save as", "revise",
         )
         if (!followUpSignals) return false
-        val newCreationIntent = text.anyContainsLocal(
-            "帮我写", "帮我做", "帮我生成", "做一个", "做个", "创建", "生成", "新建", "设计", "整理成",
-        ) && text.anyContainsLocal("ppt", "doc", "word", "pdf", "excel", "表格", "文档", "页面", "html")
+        val newCreationIntent = text.containsAnyTerm(
+            "create", "make", "generate", "build", "design", "write",
+        ) && text.containsAnyTerm(
+            "ppt", "pptx", "doc", "docx", "word", "excel", "xlsx", "pdf", "csv", "markdown", "html",
+            "file", "document", "spreadsheet", "page",
+        )
         return !newCreationIntent
     }
 
@@ -905,8 +832,7 @@ class TaskRouter(
                 path.contains("bqb") ||
                 name.contains("sticker") ||
                 name.contains("bqb") ||
-                name.contains("emoji") ||
-                name.contains("表情")
+                name.contains("emoji")
         }
         is SkillAttachment.HtmlData -> false
         else -> false
@@ -933,7 +859,7 @@ class TaskRouter(
             Known bugs: ${renderSpecList(spec.knownBugs, fallback = "none recorded")}
             Last diff: ${spec.lastDiffSummary.ifBlank { "none" }}
             Recent history: ${renderHistory(it.history)}
-            For follow-up edits like “改一下/优化/继续/调整它”, patch this page instead of creating HTML or a new page.
+            For follow-up edits like "change it / optimize it / continue / adjust it", patch this page instead of creating HTML or a new page.
             Required tool flow: ui_builder(action=get) -> ui_builder(action=analyze_change) -> ui_builder(action=update) -> ui_builder(action=validate) -> ui_builder(action=open if needed).
             """.trimIndent()
         }.orEmpty()
@@ -961,7 +887,7 @@ class TaskRouter(
             Known bugs: ${renderSpecList(spec.knownBugs, fallback = "none recorded")}
             Last diff: ${spec.lastDiffSummary.ifBlank { "none" }}
             Recent history: ${renderHistory(it.history)}
-            For follow-up edits like “改一下/优化/继续/调整它”, patch this MiniAPP instead of creating a new app.
+            For follow-up edits like "change it / optimize it / continue / adjust it", patch this MiniAPP instead of creating a new app.
             Required tool flow: app_manager(action=analyze_change) -> app_manager(action=update) -> app_manager(action=validate) -> app_manager(action=open if needed).
             """.trimIndent()
         }.orEmpty()
@@ -995,7 +921,6 @@ class TaskRouter(
         if (normalized.isBlank() && attachments.isEmpty() && logLines.isEmpty() && imageBase64.isNullOrBlank()) return true
         if (role == MessageRole.AGENT && normalized in setOf("Canceled.", "Switched to phone_operator.")) return true
         if (role == MessageRole.AGENT && normalized.startsWith("Accessibility settings opened.")) return true
-        if (role == MessageRole.USER && normalized in setOf("已开启", "已经开了", "开了", "无障碍已开启", "无障碍开了")) return true
         if (ConfirmationActionProtocol.isProtocolValue(normalized)) return true
         return false
     }
@@ -1022,12 +947,10 @@ class TaskRouter(
                 page.title.isNotBlank() && text.contains(page.title.lowercase())
         }
         if (explicit != null) return explicit
-        val refersToPrevious = text.anyContainsLocal(
-            "它", "这个页面", "这个ui", "这个原生", "这个 aipage", "刚才", "上面", "修改",
-            "改下", "改一下", "调整", "优化", "美化", "完善", "更新", "继续", "接着",
-            "别这样", "不是这样", "换成", "改成",
+        val refersToPrevious = isContextualFollowUp(text)
+        val pageIntent = text.containsAnyTerm(
+            "this page", "native page", "ai native page", "aipage", "ai page", "page", "ui",
         )
-        val pageIntent = text.anyContainsLocal("页面", "原生", "native", "aipage", "ai page", "ui")
         val recentPageContext = currentConversationMentionsAiPage(pages)
         val shortFollowUp = text.length <= 30 && refersToPrevious
         return if (recentPageContext != null && (refersToPrevious && pageIntent || shortFollowUp)) recentPageContext else null
@@ -1044,7 +967,9 @@ class TaskRouter(
         }
         if (explicit != null) return explicit
         val refersToPrevious = isContextualFollowUp(text)
-        val appIntent = text.anyContainsLocal("app", "miniapp", "mini app", "小应用", "小程序", "程序", "应用", "游戏", "网页应用")
+        val appIntent = text.containsAnyTerm(
+            "app", "miniapp", "mini app", "application", "program", "game", "web app", "app_manager",
+        )
         val recentMiniAppContext = currentConversationMentionsMiniApp(apps)
         val shortFollowUp = text.length <= 30 && refersToPrevious
         return if (recentMiniAppContext != null && ((refersToPrevious && appIntent) || shortFollowUp)) recentMiniAppContext else null
@@ -1057,13 +982,15 @@ class TaskRouter(
         if (isGenericContinueOnly(text) && recentEffectiveUserMessageBeforeCurrent()?.let { TaskClassifier.classify(it) } == TaskType.PHONE_CONTROL) {
             return null
         }
-        if (text.anyContainsLocal("ppt", "doc", "word", "excel", "pdf", "表格", "文档", "页面", "html") &&
-            text.anyContainsLocal("帮我写", "帮我做", "帮我生成", "创建", "生成", "新建", "设计")) {
+        if (text.containsAnyTerm(
+                "ppt", "pptx", "doc", "docx", "word", "excel", "xlsx", "pdf", "csv", "markdown", "html",
+            ) && text.containsAnyTerm("create", "make", "generate", "build", "design", "write")) {
             return null
         }
-        val fileIntent = text.anyContainsLocal(
-            "文件", "文档", "附件", "这个", "它", "上面", "刚才", "继续", "修改", "改下", "改一下",
-            "优化", "更新", "打开", "保存", "导出", "ppt", "docx", "xlsx", "pdf", "csv", "markdown", "html",
+        val fileIntent = text.containsAnyTerm(
+            "file", "document", "attachment", "this", "it", "above", "previous", "continue", "keep going",
+            "modify", "edit", "change", "optimize", "update", "open", "save", "export", "preview",
+            "ppt", "pptx", "doc", "docx", "word", "excel", "xlsx", "pdf", "csv", "markdown", "html",
         )
         if (!fileIntent) return null
         return effectiveContextMessages(limit = 8)
@@ -1082,8 +1009,8 @@ class TaskRouter(
                 (page.title.isNotBlank() && text.contains(page.title.lowercase()))
         }
         if (explicit != null) return explicit
-        if (text.anyContainsLocal("ai native page", "原生页面", "ai页面", "aipage") &&
-            !text.anyContainsLocal("miniapp", "mini app", "小应用", "小程序", "app_manager", "应用已创建", "app '")
+        if (text.containsAnyTerm("ai native page", "native page", "ai page", "aipage", "ui_builder") &&
+            !text.containsAnyTerm("miniapp", "mini app", "app_manager", "app")
         ) {
             return pages.firstOrNull()
         }
@@ -1101,7 +1028,7 @@ class TaskRouter(
                 (mini.title.isNotBlank() && text.contains(mini.title.lowercase()))
         }
         if (explicit != null) return explicit
-        if (text.anyContainsLocal("miniapp", "mini app", "小应用", "小程序", "app_manager", "应用已创建", "app '")) {
+        if (text.containsAnyTerm("miniapp", "mini app", "app_manager", "application", "program", "game", "web app", "app")) {
             return apps.firstOrNull()
         }
         return null
@@ -1109,22 +1036,17 @@ class TaskRouter(
 
     private fun isContextualFollowUp(text: String): Boolean {
         val normalized = text.trim().lowercase()
-        return normalized.anyContainsLocal(
-            "它", "这个", "这页", "这个页面", "这个ui", "这个应用", "这个app", "这个文件", "这个文档",
-            "刚才", "上面", "上一版", "前面", "继续", "接着", "然后", "改下", "改一下", "修改",
-            "调整", "优化", "美化", "完善", "更新", "换成", "改成", "别这样", "不是这样", "不对",
-            "重做", "再来", "继续做", "接着做", "沿用", "基于", "好", "可以", "行", "就这样", "就这个",
-            "按这个", "照这个", "没问题", "嗯", "嗯嗯", "ok", "okay",
-            "it", "this", "that", "previous", "continue", "change it", "update it", "optimize", "not this",
+        return normalized.containsAnyTerm(
+            "it", "this", "that", "this page", "this app", "this file", "this document",
+            "previous", "previous version", "above", "continue", "keep going", "change it", "update it",
+            "modify it", "adjust it", "optimize it", "improve it", "fix it", "redo it", "try again",
+            "not this", "that's wrong", "use this", "use that", "based on this", "okay", "ok",
         )
     }
 
     private fun isGenericContinueOnly(text: String): Boolean {
         val normalized = text.trim().lowercase()
-        return normalized in setOf(
-            "继续", "继续啊", "接着", "接着啊", "继续做", "继续执行", "好", "可以", "行",
-            "就这样", "就这个", "按这个", "照这个", "ok", "okay", "continue", "go on",
-        )
+        return normalized in setOf("continue", "go on", "keep going", "resume", "okay", "ok")
     }
 
     private fun recentEffectiveUserMessageBeforeCurrent(): String? =
@@ -1136,9 +1058,9 @@ class TaskRouter(
             ?.takeIf { it.isNotBlank() }
 
     private fun isMobileClawInternalChatTopic(text: String): Boolean =
-        text.anyContainsLocal(
-            "聊天", "chat", "群聊", "单聊", "对话", "上下文", "乱切", "角色", "记忆",
-            "vlm", "执行链路", "工具", "模型", "本地模型", "云端模型", "bug", "闪退",
+        text.containsAnyTerm(
+            "chat", "conversation", "context", "role", "memory", "vlm", "tool", "model",
+            "local model", "cloud model", "execution", "routing", "bug", "crash",
         )
 
     private fun MiniApp.safeSpec(): ArtifactSpec {
@@ -1151,6 +1073,12 @@ class TaskRouter(
         return raw ?: ArtifactSpec()
     }
 
-    private fun String.anyContainsLocal(vararg needles: String): Boolean = needles.any { contains(it) }
+    private fun String.containsAnyTerm(vararg terms: String): Boolean {
+        val tokens = Regex("[\\p{L}\\p{N}_]+").findAll(lowercase()).map { it.value }.toList()
+        return terms.any { term ->
+            val termTokens = Regex("[\\p{L}\\p{N}_]+").findAll(term.lowercase()).map { it.value }.toList()
+            termTokens.isNotEmpty() && tokens.windowed(termTokens.size).any { it == termTokens }
+        }
+    }
 
 }

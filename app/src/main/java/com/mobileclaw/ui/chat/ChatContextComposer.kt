@@ -108,12 +108,34 @@ internal class ChatContextComposer(
         val targetApp = intent.miniApp
         if (targetPage != null && (text.contains(targetPage.id.lowercase()) || text.contains(targetPage.title.lowercase()))) return true
         if (targetApp != null && (text.contains(targetApp.id.lowercase()) || text.contains(targetApp.title.lowercase()))) return true
-        return text.contains("页面") ||
-            text.contains("ui_builder") ||
-            text.contains("miniapp") ||
-            text.contains("app_manager") ||
-            text.contains("html") ||
-            text.contains("原生页面") ||
-            text.contains("应用")
+        return ChatArtifactContextSemantics.isArtifactTextRelevant(text)
+    }
+}
+
+internal object ChatArtifactContextSemantics {
+    private val artifactTokens = setOf(
+        "page",
+        "ui",
+        "ui_builder",
+        "miniapp",
+        "app_manager",
+        "html",
+        "webview",
+        "dashboard",
+        "form",
+        "screen",
+        "application",
+        "app",
+    )
+    private val artifactPhrases = setOf(
+        listOf("native", "page"),
+        listOf("mini", "app"),
+    )
+    private val unicodeToken = Regex("[\\p{L}\\p{N}_]+")
+
+    fun isArtifactTextRelevant(text: String): Boolean {
+        val tokens = unicodeToken.findAll(text.lowercase()).map { it.value }.toList()
+        return tokens.any { it in artifactTokens } ||
+            artifactPhrases.any { phrase -> tokens.windowed(phrase.size).any { it == phrase } }
     }
 }
