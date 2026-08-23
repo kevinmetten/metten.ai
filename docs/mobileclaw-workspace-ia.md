@@ -43,7 +43,7 @@ mobileclaw_workspace/
   media/
   system/
   tasks/
-  play/
+  agent_town/
   backups/
 ```
 
@@ -77,7 +77,6 @@ mobileclaw_workspace/
 - 角色页可以向工作空间写入角色档案。
 - 技能市场可以向工作空间写入技能定义。
 - MCP 连接页可以向工作空间写入远程工具连接。
-- 群聊页可以向工作空间写入群配置和群沉淀。
 - 导入导出页可以按区域读取工作空间内容。
 
 也就是说，页面是入口，工作空间是底层数据组织方式。
@@ -94,19 +93,18 @@ mobileclaw_workspace/
 - 用户记忆
 - 工作产物
 - 会话记录
-- 群聊区域
 - 技能库
 - MCP 连接
 - 模型与网关
 - 媒体资产
 - 系统配置
 - 任务队列
-- 玩法空间
+- Agent Town 数据
 - 备份与迁移
 
 ### 2.2 任务工作空间
 
-任务工作空间是一次任务、会话或群聊角色执行过程的运行现场。
+任务工作空间是一次任务、会话或代理执行过程的运行现场。
 
 当前对应：
 
@@ -152,7 +150,7 @@ mobileclaw_workspace/
 
 ### 2.4 角色空间
 
-角色空间是角色的视觉化展示和游戏化表达。
+角色空间是角色的持久化档案与视觉化展示。
 
 当前对应：
 
@@ -185,7 +183,6 @@ AI 角色不是单纯“人设”，而是 MobileClaw 中一个可被调度、�
 - 每个角色负责什么？
 - 每个角色有什么长期记忆？
 - 每个角色默认使用哪些技能和模型？
-- 每个角色在群聊中扮演什么身份？
 - 角色能否被导出、复制、迁移？
 
 包含：
@@ -200,7 +197,6 @@ AI 角色不是单纯“人设”，而是 MobileClaw 中一个可被调度、�
 - 角色长期记忆
 - 角色工作日志
 - 角色气泡样式
-- 角色群聊身份配置
 
 #### 3.1.1 区域定位
 
@@ -212,20 +208,17 @@ AI 角色区域是“角色资产”的总入口。
 - 角色能力倾向
 - 角色模型画像
 - 角色长期记忆
-- 角色在群聊里的表达方式
 - 角色可迁移配置
 
 它不应该承载：
 
 - 某一次任务的完整执行过程
-- 某一局游戏的完整状态
 - 用户自己的全局记忆
 - 全局技能库
 
 这些内容分别归入：
 
 - 任务工作空间
-- 玩法空间
 - 我的记忆
 - 技能库
 
@@ -243,7 +236,6 @@ AI 角色区域是“角色资产”的总入口。
 - 角色固定技能
 - 角色长期记忆摘要
 - 角色最近工作日志
-- 角色在群聊中的身份摘要
 - 是否为内置角色
 - 是否为用户自定义角色
 - 是否可编辑
@@ -269,7 +261,6 @@ AI 可以读取：
 - 角色模型配置
 - 角色记忆
 - 角色工作日志
-- 角色在群聊中的身份要求
 
 AI 可以写入：
 
@@ -277,7 +268,6 @@ AI 可以写入：
 - 角色工作日志
 - 角色技能使用经验
 - 角色模型使用画像
-- 角色群聊身份补充
 - 角色自我说明
 
 AI 不应随意写入：
@@ -421,26 +411,6 @@ AI 不应随意写入：
 - 清理
 - 导出
 
-##### G. 角色群聊身份
-
-展示角色在群聊中的表达身份。
-
-字段：
-
-- 群内昵称
-- 群内身份设定
-- 发言风格
-- 气泡样式
-- 群内关系
-- 群内沉淀
-- 群聊玩法身份引用
-
-注意：
-
-- 群聊身份的“全局模板”属于角色区域。
-- 某个具体群里的成员关系属于群聊区域。
-- 某一局狼人杀身份牌属于玩法空间。
-
 #### 3.1.5 数据来源
 
 现有数据来源：
@@ -524,14 +494,12 @@ filesDir/role_workspaces/{roleId}/role_manifest.json
 关联数据库内容：
 
 - session message 里可能记录 sender role
-- group message 里可能记录 sender role
 - semantic memory 里可能记录用户对角色的偏好
 
 后续如果角色增长很复杂，可以考虑新增：
 
 - `role_memories`
 - `role_events`
-- `role_group_profiles`
 
 但当前阶段优先使用 Markdown + JSON 文件。
 
@@ -557,15 +525,12 @@ filesDir/role_workspaces/{roleId}/role_manifest.json
 - MCP token
 - 控制台 token
 - 临时任务 workspace
-- 群聊完整消息
-- 玩法局状态
 
 可选包含：
 
 - 角色肖像
 - 角色工作日志
 - 角色关联技能完整定义
-- 角色在群聊中的身份模板
 
 #### 3.1.9 导入策略
 
@@ -601,7 +566,6 @@ filesDir/role_workspaces/{roleId}/role_manifest.json
 - 模型配置中包含 endpoint
 - 模型配置中可能关联 API Key
 - 角色日志可能包含任务内容
-- 群聊身份可能包含关系信息
 
 处理原则：
 
@@ -723,8 +687,6 @@ filesDir/role_workspaces/{roleId}/role_manifest.json
 - 内置角色的用户扩展档案如何恢复默认？
 - 角色引用技能时，是强绑定技能版本还是只绑定 skill id？
 - 角色模型配置是只记录最近一次，还是保留历史？
-- 群聊身份模板放在角色区域，还是群聊区域引用后再覆盖？
-- 狼人杀角色身份是从角色档案派生，还是在玩法空间单独生成？
 
 导出建议：
 
@@ -780,8 +742,6 @@ filesDir/role_workspaces/{roleId}/role_manifest.json
 
 - 角色自己的长期记忆
 - 某一次任务的临时状态
-- 某个群里的群关系沉淀
-- 某一局玩法的状态
 - 原始聊天消息全文
 - API Key、token、password 等敏感凭据
 
@@ -789,8 +749,6 @@ filesDir/role_workspaces/{roleId}/role_manifest.json
 
 - AI 角色
 - 任务工作空间
-- 群聊区域
-- 玩法空间
 - 会话记录
 - 模型与网关 / 系统配置
 
@@ -861,7 +819,6 @@ AI 不应随意写入：
 - 与用户表达相反的推断
 - 未经确认的长期规则
 - 角色自己的 `memory.md`
-- 群聊共享记忆
 
 AI 写入记忆时需要遵守：
 
@@ -1248,7 +1205,6 @@ workspace_export/memory/memory_manifest.json
 - credential
 - 原始 embedding
 - 原始聊天全文
-- 群聊完整消息
 - 角色 `memory.md`
 - 任务 workspace 事件全文
 
@@ -1467,7 +1423,6 @@ workspace_export/memory/memory_manifest.json
 - scoped session 记忆默认展示在我的记忆里，还是只从任务工作空间进入？
 - 失败经验是否需要过期时间？
 - 用户能否设置“永不自动提炼记忆”？
-- 群聊中用户说的话是否默认进入我的记忆？
 - 角色对用户的观察应写入角色记忆，还是我的记忆？
 - 我的记忆导入时，规则类记忆是否必须逐条确认？
 - 是否提供“AI 为什么使用了这条记忆”的解释入口？
@@ -1534,7 +1489,6 @@ workspace_export/memory/memory_manifest.json
 - 普通聊天消息全文
 - 用户长期记忆
 - 角色长期档案
-- 群成员关系和群身份
 - 模型 API Key
 - MCP token
 - 纯缓存文件
@@ -1545,7 +1499,6 @@ workspace_export/memory/memory_manifest.json
 - 会话记录
 - 我的记忆
 - AI 角色
-- 群聊区域
 - 模型与网关
 - MCP 连接
 - 系统配置 / 缓存清理
@@ -2089,7 +2042,6 @@ workspace_export/artifacts/user_inputs/
 - token
 - 外部服务任务密钥
 - 用户未引用的全部相册/文件
-- 群聊完整消息
 - 原始会话全文
 
 可选包含：
@@ -2379,9 +2331,6 @@ workspace_export/artifacts/user_inputs/
 - 用户长期画像
 - 角色长期档案
 - 工作产物本体文件
-- 群聊成员身份
-- 群内长期关系
-- 玩法局状态
 - 模型密钥
 - MCP token
 
@@ -2390,8 +2339,6 @@ workspace_export/artifacts/user_inputs/
 - 我的记忆
 - AI 角色
 - 工作产物
-- 群聊区域
-- 玩法空间
 - 模型与网关
 - MCP 连接
 
@@ -2470,7 +2417,6 @@ AI 不应随意写入：
 - 用户长期记忆
 - 角色长期档案
 - 产物本体文件
-- 群聊消息
 
 AI 使用会话历史时需要遵守：
 
@@ -2896,9 +2842,6 @@ workspace_export/sessions/conversation_memory.json
 - 用户长期记忆
 - 工作产物本体
 - 任务 workspace 完整过程
-- 群聊消息
-- 群成员身份
-- 玩法局状态
 - token/key/secret
 
 可选包含：
@@ -3050,7 +2993,6 @@ workspace_export/sessions/conversation_memory.json
 注意：
 
 - 不要把会话记录做成工作产物列表。
-- 不要把群聊混进单聊会话。
 - 对“继续这个任务”应跳转到相关 workspace 或产物。
 - 对“继续这个对话”应恢复 session。
 
@@ -3120,7 +3062,6 @@ workspace_export/sessions/conversation_memory.json
 - 大图片是否彻底移出 `imageBase64`，统一走文件附件？
 - 导出 Markdown 时如何呈现附件和运行日志？
 - 会话清理是否同步清理孤儿附件？
-- 群聊消息是否要在统一搜索中出现，但详情仍跳到群聊区域？
 
 导出建议：
 
@@ -3130,7 +3071,6 @@ workspace_export/sessions/conversation_memory.json
 - 支持附件可选迁移
 - 支持运行日志开关
 - 支持关联产物/任务 workspace 仅引用或完整打包
-- 不在这里导出群聊成员身份、群玩法和群关系
 
 ### 3.6 技能库
 
@@ -4799,7 +4739,6 @@ MCP 连接中的认证信息不会明文导出。导入到新设备后，需要�
 - 本地模型文件安装在哪里？
 - 每个角色最近使用的模型配置是什么？
 - 导出时如何处理 API Key？
-- 后续群聊和狼人杀如何让不同角色使用不同模型？
 
 包含：
 
@@ -4856,7 +4795,6 @@ MCP 连接中的认证信息不会明文导出。导入到新设备后，需要�
 - 角色可以有 `modelOverride`。
 - 角色档案里的 `model.md` 和 `model_config.json` 只保存角色最近使用的模型画像。
 - 角色导出时不应携带明文 API Key。
-- 后续群聊和狼人杀可以根据角色 id 读取角色模型画像，再引用全局 gateway id。
 
 #### 3.8.2 用户能看到什么
 
@@ -4934,7 +4872,6 @@ AI 给角色分配模型时，需要遵守：
 - 角色档案只记录模型偏好和最近画像，不复制密钥。
 - 如果模型缺失，应提示用户配置网关或选择本地模型。
 - 如果本地模型不支持 tool calling，应降低 agent 执行预期。
-- 群聊/狼人杀中不同角色可拥有不同模型画像，但实际密钥仍来自全局网关。
 
 #### 3.8.4 二级内容划分
 
@@ -5176,9 +5113,7 @@ AI 给角色分配模型时，需要遵守：
 用途：
 
 - 为角色推荐模型
-- 为群聊分配模型
 - 记录某模型不适合某类任务
-- 后续做狼人杀时，为不同角色设置推理强度和成本策略
 
 注意：
 
@@ -5304,8 +5239,6 @@ workspace_export/models/local_files/
 - DataStore `agent_config`
 - `filesDir/models/`
 - `filesDir/role_workspaces/{roleId}/model_config.json`
-
-后续如果需要查询、统计、迁移和群聊玩法调度，建议增加：
 
 - `model_gateways`
 - `model_capabilities`
@@ -5624,8 +5557,6 @@ workspace_export/models/local_files/
 - 是否需要模型成本统计？
 - 是否需要模型延迟统计？
 - 是否需要模型调用失败自动降级？
-- 是否需要群聊中按角色分配不同模型？
-- 是否需要狼人杀中给角色配置不同推理强度？
 - 是否需要本地模型 tool calling 能力检测？
 - 是否需要 API Key 加密存储和导入后重新授权流程？
 
@@ -5645,13 +5576,12 @@ workspace_export/models/local_files/
 
 媒体资产区域不是所有文件的集合。
 
-它是 MobileClaw 工作空间中专门保存“可展示、可复用、可被角色/会话/群聊引用的视觉和音视频资源”的区域。
+它是 MobileClaw 工作空间中专门保存可展示、可复用，并可被角色或会话引用的视觉和音视频资源的区域。
 
 这一块应该回答：
 
 - 当前有哪些角色头像和肖像？
 - AI Town / 角色空间使用了哪些 sprite pack？
-- 聊天和群聊里沉淀了哪些图片、视频、表情包附件？
 - AI 生成过哪些图片、图标、视频？
 - 哪些媒体只是缓存，哪些应该随工作空间导出？
 - 媒体和工作产物、会话记录、角色档案之间如何建立引用？
@@ -5684,7 +5614,6 @@ workspace_export/models/local_files/
 - 生成图标
 - 生成图片
 - 生成视频文件
-- 聊天/群聊附件中的媒体引用
 - 媒体来源和归属关系
 
 它不应该保存：
@@ -5727,7 +5656,6 @@ workspace_export/models/local_files/
 - 文件类型
 - 关联角色
 - 关联会话
-- 关联群聊
 - 是否收藏
 - 是否缓存
 - 是否默认导出
@@ -5758,7 +5686,6 @@ AI 可以读取：
 - 媒体类型
 - 媒体用途
 - 媒体路径或可访问 URI
-- 关联角色/会话/群聊
 - 生成 prompt 摘要
 - 是否可复用
 
@@ -5786,7 +5713,6 @@ AI 使用媒体时，需要遵守：
 - 只复用用户明确上传或 AI 生成并保存在工作空间里的媒体。
 - 聊天里的临时图片如果要长期复用，应先沉淀为媒体资产。
 - 截屏类观察图片不应默认进入长期媒体资产。
-- 群聊表情包可以归媒体资产，但群聊消息仍归群聊区域。
 
 #### 3.9.4 二级内容划分
 
@@ -5891,7 +5817,6 @@ AI 使用媒体时，需要遵守：
 注意：
 
 - AI Town 功能当前可以在 UI 上隐藏，但底层角色视觉资产仍可能被角色详情页使用。
-- 房间状态本体归角色空间/玩法空间讨论，媒体区域只管理可复用的图像资源。
 
 ##### D. 生成图片和图标
 
@@ -5958,7 +5883,7 @@ AI 使用媒体时，需要遵守：
 
 ##### F. 表情包和贴纸
 
-管理聊天和群聊可复用表情包。
+管理普通聊天中可复用的表情包。
 
 字段：
 
@@ -5986,15 +5911,14 @@ AI 使用媒体时，需要遵守：
 - 收藏表情应可导出。
 - 非收藏缓存默认不导出。
 
-##### G. 聊天和群聊媒体附件
+##### G. 聊天媒体附件
 
-管理消息中出现的媒体引用。
+管理普通会话消息中出现的媒体引用。
 
 字段：
 
 - message id
 - session id
-- group id
 - attachment type
 - path
 - name
@@ -6007,13 +5931,12 @@ AI 使用媒体时，需要遵守：
 
 - `SessionMessageEntity.attachmentsJson`
 - `SessionMessageEntity.imageBase64`
-- `GroupMessageEntity.attachmentsJson`
 - `SkillAttachment.FileData`
 - `SkillAttachment.ImageData`
 
 注意：
 
-- 会话归属和消息文本归会话记录/群聊区域。
+- 会话归属和消息文本归会话记录。
 - 媒体区域只保存媒体文件和引用索引。
 - 如果附件路径指向外部 content URI，导出前需要复制或提示不可迁移。
 
@@ -6055,7 +5978,6 @@ AI 使用媒体时，需要遵守：
 - `SkillAttachment.FileData`
 - `SessionMessageEntity.attachmentsJson`
 - `SessionMessageEntity.imageBase64`
-- `GroupMessageEntity.attachmentsJson`
 - `VideoGenerationTaskEntity`
 - `StickerFavoritesStore`
 - `ChineseBqbStickerRepository`
@@ -6188,7 +6110,6 @@ workspace_export/media/
 - `ownerType`
 - `roleId`
 - `sessionId`
-- `groupId`
 - `messageId`
 - `createdAt`
 
@@ -6215,7 +6136,6 @@ workspace_export/media/
 - 生成图片
 - 生成图标
 - 已下载生成视频
-- 会话/群聊中被引用且本地可访问的媒体附件
 - 媒体引用关系
 
 默认不包含：
@@ -6245,7 +6165,6 @@ workspace_export/media/
 - hash 重复
 - 引用的角色不存在
 - 引用的会话不存在
-- 引用的群聊不存在
 - content URI 无法恢复
 - 外部 URL 过期
 - 大文件空间不足
@@ -6266,7 +6185,6 @@ workspace_export/media/
 - 重建媒体索引
 - 重写相对路径
 - 修复角色头像和 sprite pack 引用
-- 修复会话/群聊 attachment 引用
 - 扫描缺失文件
 - 标记不可恢复外链
 
@@ -6277,7 +6195,6 @@ workspace_export/media/
 - 用户上传图片
 - 用户相册路径
 - 截图内容
-- 群聊附件
 - 私密生成图片
 - 视频生成 prompt
 - 外部上传 URL
@@ -6359,7 +6276,6 @@ workspace_export/media/
 - 图标
 - 表情包
 - 聊天附件
-- 群聊附件
 - 缓存
 
 移动端交互建议：
@@ -6378,7 +6294,6 @@ workspace_export/media/
 - prompt 摘要
 - 角色名
 - 会话标题
-- 群聊名称
 - 标签
 - mime type
 
@@ -7236,7 +7151,6 @@ MobileClaw 已具备当前任务所需的运行权限。
 - 等待角色切换确认的任务
 - MiniAPP 自动修复任务
 - 视频生成任务
-- 群聊待处理 turn
 - task replay
 - task recipe
 - 任务失败和重试摘要
@@ -7248,7 +7162,6 @@ MobileClaw 已具备当前任务所需的运行权限。
 - 完整会话消息
 - 生成媒体文件本体
 - 角色长期记忆
-- 玩法局内完整状态
 
 这些分别归入：
 
@@ -7256,14 +7169,12 @@ MobileClaw 已具备当前任务所需的运行权限。
 - 会话记录
 - 媒体资产
 - 角色档案
-- 玩法空间
 
 任务队列和任务工作空间的关系：
 
 - 任务队列回答“有什么任务要跑、能不能恢复、状态是什么”。
 - 任务工作空间回答“这个任务运行过程中产生了什么现场记录和文件”。
 - 一个任务队列项可以关联一个 `workspaceId`。
-- 一个 `workspaceId` 可以被会话、群聊、角色运行或玩法局引用。
 
 #### 3.11.2 用户能看到什么
 
@@ -7278,7 +7189,6 @@ MobileClaw 已具备当前任务所需的运行权限。
 - 任务类型
 - 任务目标摘要
 - 关联会话
-- 关联群聊
 - 关联角色
 - 关联工作空间
 - 最近更新时间
@@ -7352,7 +7262,6 @@ AI 继续任务时，需要遵守：
 
 - task id
 - session id
-- group id
 - role id
 - task type
 - goal summary
@@ -7475,29 +7384,6 @@ AI 继续任务时，需要遵守：
 - 自动修复任务通常只在当前设备当前会话内有效。
 - 导出时保存摘要和关联 app，不保存为可自动执行队列。
 
-##### F. 群聊待处理 turn
-
-保存群聊多角色调度中的待执行消息。
-
-字段：
-
-- group id
-- queued message
-- role id
-- priority
-- createdAt
-
-当前对应：
-
-- `GroupTurnScheduler`
-- `GroupTurnQueue`
-- `GroupState.pendingMessages`
-
-注意：
-
-- 群聊消息和成员关系归群聊区域。
-- 待执行 turn 是运行状态，默认不作为可恢复跨设备任务。
-
 ##### G. Task Replay
 
 保存任务执行复盘。
@@ -7558,7 +7444,6 @@ AI 继续任务时，需要遵守：
 - task id
 - workspace id
 - session id
-- group id
 - role id
 - artifact count
 - checkpoint count
@@ -7596,7 +7481,6 @@ AI 继续任务时，需要遵守：
 - `pendingRoleSwitchTaskGoal`
 - `pendingConfirmedRoutes`
 - `pendingMiniAppAutoRepairs`
-- `GroupTurnScheduler`
 - `pendingAgentTask`
 
 详细来源：
@@ -7613,7 +7497,6 @@ AI 继续任务时，需要遵守：
 | task replay | `filesDir/task_replays/` |
 | task recipe | `filesDir/task_recipes/` |
 | 任务工作空间 | `filesDir/workspaces/ws_xxxxxxxx/` |
-| 群聊待处理 turn | `GroupTurnScheduler`, `GroupState.pendingMessages` |
 
 #### 3.11.6 文件路径
 
@@ -7656,7 +7539,6 @@ workspace_export/tasks/
 - `activeWorkflows`
 - `pendingConfirmedRoutes`
 - `pendingMiniAppAutoRepairs`
-- `GroupTurnScheduler`
 
 后续如果要支持真正可恢复任务队列，建议增加：
 
@@ -7675,7 +7557,6 @@ workspace_export/tasks/
 - `status`
 - `goalSummary`
 - `sessionId`
-- `groupId`
 - `roleId`
 - `workspaceId`
 - `retryCount`
@@ -7721,7 +7602,6 @@ workspace_export/tasks/
 - API Key
 - 完整 raw response
 - 临时 pending confirmation
-- 群聊运行中队列
 - 大视频文件本体
 
 可选包含：
@@ -7832,7 +7712,6 @@ workspace_export/tasks/
 - 任务类型
 - 状态
 - 关联角色
-- 关联会话/群聊
 - 最近时间
 - 操作按钮
 
@@ -7861,7 +7740,6 @@ workspace_export/tasks/
 - task type
 - role name
 - session title
-- group name
 - recipe title
 - error summary
 
@@ -7929,44 +7807,25 @@ workspace_export/tasks/
 - API Key 和 raw response 默认不导出
 - 导入后不自动执行任务
 
-### 3.12 玩法空间
+### 3.12 Agent Town 数据区域
 
-用于承载狼人杀、AI Town、桌游、剧情模拟等可扩展玩法的规则、模板和运行时状态。
-
-玩法空间负责 AI 小镇和角色互动状态。
+该区域只描述现有 Agent Town 的角色世界展示数据，不提供通用房间或多角色运行框架。
 
 包含：
 
-- 玩法模板
-- 玩法规则
-- 游戏局配置
-- 玩家角色
-- 身份牌
-- 回合状态
-- 发言记录
-- 投票记录
-- 角色私有信息
-- 裁判/主持人状态
-- 胜负状态
-- 玩法事件日志
-- 玩法结算记录
-- AI Town 相关展示状态
+- 小镇布局和房间展示状态
+- 角色位置和可视化资产引用
+- Agent Town 场景元数据
 
 现有数据来源：
 
-- `GroupMessageEntity`
 - `AgentTownStore`
-- 未来狼人杀 runtime
-
-建议 UI 名称：
-
-- 玩法空间
+- `filesDir/agent_town/`
 
 导出建议：
 
-- 每一局游戏应可独立导出
-- 需要区分公开信息和角色私有信息
-- 可支持玩法模板导入导出
+- 可导出小镇布局、场景元数据和本地可迁移的视觉资产引用
+- 不导出凭据、临时缓存或不可恢复的外部 URI
 
 ### 3.13 备份与迁移
 
@@ -8005,15 +7864,14 @@ workspace_export/tasks/
 2. 我的记忆
 3. 工作产物
 4. 会话记录
-5. 群聊区域
-6. 技能库
-7. MCP 连接
-8. 模型与网关
-9. 媒体资产
-10. 系统配置
-11. 任务队列
-12. 玩法空间
-13. 备份与迁移
+5. 技能库
+6. MCP 连接
+7. 模型与网关
+8. 媒体资产
+9. 系统配置
+10. 任务队列
+11. Agent Town 数据
+12. 备份与迁移
 
 ## 5. 每个区域后续需要补充的字段
 
@@ -8103,12 +7961,8 @@ workspace_export/tasks/
 
 角色可以拥有长期档案，但某次任务的过程应该属于任务工作空间。
 
-例如狼人杀：
-
 - 角色档案：角色长期性格、模型、技能、记忆。
-- 群聊区域：这群人是谁、成员关系如何、群内沉淀了什么。
-- 玩法空间：某一局游戏规则、回合和状态。
-- 任务工作空间：某个角色在某一局中的推理、发言、行动记录。
+- 任务工作空间：该角色执行具体任务时的推理、发言和行动记录。
 
 ### 7.3 导入导出需要先有区域 manifest
 
@@ -8140,7 +7994,7 @@ MobileClaw 不应该把“总工作空间”做成一个新的孤立数据系统
 
 更合理的做法是：
 
-> 在现有 chat、角色、技能、MCP、任务 workspace、群聊、产物和设置之上，新增一层统一的工作空间索引、区域适配器和导入导出协议。
+> 在现有 chat、角色、技能、MCP、任务 workspace、Agent Town、产物和设置之上，新增一层统一的工作空间索引、区域适配器和导入导出协议。
 
 也就是说：
 
@@ -8174,20 +8028,18 @@ UI 层
   UserMemoryAreaProvider
   WorkArtifactsAreaProvider
   SessionsAreaProvider
-  GroupsAreaProvider
   SkillsAreaProvider
   McpAreaProvider
   ModelsAreaProvider
   MediaAreaProvider
   SystemAreaProvider
   TasksAreaProvider
-  PlayAreaProvider
+  AgentTownAreaProvider
 
 现有领域层
   RoleManager / RoleWorkspaceStore
   SemanticMemory / MemoryWriter / UserConfig
   WorkspaceStore / WorkspaceRuntimeRecorder
-  SessionMessageDao / GroupMessageDao
   SkillRegistry / SkillLoader / SkillMarket
   McpHttpClient / McpSkillExecutor
   AgentConfig / LocalModelManager
@@ -8245,7 +8097,7 @@ models
 media
 system
 tasks
-play
+agent_town
 backup
 ```
 
@@ -8298,13 +8150,11 @@ backup
 
 - session -> workspace
 - session -> artifacts
-- group -> roles
 - role -> skills
 - role -> model profile
 - skill -> mcp connection
 - video task -> media file
 - artifact -> media asset
-- play round -> group
 
 #### D. WorkspaceManifest
 
@@ -8413,23 +8263,6 @@ Chat 是工作空间最重要的写入口。
 
 聊天消息应该像“时间线”，工作空间应该像“文件柜和索引”。
 
-#### D. 群聊
-
-群聊写入：
-
-- 群聊区域：群、成员、消息、附件引用、角色发言。
-- 角色区域：角色身份和长期档案。
-- 任务工作空间：某个角色在群聊中执行某次任务的现场。
-- 玩法空间：后续狼人杀等玩法局状态。
-
-群聊中每个角色执行任务时，建议 scope：
-
-```text
-group:{groupId}:role:{roleId}
-```
-
-当前 `WorkspaceRuntimeCoordinator.ensureGroupBinding(...)` 已经接近这个模型。
-
 ### 8.6 其他功能如何接入工作空间
 
 #### 角色
@@ -8484,7 +8317,7 @@ MCP 页面负责连接和发现工具。
 
 #### 媒体
 
-聊天、群聊、角色、AI Town 都可能产生媒体。
+聊天、角色和 Agent Town 都可能产生媒体。
 
 工作空间负责：
 
@@ -8528,7 +8361,6 @@ app/src/main/java/com/mobileclaw/workspace/global/provider/
   UserMemoryAreaProvider.kt
   WorkArtifactsAreaProvider.kt
   SessionsAreaProvider.kt
-  GroupsAreaProvider.kt
   SkillsAreaProvider.kt
   McpAreaProvider.kt
   ModelsAreaProvider.kt
@@ -8676,7 +8508,7 @@ mobileclaw_workspace_export.zip
   media/
   system/
   tasks/
-  play/
+  agent_town/
 ```
 
 ### 8.11 隐私和权限架构
@@ -8800,7 +8632,6 @@ mobileclaw_workspace_export.zip
 - 把所有文件强行复制到 `mobile_workspace/`。
 - 做复杂同步协议。
 - 做跨设备实时同步。
-- 做玩法空间完整设计。
 - 让 AI 自动导出所有隐私数据。
 
 第一版应该做到：

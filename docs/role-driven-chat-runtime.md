@@ -19,7 +19,6 @@ MobileClaw 现在的 Chat 能完成聊天、工具执行、工作空间记录、
 - 角色成为 MobileClaw 工作空间和 Chat 执行方式的核心组织者。
 - 每个角色有独立工作空间，包含身份、技能、记忆、模型配置、执行协议等文件。
 - 用户切换角色时，实际切换的是 Chat Runtime 的工作协议，而不仅是头像、气泡和语气。
-- 后续群聊、狼人杀、多角色协作可以复用同一套角色协议和模型配置。
 
 ### 2.2 工程目标
 
@@ -172,7 +171,7 @@ Chat 中“当前使用的角色”不能只等于 UI 选中的 `Role` 对象。
 - `RoleRuntimeProfile`
 - `RoleChatRuntimeBridge.adaptCurrentRole(...)`
 
-现阶段 Direct Chat、Agent Run、dry-run trace 都应从这个适配入口读取角色协议和工作空间，避免每条路径各自读取/解析角色文件。后续群聊和狼人杀玩法中的每个角色实例，也可以先适配为 `RoleRuntimeProfile`，再进入各自的执行循环。
+现阶段 Direct Chat、Agent Run、dry-run trace 都应从这个适配入口读取角色协议和工作空间，避免每条路径各自读取或解析角色文件。
 
 ## 3.5 当前 MainViewModel 中的真实细节映射
 
@@ -327,7 +326,6 @@ flowchart TD
 
 - direct chat：只跑 1 到 2 个 step，通常是 `ANALYZE_INTENT -> FINAL_ANSWER`。
 - agent run：先跑角色 step 选择记忆、工作区和工具，再进入 `AgentRuntime.run()`。
-- 群聊 / 狼人杀：每个角色独立持有 `RoleRunState`，根据局内阶段推进 step。
 
 - 绑定工作区并记录 `direct_chat_started`。
 - 更新会话角色。
@@ -498,7 +496,7 @@ data class ChatExecutionContext(
 | --- | --- | --- | --- |
 | 身份与边界 | `Role` + `core.md` | system prompt、回复风格、任务边界 | 中 |
 | 执行协议 | `chat_protocol.md` | 输入理解、上下文读取、技能策略、沉淀策略 | 高 |
-| 模型与网关画像 | `model.md` / `model_config.json` | 模型选择、能力判断、后续群聊模型分配 | 中 |
+| 模型与网关画像 | `model.md` / `model_config.json` | 模型选择和能力判断 | 中 |
 | 长期角色记忆 | `memory.md` | 角色工作习惯、用户协作偏好 | 中 |
 | 技能索引 | `skills.md` / `skill_index.md` | 工具发现、候选工具排序、按需读取 | 高 |
 | 当前回合状态 | `RoleRunState` | 多步执行、步骤预算、上下文裁剪 | 高 |
@@ -652,7 +650,7 @@ role_workspaces/{roleId}/
 - `memory.md`：这个角色学到的长期工作习惯。
 - `skills.md`：这个角色如何选择、学习和使用技能。
 - `model.md`：给用户看的模型/网关说明。
-- `model_config.json`：给系统和未来群聊玩法读的结构化模型配置。
+- `model_config.json`：供系统读取的结构化模型配置。
 - `journal.md`：任务后沉淀，不应塞回每次 prompt。
 
 角色详情页可以逐步开放这些文件的编辑，但运行时应该优先读取结构化适配结果 `RoleRuntimeProfile`，而不是 UI 页面临时状态。
@@ -673,7 +671,6 @@ role_workspaces/{roleId}/
 - 不让模型自行绕过工具权限。
 - 不在每次 direct chat 中全量读取角色工作空间。
 - 不把 dry-run trace 默认开启。
-- 不把群聊玩法提前塞进单人 chat runtime。
 
 ## 6.9 当前代码对照
 
@@ -873,11 +870,6 @@ data class RolePersistencePolicy(
 - 角色详情页展示协议文件。
 - 用户可编辑记忆策略、回复策略、技能策略。
 - 提供模板和恢复默认值。
-
-### 阶段 E：群聊和玩法复用
-
-- 群聊区域保存每个角色身份、协议、模型配置和局内记忆。
-- 狼人杀等玩法只需要定义群聊级协议，角色仍使用自己的 Chat Runtime 协议。
 
 ## 8. 第一版实现范围
 
