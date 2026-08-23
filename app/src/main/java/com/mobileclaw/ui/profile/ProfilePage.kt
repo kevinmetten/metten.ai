@@ -68,7 +68,6 @@ import com.mobileclaw.ui.ClawColors
 import com.mobileclaw.ui.ClawPageHeader
 import com.mobileclaw.ui.ClawIconTile
 import com.mobileclaw.ui.ClawSymbolIcon
-import com.mobileclaw.ui.LocalAppLanguage
 import com.mobileclaw.ui.LocalClawColors
 import com.mobileclaw.str
 
@@ -76,8 +75,6 @@ import com.mobileclaw.str
 
 private enum class ProfileSection { PORTRAIT, MEMORY, HISTORY }
 private enum class MemorySettingsSection { MEMORY, HISTORY, TOOL_STRATEGY }
-
-private fun zhEn(isZh: Boolean, zh: String, en: String): String = if (isZh) zh else en
 
 // ── Data model ────────────────────────────────────────────────────────────────
 
@@ -104,7 +101,7 @@ data class ProfileDimension(
 private fun buildDimensions(facts: Map<String, String>): List<ProfileDimension> {
     fun f(key: String) = facts["profile.$key"]
     return listOf(
-        // ── 生理 ── basic physiology
+        // Basic physiology
         ProfileDimension("physio", "physio", str(R.string.profile_99626b), ProfileLineA, listOf(
             ProfileAspect("profile.physio.health",     str(R.string.profile_fe9069), f("physio.health")),
             ProfileAspect("profile.physio.fitness",    str(R.string.profile_e83951), f("physio.fitness")),
@@ -112,7 +109,7 @@ private fun buildDimensions(facts: Map<String, String>): List<ProfileDimension> 
             ProfileAspect("profile.physio.nutrition",  str(R.string.profile_7f6c57), f("physio.nutrition")),
             ProfileAspect("profile.physio.medical",    str(R.string.profile_9a7841), f("physio.medical")),
         )),
-        // ── 性格 ── Big Five OCEAN (McCrae & Costa, 1992)
+        // Big Five OCEAN (McCrae & Costa, 1992)
         ProfileDimension("personality", "roles", str(R.string.profile_732564), ProfileLineB, listOf(
             ProfileAspect("profile.personality.openness",          str(R.string.profile_a0dbad),   f("personality.openness")),
             ProfileAspect("profile.personality.conscientiousness",  str(R.string.profile_a4dec8),   f("personality.conscientiousness")),
@@ -121,7 +118,7 @@ private fun buildDimensions(facts: Map<String, String>): List<ProfileDimension> 
             ProfileAspect("profile.personality.neuroticism",        str(R.string.profile_0e61ca), f("personality.neuroticism")),
             ProfileAspect("profile.personality.style",              str(R.string.profile_169e2e), f("personality.style")),
         )),
-        // ── 认知 ── cognitive style + Holland RIASEC (1973)
+        // Cognitive style and Holland RIASEC (1973)
         ProfileDimension("cognitive", "cognitive", str(R.string.profile_db916a), ProfileAccent, listOf(
             ProfileAspect("profile.cognitive.thinking",    str(R.string.profile_d1dbd1), f("cognitive.thinking")),
             ProfileAspect("profile.cognitive.learning",    str(R.string.profile_a8a822), f("cognitive.learning")),
@@ -130,7 +127,7 @@ private fun buildDimensions(facts: Map<String, String>): List<ProfileDimension> 
             ProfileAspect("profile.cognitive.creativity",  str(R.string.profile_39f56b), f("cognitive.creativity")),
             ProfileAspect("profile.cognitive.riasec",      str(R.string.profile_1a36a3), f("cognitive.riasec")),
         )),
-        // ── 情绪 ── Ryff's Well-being (1989): self-acceptance, resilience
+        // Ryff well-being (1989): self-acceptance and resilience
         ProfileDimension("emotional", "emotional", str(R.string.profile_6b4aaf), ProfileLineC, listOf(
             ProfileAspect("profile.emotional.stability",       str(R.string.profile_cfeb01), f("emotional.stability")),
             ProfileAspect("profile.emotional.empathy",         str(R.string.profile_f5cbda),   f("emotional.empathy")),
@@ -138,7 +135,7 @@ private fun buildDimensions(facts: Map<String, String>): List<ProfileDimension> 
             ProfileAspect("profile.emotional.resilience",      str(R.string.profile_7d37f3),   f("emotional.resilience")),
             ProfileAspect("profile.emotional.self_acceptance", str(R.string.profile_e7e4f0),   f("emotional.self_acceptance")),
         )),
-        // ── 社交 ── social patterns + Ryff positive relations
+        // Social patterns and Ryff positive relations
         ProfileDimension("social", "social", str(R.string.profile_f22ca1), ProfileAccent, listOf(
             ProfileAspect("profile.social.style",         str(R.string.profile_6a4008), f("social.style")),
             ProfileAspect("profile.social.communication", str(R.string.profile_7f8c61), f("social.communication")),
@@ -146,7 +143,7 @@ private fun buildDimensions(facts: Map<String, String>): List<ProfileDimension> 
             ProfileAspect("profile.social.influence",     str(R.string.profile_0655bd), f("social.influence")),
             ProfileAspect("profile.social.boundaries",    str(R.string.profile_cdf24f),   f("social.boundaries")),
         )),
-        // ── 价值 ── Schwartz Values (1992): universalism, benevolence, autonomy, achievement
+        // Schwartz values (1992): universalism, benevolence, autonomy, and achievement
         ProfileDimension("values", "values", str(R.string.profile_54d8f5), ProfileLineB, listOf(
             ProfileAspect("profile.values.core",        str(R.string.profile_b9b65b), f("values.core")),
             ProfileAspect("profile.values.goals",       str(R.string.profile_6dc3f0),   f("values.goals")),
@@ -155,7 +152,7 @@ private fun buildDimensions(facts: Map<String, String>): List<ProfileDimension> 
             ProfileAspect("profile.values.benevolence", str(R.string.profile_286564),   f("values.benevolence")),
             ProfileAspect("profile.values.autonomy",    str(R.string.profile_bbaa2b),   f("values.autonomy")),
         )),
-        // ── 能力 ── capability + SDT intrinsic motivation (Deci & Ryan)
+        // Capability and self-determination theory intrinsic motivation (Deci & Ryan)
         ProfileDimension("capability", "capability", str(R.string.profile_120419), ProfileLineA, listOf(
             ProfileAspect("profile.capability.skills",     str(R.string.profile_52a965), f("capability.skills")),
             ProfileAspect("profile.capability.execution",  str(R.string.profile_3d8ec0),   f("capability.execution")),
@@ -163,7 +160,7 @@ private fun buildDimensions(facts: Map<String, String>): List<ProfileDimension> 
             ProfileAspect("profile.capability.technical",  str(R.string.profile_7621a5), f("capability.technical")),
             ProfileAspect("profile.capability.intrinsic",  str(R.string.profile_9dc244), f("capability.intrinsic")),
         )),
-        // ── 精神 ── Ryff's purpose in life + personal growth
+        // Ryff purpose in life and personal growth
         ProfileDimension("spiritual", "spiritual", str(R.string.profile_36fe54), ProfileLineC, listOf(
             ProfileAspect("profile.spiritual.core",       str(R.string.profile_4acb22), f("spiritual.core")),
             ProfileAspect("profile.spiritual.beliefs",    str(R.string.profile_bd0216), f("spiritual.beliefs")),
@@ -342,7 +339,6 @@ fun UserInfoEditPage(
     onPrewarmQuizzes: (List<ProfileDimension>) -> Unit = {},
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val dimensions = remember(facts) { buildDimensions(facts) }
     var openDimension by remember { mutableStateOf<ProfileDimension?>(null) }
     var name by remember(entries["user.name"]?.value) { mutableStateOf(entries["user.name"]?.value.orEmpty()) }
@@ -381,7 +377,7 @@ fun UserInfoEditPage(
     }
 
     Column(Modifier.fillMaxSize().background(Color(0xFFF7F8F5))) {
-        ClawPageHeader(title = zhEn(isZh, "用户信息编辑", "User Info"), onBack = onBack) {
+        ClawPageHeader(title = stringResource(R.string.profile_user_info_title), onBack = onBack) {
             if (isLoading || isExtracting) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), color = c.accent, strokeWidth = 1.5.dp)
                 Spacer(Modifier.width(8.dp))
@@ -449,11 +445,10 @@ fun MemorySettingsPage(
     onDeleteConfig: (key: String) -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     var section by remember { mutableStateOf(MemorySettingsSection.MEMORY) }
 
     Column(Modifier.fillMaxSize().background(Color(0xFFF7F8F5))) {
-        ClawPageHeader(title = zhEn(isZh, "记忆", "Memory"), onBack = onBack) {
+        ClawPageHeader(title = stringResource(R.string.profile_memory_title), onBack = onBack) {
             if (isLoading || isExtracting) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), color = c.accent, strokeWidth = 1.5.dp)
                 Spacer(Modifier.width(8.dp))
@@ -535,7 +530,6 @@ private fun UserInfoEditCard(
     onSave: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { onSetAvatarUri(it.toString()) }
     }
@@ -553,14 +547,14 @@ private fun UserInfoEditCard(
             UserAvatarPreview(uri = userAvatarUri, fallback = name)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    if (isZh) "基础资料" else "Basic Info",
+                    stringResource(R.string.profile_basic_info),
                     color = c.text,
                     fontSize = 17.sp,
                     fontWeight = FontWeight.ExtraBold,
                     maxLines = 1,
                 )
                 Text(
-                    if (isZh) "存储在你的个人空间内" else "Stored in your personal space",
+                    stringResource(R.string.profile_personal_space_hint),
                     color = c.subtext,
                     fontSize = 12.sp,
                     maxLines = 1,
@@ -568,32 +562,32 @@ private fun UserInfoEditCard(
                 )
             }
             TextButton(onClick = { avatarPicker.launch(arrayOf("image/*")) }) {
-                Text(if (isZh) "头像" else "Avatar", color = c.text, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text(stringResource(R.string.profile_avatar), color = c.text, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
             }
         }
         UserInfoTextField(
             value = name,
             onValueChange = onName,
-            label = if (isZh) "你的名字" else "Your Name",
-            placeholder = if (isZh) "例如：Kirito" else "e.g. Kirito",
+            label = stringResource(R.string.profile_name_label),
+            placeholder = stringResource(R.string.profile_name_hint),
         )
         UserInfoTextField(
             value = aiAddress,
             onValueChange = onAiAddress,
-            label = if (isZh) "AI 对你的称呼" else "AI Address",
-            placeholder = if (isZh) "例如：老板、伙伴、Kirito" else "e.g. Boss, partner, Kirito",
+            label = stringResource(R.string.profile_ai_address_label),
+            placeholder = stringResource(R.string.profile_ai_address_hint),
         )
         UserInfoTextField(
             value = role,
             onValueChange = onRole,
-            label = if (isZh) "你的身份/角色" else "Your Role",
-            placeholder = if (isZh) "例如：独立开发者" else "e.g. Indie developer",
+            label = stringResource(R.string.profile_role_label),
+            placeholder = stringResource(R.string.profile_role_hint),
         )
         UserInfoTextField(
             value = preference,
             onValueChange = onPreference,
-            label = if (isZh) "偏好与边界" else "Preferences",
-            placeholder = if (isZh) "希望 AI 如何配合你" else "How AI should work with you",
+            label = stringResource(R.string.profile_preferences_label),
+            placeholder = stringResource(R.string.profile_preferences_hint),
             minLines = 3,
         )
         Button(
@@ -683,11 +677,10 @@ private fun UserInfoTextField(
 @Composable
 private fun MemorySettingsTabRow(active: MemorySettingsSection, onSelect: (MemorySettingsSection) -> Unit) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val tabs = listOf(
-        MemorySettingsSection.MEMORY to zhEn(isZh, "记忆", "Memory"),
-        MemorySettingsSection.HISTORY to zhEn(isZh, "历史", "History"),
-        MemorySettingsSection.TOOL_STRATEGY to zhEn(isZh, "工具策略", "Tool Strategy"),
+        MemorySettingsSection.MEMORY to "Memory",
+        MemorySettingsSection.HISTORY to "History",
+        MemorySettingsSection.TOOL_STRATEGY to "Tool Strategy",
     )
 
     Row(
@@ -733,7 +726,6 @@ private fun ToolStrategyEditor(
     onDelete: (key: String) -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val strategies = entries
         .filterKeys { it.startsWith("tool.strategy.") }
         .toSortedMap()
@@ -755,9 +747,9 @@ private fun ToolStrategyEditor(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 ClawIconTile("tool", size = 40.dp, iconSize = 21.dp, tint = c.text, background = c.cardAlt, border = c.border)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(if (isZh) "工具策略" else "Tool Strategy", color = c.text, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("Tool Strategy", color = c.text, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
                     Text(
-                        if (isZh) "记录工具选择、调用顺序和失败处理偏好" else "Edit tool choice, order, and fallback preferences",
+                        "Edit tool choice, order, and fallback preferences",
                         color = c.subtext,
                         fontSize = 11.sp,
                         maxLines = 1,
@@ -768,14 +760,14 @@ private fun ToolStrategyEditor(
             UserInfoTextField(
                 value = strategyId,
                 onValueChange = { strategyId = it },
-                label = if (isZh) "策略名称" else "Strategy ID",
-                placeholder = if (isZh) "例如：android_debug" else "e.g. android_debug",
+                label = "Strategy ID",
+                placeholder = "e.g. android_debug",
             )
             UserInfoTextField(
                 value = strategyContent,
                 onValueChange = { strategyContent = it },
-                label = if (isZh) "策略内容" else "Strategy",
-                placeholder = if (isZh) "什么时候用什么工具、失败后怎么处理" else "When to use which tool and what to do on failure",
+                label = "Strategy",
+                placeholder = "When to use which tool and what to do on failure",
                 minLines = 4,
             )
             Button(
@@ -792,13 +784,13 @@ private fun ToolStrategyEditor(
                 colors = ButtonDefaults.buttonColors(containerColor = c.text, contentColor = c.bg),
                 shape = RoundedCornerShape(999.dp),
             ) {
-                Text(if (isZh) "保存策略" else "Save Strategy", fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text("Save Strategy", fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1)
             }
         }
 
         if (strategies.isEmpty()) {
             Box(Modifier.fillMaxWidth().padding(vertical = 18.dp), contentAlignment = Alignment.Center) {
-                Text(if (isZh) "暂无工具策略" else "No tool strategies yet", color = c.subtext, fontSize = 12.sp)
+                Text("No tool strategies yet", color = c.subtext, fontSize = 12.sp)
             }
         } else {
             strategies.forEach { (key, entry) ->
@@ -824,7 +816,6 @@ private fun ToolStrategyRow(
     onDelete: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     Column(
         Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
@@ -844,10 +835,10 @@ private fun ToolStrategyRow(
                 overflow = TextOverflow.Ellipsis,
             )
             TextButton(onClick = onEdit, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
-                Text(if (isZh) "编辑" else "Edit", color = c.text, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("Edit", color = c.text, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
             TextButton(onClick = onDelete, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
-                Text(if (isZh) "删除" else "Delete", color = c.red, fontSize = 11.sp)
+                Text("Delete", color = c.red, fontSize = 11.sp)
             }
         }
         Text(entry.value, color = c.text.copy(alpha = 0.72f), fontSize = 12.sp, lineHeight = 17.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
@@ -1387,7 +1378,6 @@ private fun SectionTabRow(active: ProfileSection, onSelect: (ProfileSection) -> 
 @Composable
 private fun TaskInsightsCard(episodes: List<EpisodeEntity>) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
 
     if (episodes.isEmpty()) {
         Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
@@ -1443,9 +1433,9 @@ private fun TaskInsightsCard(episodes: List<EpisodeEntity>) {
             Text(stringResource(R.string.profile_777c5c), color = c.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             HorizontalDivider(color = c.border, thickness = 0.5.dp)
             Spacer(Modifier.height(2.dp))
-            InsightRow(stringResource(R.string.profile_3d8ec0), if (isZh) "${(successRate * 100).toInt()}% 任务成功率" else "${(successRate * 100).toInt()}% task success rate", successRate, c.green)
-            InsightRow(stringResource(R.string.profile_9460ee), if (isZh) "任务多样性 ${(variety * 100).toInt()}%" else "Task variety ${(variety * 100).toInt()}%", variety.coerceIn(0f, 1f), c.purple)
-            InsightRow(stringResource(R.string.profile_b22274), if (isZh) "${episodes.size} 个历史任务" else "${episodes.size} historical tasks", (episodes.size / 50f).coerceIn(0.05f, 1f), c.accent)
+            InsightRow(stringResource(R.string.profile_3d8ec0), "${(successRate * 100).toInt()}% task success rate", successRate, c.green)
+            InsightRow(stringResource(R.string.profile_9460ee), "Task variety ${(variety * 100).toInt()}%", variety.coerceIn(0f, 1f), c.purple)
+            InsightRow(stringResource(R.string.profile_b22274), "${episodes.size} historical tasks", (episodes.size / 50f).coerceIn(0.05f, 1f), c.accent)
             InsightRow(stringResource(R.string.profile_e95b62), if (allSkills.any { it.startsWith("web_") || it == "shell" }) stringResource(R.string.profile_f2e2d4) else stringResource(R.string.profile_4711a2),
                 if (allSkills.any { it.startsWith("web_") || it == "shell" }) 0.8f else 0.2f, c.blue)
         }
@@ -1653,7 +1643,7 @@ private fun DimensionsListSection(
                 }
 
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    // Dimension name without "维度" suffix
+                    // Dimension name without a suffix
                     val shortTitle = dim.title.removeSuffix(str(R.string.profile_f29c54))
                     Text(shortTitle, color = dim.color, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     if (previewValue != null) {
@@ -1702,7 +1692,6 @@ private fun MemoryBrowserCard(
     onLoadMore: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val displayFacts = remember(facts, semanticFacts) {
         semanticFacts.ifEmpty {
             facts.map { (key, value) -> MemoryFact(key = key, value = value) }
@@ -1738,13 +1727,13 @@ private fun MemoryBrowserCard(
 
     val groupLabels = mapOf(
         "profile" to stringResource(R.string.profile_d0a47e),
-        "preference" to if (isZh) "偏好" else "Preferences",
-        "rule" to if (isZh) "规则" else "Rules",
-        "correction" to if (isZh) "纠错" else "Corrections",
-        "failure" to if (isZh) "失败经验" else "Failure Lessons",
-        "lesson" to if (isZh) "经验" else "Lessons",
-        "project" to if (isZh) "项目" else "Projects",
-        "tool" to if (isZh) "工具策略" else "Tool Strategy",
+        "preference" to "Preferences",
+        "rule" to "Rules",
+        "correction" to "Corrections",
+        "failure" to "Failure Lessons",
+        "lesson" to "Lessons",
+        "project" to "Projects",
+        "tool" to "Tool Strategy",
         "user" to stringResource(R.string.profile_4fe012),
         "app" to stringResource(R.string.profile_f3c144),
         "device" to stringResource(R.string.profile_b967fd),
@@ -1788,10 +1777,10 @@ private fun MemoryBrowserCard(
                 if (isLoadingMore) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         CircularProgressIndicator(modifier = Modifier.size(14.dp), color = c.text, strokeWidth = 1.5.dp)
-                        Text(if (isZh) "加载中" else "Loading", color = c.text.copy(alpha = 0.68f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("Loading", color = c.text.copy(alpha = 0.68f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 } else {
-                    Text(if (isZh) "再加载 40 条" else "Load 40 more", color = c.text.copy(alpha = 0.72f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("Load 40 more", color = c.text.copy(alpha = 0.72f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -1807,7 +1796,6 @@ private fun MemoryGroup(
     onDelete: (key: String) -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     var expanded by remember { mutableStateOf(true) }
 
     Column(
@@ -1855,7 +1843,6 @@ private fun MemoryFactRow(
     onDelete: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     var expanded by remember { mutableStateOf(false) }
     val alpha = if (fact.enabled) 1f else 0.45f
     Column(
@@ -1898,13 +1885,13 @@ private fun MemoryFactRow(
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = onPin, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
-                        Text(if (fact.pinned) { if (isZh) "取消置顶" else "Unpin" } else { if (isZh) "置顶" else "Pin" }, fontSize = 11.sp)
+                        Text(if (fact.pinned) "Unpin" else "Pin", fontSize = 11.sp)
                     }
                     TextButton(onClick = onEnable, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
-                        Text(if (fact.enabled) { if (isZh) "禁用" else "Disable" } else { if (isZh) "启用" else "Enable" }, fontSize = 11.sp)
+                        Text(if (fact.enabled) "Disable" else "Enable", fontSize = 11.sp)
                     }
                     TextButton(onClick = onDelete, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
-                        Text(if (isZh) "删除" else "Delete", fontSize = 11.sp, color = c.red)
+                        Text("Delete", fontSize = 11.sp, color = c.red)
                     }
                 }
             }

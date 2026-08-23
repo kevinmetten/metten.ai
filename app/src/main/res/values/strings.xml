@@ -1291,4 +1291,17 @@ You MUST respond in Simplified Chinese.
     <string name="gateway_capability_show">Show capability details</string>
     <string name="gateway_capability_hide">Hide capability details</string>
     <string name="gateway_ai_fill_preview_title">AI will try to map these capabilities</string>
+    <string name="profile_user_info_title">User Info</string>
+    <string name="profile_memory_title">Memory</string>
+    <string name="profile_basic_info">Basic Info</string>
+    <string name="profile_personal_space_hint">Stored in your personal space</string>
+    <string name="profile_avatar">Avatar</string>
+    <string name="profile_name_label">Your Name</string>
+    <string name="profile_name_hint">e.g. Kirito</string>
+    <string name="profile_ai_address_label">AI Address</string>
+    <string name="profile_ai_address_hint">e.g. Boss, partner, Kirito</string>
+    <string name="profile_role_label">Your Role</string>
+    <string name="profile_role_hint">e.g. Indie developer</string>
+    <string name="profile_preferences_label">Preferences</string>
+    <string name="profile_preferences_hint">How AI should work with you</string>
 </resources>
