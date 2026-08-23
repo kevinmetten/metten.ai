@@ -13,14 +13,13 @@ import com.mobileclaw.town.AgentTownState
 import com.mobileclaw.ui.aipage.AiPageDef
 import com.mobileclaw.ui.chat.FileAttachment
 import com.mobileclaw.ui.chat.SessionRunState
-import com.mobileclaw.ui.group.GroupUiState
 import com.mobileclaw.ui.profile.ProfileUiState
 import com.mobileclaw.vpn.VpnStatus
 import com.mobileclaw.vpn.VpnSubscription
 import com.mobileclaw.ui.workspace.WorkspaceUiState
 import kotlinx.coroutines.flow.Flow
 
-enum class AppPage { HOME, CHAT, SETTINGS, AI_BASIC_SETTINGS, USER_INFO, GENERAL_SETTINGS, TOOLS_SETTINGS, MEMORY_SETTINGS, SKILLS, SKILL_MARKET, PROFILE, ROLES, ROLE_DETAIL, ROLE_WORKSPACE, ROLE_EDIT, USER_CONFIG, APPS, CONSOLE, HELP, GROUPS, GROUP_CHAT, BROWSER, AI_PAGES, VPN, AI_TOWN, WORKSPACE, IMAGE_GENERATOR, VIDEO_GENERATOR }
+enum class AppPage { HOME, CHAT, SETTINGS, AI_BASIC_SETTINGS, USER_INFO, GENERAL_SETTINGS, TOOLS_SETTINGS, MEMORY_SETTINGS, SKILLS, SKILL_MARKET, PROFILE, ROLES, ROLE_DETAIL, ROLE_WORKSPACE, ROLE_EDIT, USER_CONFIG, APPS, CONSOLE, HELP, BROWSER, AI_PAGES, VPN, AI_TOWN, WORKSPACE, IMAGE_GENERATOR, VIDEO_GENERATOR }
 
 enum class SettingsLaunchTarget { GATEWAY }
 
@@ -121,8 +120,6 @@ data class MainUiState(
     val vpnAddingSubscription: Boolean = false,
     // Speed test: proxyId -> latency ms; LATENCY_TESTING = in progress, LATENCY_ERROR = failed
     val vpnLatencies: Map<String, Long> = emptyMap(),
-    // Group chat
-    val groupState: GroupUiState = GroupUiState(),
     val videoTasks: List<VideoGenerationTaskEntity> = emptyList(),
     val videoTaskRefreshingIds: Set<String> = emptySet(),
     val videoTasksRefreshing: Boolean = false,

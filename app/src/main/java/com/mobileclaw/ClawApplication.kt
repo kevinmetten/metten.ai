@@ -104,9 +104,6 @@ class ClawApplication : Application() {
     lateinit var userStorageManager: com.mobileclaw.config.UserStorageManager
         private set
 
-    lateinit var groupManager: com.mobileclaw.agent.GroupManager
-        private set
-
     lateinit var consoleServer: ConsoleServer
         private set
 
@@ -185,7 +182,6 @@ class ClawApplication : Application() {
         skillNotesStore = SkillNotesStore(this)
         skillLevelStore = SkillLevelStore(this)
         userStorageManager = com.mobileclaw.config.UserStorageManager(this)
-        groupManager = com.mobileclaw.agent.GroupManager(this)
         consoleServer = ConsoleServer(
             filesDir = filesDir,
             database = database,
