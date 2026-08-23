@@ -68,13 +68,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.mobileclaw.R
-import com.mobileclaw.agent.Group
 import com.mobileclaw.app.MiniApp
 import com.mobileclaw.memory.db.SessionEntity
 import com.mobileclaw.ui.aipage.AiPageDef
 import com.mobileclaw.ui.LocalAppLanguage
 import com.mobileclaw.ui.LocalClawColors
-import com.mobileclaw.ui.group.GroupPreview
 import com.mobileclaw.str
 
 enum class ClassicTab { HOME, WORKSPACE, ME }
@@ -337,15 +335,6 @@ private val HtmlLightPlusIcon = htmlStrokeIcon(
     name = "html_light_plus",
     paths = listOf("M12 6v12M6 12h12"),
     strokeWidth = 1.55f,
-    strokeCap = StrokeCap.Round,
-)
-
-private val HtmlGroupIcon = htmlStrokeIcon(
-    name = "html_group",
-    paths = listOf(
-        "M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm8-1a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM3.8 19c.8-3.4 2.2-5.1 4.2-5.1s3.4 1.7 4.2 5.1M13.2 14.4c2.5.2 4 1.7 4.8 4.6",
-    ),
-    strokeWidth = 1.7f,
     strokeCap = StrokeCap.Round,
 )
 
@@ -646,51 +635,22 @@ private fun ClassicCenterDockItem(
 @Composable
 fun ClassicHomePage(
     sessions: List<SessionEntity>,
-    groups: List<Group>,
-    groupPreviews: Map<String, GroupPreview>,
     currentSessionId: String,
     isConfigured: Boolean,
     onNewChat: () -> Unit,
-    onOpenGroups: () -> Unit,
     onConfigureGateway: () -> Unit,
     onOpenSession: (String) -> Unit,
-    onOpenGroup: (Group) -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
-    var filter by remember { mutableStateOf("all") }
-    val conversationItems = remember(sessions, groups, groupPreviews, isZh) {
-        buildList {
-            sessions.forEach { session ->
-                add(
-                    ClassicConversationItem.Single(
-                        id = session.id,
-                        title = session.title.ifBlank { if (isZh) "新会话" else "New Chat" },
-                        preview = if (isZh) "点击进入聊天线程" else "Tap to open chat thread",
-                        updatedAt = session.updatedAt,
-                        session = session,
-                    )
-                )
-            }
-            groups.forEach { group ->
-                val preview = groupPreviews[group.id]
-                add(
-                    ClassicConversationItem.GroupChat(
-                        id = group.id,
-                        title = group.name.ifBlank { if (isZh) "群聊" else "Group Chat" },
-                        preview = preview?.let { "${it.senderName}: ${it.text}" }
-                            ?: if (isZh) "${group.memberRoleIds.size} 位成员" else "${group.memberRoleIds.size} members",
-                        updatedAt = preview?.createdAt ?: group.updatedAt,
-                        group = group,
-                    )
-                )
-            }
+    val conversationItems = remember(sessions) {
+        sessions.map { session ->
+            ClassicConversationItem(
+                id = session.id,
+                title = session.title.ifBlank { "New Chat" },
+                preview = "Tap to open chat thread",
+                updatedAt = session.updatedAt,
+            )
         }.sortedByDescending { it.updatedAt }
-    }
-    val filteredItems = when (filter) {
-        "single" -> conversationItems.filterIsInstance<ClassicConversationItem.Single>()
-        "group" -> conversationItems.filterIsInstance<ClassicConversationItem.GroupChat>()
-        else -> conversationItems
     }
     val listSurface = if (c.isDark) c.surface.copy(alpha = 0.82f) else Color.White.copy(alpha = 0.52f)
     Column(
@@ -701,16 +661,9 @@ fun ClassicHomePage(
     ) {
         ClassicNewChatPanel(
             onNewChat = if (isConfigured) onNewChat else onConfigureGateway,
-            onOpenGroups = if (isConfigured) onOpenGroups else onConfigureGateway,
         )
         Spacer(Modifier.height(18.dp))
-        ClassicConversationFilter(
-            selected = filter,
-            onSelected = { filter = it },
-            enabled = isConfigured && conversationItems.isNotEmpty(),
-        )
-        Spacer(Modifier.height(16.dp))
-        if (!isConfigured || filteredItems.isEmpty()) {
+        if (!isConfigured || conversationItems.isEmpty()) {
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 ClassicEmptyHome(
                     isConfigured = isConfigured,
@@ -740,25 +693,15 @@ fun ClassicHomePage(
                     contentPadding = PaddingValues(top = 2.dp, bottom = 92.dp),
                 ) {
                     itemsIndexed(
-                        items = filteredItems,
-                        key = { _, item ->
-                            when (item) {
-                                is ClassicConversationItem.Single -> "session:${item.id}"
-                                is ClassicConversationItem.GroupChat -> "group:${item.id}"
-                            }
-                        },
+                        items = conversationItems,
+                        key = { _, item -> "session:${item.id}" },
                     ) { index, item ->
                         ClassicConversationRow(
                             item = item,
                             index = index,
-                            selected = item is ClassicConversationItem.Single && item.id == currentSessionId,
-                            onClick = {
-                                when (item) {
-                                    is ClassicConversationItem.Single -> onOpenSession(item.id)
-                                    is ClassicConversationItem.GroupChat -> onOpenGroup(item.group)
-                                }
-                            },
-                            showDivider = index < filteredItems.lastIndex,
+                            selected = item.id == currentSessionId,
+                            onClick = { onOpenSession(item.id) },
+                            showDivider = index < conversationItems.lastIndex,
                         )
                     }
                 }
@@ -782,36 +725,18 @@ fun ClassicHomePage(
     }
 }
 
-private sealed class ClassicConversationItem {
-    abstract val id: String
-    abstract val title: String
-    abstract val preview: String
-    abstract val updatedAt: Long
-
-    data class Single(
-        override val id: String,
-        override val title: String,
-        override val preview: String,
-        override val updatedAt: Long,
-        val session: SessionEntity,
-    ) : ClassicConversationItem()
-
-    data class GroupChat(
-        override val id: String,
-        override val title: String,
-        override val preview: String,
-        override val updatedAt: Long,
-        val group: Group,
-    ) : ClassicConversationItem()
-}
+private data class ClassicConversationItem(
+    val id: String,
+    val title: String,
+    val preview: String,
+    val updatedAt: Long,
+)
 
 @Composable
 private fun ClassicNewChatPanel(
     onNewChat: () -> Unit,
-    onOpenGroups: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val shape = RoundedCornerShape(28.dp)
     Box(
         Modifier
@@ -825,100 +750,31 @@ private fun ClassicNewChatPanel(
             )
             .padding(4.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(54.dp)
-                    .clip(RoundedCornerShape(24.dp))
-                    .clickable(onClick = onNewChat)
-                    .padding(start = 8.dp, end = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    Modifier
-                        .size(34.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(
-                            Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.72f), Color.White.copy(alpha = 0.42f)))
-                        )
-                        .border(0.7.dp, c.text.copy(alpha = 0.045f), RoundedCornerShape(14.dp)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(HtmlLightPlusIcon, contentDescription = null, tint = c.text.copy(alpha = 0.88f), modifier = Modifier.size(17.dp))
-                }
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(if (isZh) "新建会话" else "New Chat", color = c.text, fontSize = 15.sp, lineHeight = 18.sp, fontWeight = FontWeight.Black, maxLines = 1)
-                    Text(if (isZh) "输入问题或任务" else "Ask a question or task", color = c.text.copy(alpha = 0.46f), fontSize = 11.5.sp, lineHeight = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                }
-            }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(54.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .clickable(onClick = onNewChat)
+                .padding(start = 8.dp, end = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Box(
                 Modifier
-                    .width(1.dp)
-                    .height(30.dp)
-                    .background(c.text.copy(alpha = 0.07f)),
-            )
-            Column(
-                modifier = Modifier
-                    .width(76.dp)
-                    .height(54.dp)
-                    .clip(RoundedCornerShape(23.dp))
-                    .clickable(onClick = onOpenGroups),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                Icon(HtmlGroupIcon, contentDescription = null, tint = c.text.copy(alpha = 0.64f), modifier = Modifier.size(19.dp))
-                Spacer(Modifier.height(3.dp))
-                Text(if (isZh) "群聊" else "Groups", color = c.text.copy(alpha = 0.64f), fontSize = 10.5.sp, lineHeight = 11.sp, fontWeight = FontWeight.Bold)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ClassicConversationFilter(
-    selected: String,
-    onSelected: (String) -> Unit,
-    enabled: Boolean = true,
-) {
-    val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
-    Row(
-        Modifier
-            .clip(RoundedCornerShape(17.dp))
-            .background(Color.White.copy(alpha = if (c.isDark) 0.10f else 0.46f))
-            .border(0.8.dp, c.text.copy(alpha = if (c.isDark) 0.14f else 0.045f), RoundedCornerShape(17.dp))
-            .padding(3.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        listOf(
-            "all" to if (isZh) "全部" else "All",
-            "single" to if (isZh) "单聊" else "Chats",
-            "group" to if (isZh) "群聊" else "Groups",
-        ).forEach { (key, label) ->
-            Box(
-                Modifier
-                    .height(30.dp)
-                    .clip(RoundedCornerShape(15.dp))
+                    .size(34.dp)
+                    .clip(RoundedCornerShape(14.dp))
                     .background(
-                        if (selected == key) {
-                            Brush.verticalGradient(listOf(Color.White.copy(alpha = if (enabled) 0.86f else 0.62f), Color.White.copy(alpha = if (enabled) 0.86f else 0.62f)))
-                        } else {
-                            Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent))
-                        }
+                        Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.72f), Color.White.copy(alpha = 0.42f)))
                     )
-                    .clickable(enabled = enabled) { onSelected(key) }
-                    .widthIn(min = 54.dp)
-                    .padding(horizontal = 12.dp),
+                    .border(0.7.dp, c.text.copy(alpha = 0.045f), RoundedCornerShape(14.dp)),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    label,
-                    color = c.text.copy(alpha = if (!enabled && selected != key) 0.34f else if (selected == key) 0.90f else 0.48f),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                )
+                Icon(HtmlLightPlusIcon, contentDescription = null, tint = c.text.copy(alpha = 0.88f), modifier = Modifier.size(17.dp))
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("New Chat", color = c.text, fontSize = 15.sp, lineHeight = 18.sp, fontWeight = FontWeight.Black, maxLines = 1)
+                Text("Ask a question or task", color = c.text.copy(alpha = 0.46f), fontSize = 11.5.sp, lineHeight = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
             }
         }
     }

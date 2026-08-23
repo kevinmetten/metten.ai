@@ -28,8 +28,6 @@ import com.mobileclaw.ui.aipage.ShortcutHelper
 import com.mobileclaw.ui.apps.AppLauncherPage
 import com.mobileclaw.ui.chat.ChatScreen
 import com.mobileclaw.ui.chat.currentRunState
-import com.mobileclaw.ui.group.GroupChatScreen
-import com.mobileclaw.ui.group.GroupsPage
 import com.mobileclaw.ui.image.ImageGeneratorPage
 import com.mobileclaw.ui.profile.MemorySettingsPage
 import com.mobileclaw.ui.profile.ProfilePage
@@ -305,8 +303,6 @@ fun MainPageHost(
             availableRoles = uiState.availableRoles,
             currentRole = uiState.currentRole,
             town = uiState.agentTown,
-            workingAgentIds = uiState.groupState.workingAgents,
-            typingAgentIds = uiState.groupState.typingAgents,
             rolePortraitGeneratingIds = uiState.rolePortraitGeneratingIds,
             onActivate = { vm.setActiveRole(it) },
             onOpenDetail = { vm.openRoleDetail(it) },
@@ -329,7 +325,7 @@ fun MainPageHost(
                 role = role,
                 currentRole = uiState.currentRole,
                 town = uiState.agentTown,
-                isWorking = role.id in uiState.groupState.workingAgents || role.id in uiState.groupState.typingAgents,
+                isWorking = false,
                 isGeneratingPortrait = role.id in uiState.rolePortraitGeneratingIds,
                 onActivate = { vm.setActiveRole(it) },
                 onGeneratePortrait = { vm.generateRolePortrait(it) },
@@ -491,59 +487,6 @@ fun MainPageHost(
             onRefreshAll = { vm.refreshPendingVideoTasks() },
             onDeleteTask = { vm.deleteVideoTask(it) },
         )
-    }
-    AnimatedVisibility(
-        visible = uiState.currentPage == AppPage.GROUPS,
-        enter = slideInHorizontally { it } + fadeIn(),
-        exit = slideOutHorizontally { it } + fadeOut(),
-    ) {
-        GroupsPage(
-            groups = uiState.groupState.groups,
-            groupPreviews = uiState.groupState.previews,
-            availableRoles = uiState.availableRoles,
-            onOpenGroup = { vm.openGroupChat(it) },
-            onCreateGroup = { vm.createGroup(it) },
-            onDeleteGroup = { vm.deleteGroup(it) },
-            onBack = { vm.navigateBack() },
-        )
-    }
-    AnimatedVisibility(
-        visible = uiState.currentPage == AppPage.GROUP_CHAT,
-        enter = slideInHorizontally { it } + fadeIn(),
-        exit = slideOutHorizontally { it } + fadeOut(),
-    ) {
-        val group = uiState.groupState.openGroup
-        if (group != null) {
-            GroupChatScreen(
-                group = group,
-                messages = uiState.groupState.messages,
-                gameTimeline = uiState.groupState.gameTimeline,
-                availableRoles = uiState.availableRoles,
-                userAvatarUri = uiState.userAvatarUri,
-                isRunning = uiState.groupState.isRunning,
-                typingAgentIds = uiState.groupState.typingAgents,
-                workingAgentIds = uiState.groupState.workingAgents,
-                historyHasMore = uiState.groupState.historyHasMore,
-                historyLoading = uiState.groupState.historyLoading,
-                onLoadMoreHistory = { vm.loadOlderGroupMessages() },
-                onUpdateGroupMembers = { vm.updateGroupMembers(group.id, it) },
-                onSend = { text, attachments, channelId, visibility ->
-                    vm.sendGroupMessage(text, attachments, channelId, visibility)
-                },
-                onStop = { vm.stopGroupChat() },
-                onBack = { vm.closeGroupChat() },
-                onOpenHtmlViewer = { vm.openHtmlViewer(it) },
-                onOpenBrowser = { vm.navigateToBrowser(it) },
-                onOpenAccessibilitySettings = { vm.navigate(AppPage.SETTINGS) },
-                onPublishGameActionSummary = { vm.publishGameActionSummary(it) },
-                onIgnoreGameAction = { vm.ignoreGameAction(it) },
-                onResolveGamePhaseActions = { vm.resolveCurrentGamePhaseActions() },
-                onAdvanceGamePhase = { vm.advanceGroupGamePhase() },
-                onSubmitGameAction = { abilityId, targetSeatId, reason ->
-                    vm.submitUserGameAction(abilityId, targetSeatId, reason)
-                },
-            )
-        }
     }
     AnimatedVisibility(
         visible = uiState.currentPage == AppPage.BROWSER,

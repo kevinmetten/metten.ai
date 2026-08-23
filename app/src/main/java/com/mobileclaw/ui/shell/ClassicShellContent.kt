@@ -28,22 +28,15 @@ fun ClassicShellContent(
         when (classicShell.tab) {
             ClassicTab.HOME -> ClassicHomePage(
                 sessions = uiState.sessions,
-                groups = uiState.groupState.groups,
-                groupPreviews = uiState.groupState.previews,
                 currentSessionId = uiState.currentSessionId,
                 isConfigured = uiState.isConfigured,
                 onNewChat = {
                     vm.createNewSessionAndOpen()
                 },
-                onOpenGroups = { vm.navigate(AppPage.GROUPS) },
                 onConfigureGateway = { vm.openGatewayConfig() },
                 onOpenSession = { sessionId ->
                     vm.loadSession(sessionId)
                     vm.navigate(AppPage.CHAT)
-                },
-                onOpenGroup = { group ->
-                    vm.openGroupChat(group)
-                    vm.navigate(AppPage.GROUP_CHAT)
                 },
             )
 
