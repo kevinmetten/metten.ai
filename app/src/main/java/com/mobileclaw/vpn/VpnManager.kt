@@ -307,21 +307,11 @@ class VpnManager(private val context: Context) {
         return try {
             val list = gson.fromJson(json, Array<SerializableProxy>::class.java)
             list.mapNotNull { it.toProxyConfig() }
-                .filterNot { it.name.isSubscriptionInfoName() }
+                .filterNot { SubscriptionMetadataNodeDetector.isMetadataNode(it.name) }
         } catch (_: Exception) {
             emptyList()
         }
     }
-}
-
-private fun String.isSubscriptionInfoName(): Boolean {
-    val normalized = trim()
-    return normalized.startsWith("网址") ||
-        normalized.startsWith("剩余流量") ||
-        normalized.startsWith("过期时间") ||
-        normalized.startsWith("官网") ||
-        normalized.startsWith("订阅") ||
-        normalized.startsWith("回家页")
 }
 
 /** Flat serializable form of ProxyConfig for JSON storage. */
