@@ -5908,13 +5908,13 @@ For example: "Create an expense-tracker MiniAPP", "Open Settings and change the 
                 withContext(Dispatchers.Main) {
                     Toast.makeText(
                         app,
-                        if (result.success) result.output.ifBlank { "图片已生成" } else result.output.ifBlank { "图片生成失败" },
+                        if (result.success) result.output.ifBlank { "Image generated" } else result.output.ifBlank { "Image generation failed" },
                         if (result.success) Toast.LENGTH_SHORT else Toast.LENGTH_LONG,
                     ).show()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(app, "图片生成失败：${e.message ?: "未知错误"}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(app, "Image generation failed: ${e.message ?: "Unknown error"}", Toast.LENGTH_LONG).show()
                 }
             } finally {
                 _uiState.update { it.copy(imageGenerationRunning = false) }
@@ -5931,7 +5931,7 @@ For example: "Create an expense-tracker MiniAPP", "Open Settings and change the 
                 withContext(Dispatchers.Main) { onResult(rewritten) }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(app, "LLM 处理失败：${e.message ?: "未知错误"}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(app, "LLM processing failed: ${e.message ?: "Unknown error"}", Toast.LENGTH_LONG).show()
                 }
             } finally {
                 _uiState.update { it.copy(imagePromptAiRunning = false) }
@@ -5957,7 +5957,7 @@ For example: "Create an expense-tracker MiniAPP", "Open Settings and change the 
                 Do not add explanations, markdown, JSON, quotes, or safety commentary.
             """.trimIndent()
         }
-        return callVideoPromptLlm(systemPrompt = systemPrompt, userPrompt = raw)
+        return callMediaPromptLlm(systemPrompt = systemPrompt, userPrompt = raw)
             .trim()
             .trim('"')
             .takeIf { it.isNotBlank() } ?: raw
@@ -5974,13 +5974,13 @@ For example: "Create an expense-tracker MiniAPP", "Open Settings and change the 
                 withContext(Dispatchers.Main) {
                     Toast.makeText(
                         app,
-                        if (result.success) result.output.ifBlank { "视频任务已提交" } else result.output.ifBlank { "视频生成失败" },
+                        if (result.success) result.output.ifBlank { "Video task submitted" } else result.output.ifBlank { "Video generation failed" },
                         if (result.success) Toast.LENGTH_SHORT else Toast.LENGTH_LONG,
                     ).show()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(app, "视频生成失败：${e.message ?: "未知错误"}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(app, "Video generation failed: ${e.message ?: "Unknown error"}", Toast.LENGTH_LONG).show()
                 }
             } finally {
                 _uiState.update { it.copy(videoGenerationRunning = false) }
@@ -5999,7 +5999,7 @@ For example: "Create an expense-tracker MiniAPP", "Open Settings and change the 
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(app, "LLM 处理失败：${e.message ?: "未知错误"}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(app, "LLM processing failed: ${e.message ?: "Unknown error"}", Toast.LENGTH_LONG).show()
                 }
             } finally {
                 _uiState.update { it.copy(videoPromptAiRunning = false) }
@@ -6025,20 +6025,20 @@ For example: "Create an expense-tracker MiniAPP", "Open Settings and change the 
                 Do not add explanations, markdown, JSON, quotes, or safety commentary.
             """.trimIndent()
         }
-        return callVideoPromptLlm(systemPrompt = systemPrompt, userPrompt = raw)
+        return callMediaPromptLlm(systemPrompt = systemPrompt, userPrompt = raw)
             .trim()
             .trim('"')
             .takeIf { it.isNotBlank() } ?: raw
     }
 
-    private fun callVideoPromptLlm(systemPrompt: String, userPrompt: String): String {
+    private fun callMediaPromptLlm(systemPrompt: String, userPrompt: String): String {
         val snapshot = config.snapshot()
-        val gateway = selectVideoPromptChatGateway(snapshot)
-            ?: throw IllegalStateException("没有可用于 AI 丰富/翻译的 chat 网关，请配置一个带 chat 能力的网关。")
+        val gateway = selectMediaPromptChatGateway(snapshot)
+            ?: throw IllegalStateException("No chat-capable gateway is available for AI prompt rewriting.")
         val endpoint = gateway.capabilityEndpoint("chat").takeIf { it.isNotBlank() }
-            ?: throw IllegalStateException("chat 网关 endpoint 为空。")
+            ?: throw IllegalStateException("The chat gateway endpoint is empty.")
         val apiKey = gateway.capabilityApiKey("chat").takeIf { it.isNotBlank() }
-            ?: throw IllegalStateException("chat 网关 apiKey 为空。")
+            ?: throw IllegalStateException("The chat gateway API key is empty.")
         val model = gateway.capabilityModel("chat") ?: gateway.model.takeIf { it.isNotBlank() } ?: "gpt-4o"
         val body = JsonObject().apply {
             addProperty("model", model)
@@ -6063,16 +6063,16 @@ For example: "Create an expense-tracker MiniAPP", "Open Settings and change the 
         return videoPromptLlmClient.newCall(req).execute().use { resp ->
             val raw = resp.body?.string().orEmpty()
             if (!resp.isSuccessful) {
-                throw IllegalStateException("chat 网关调用失败 HTTP ${resp.code}: ${extractLlmError(raw)}")
+                throw IllegalStateException("Chat gateway request failed with HTTP ${resp.code}: ${extractLlmError(raw)}")
             }
             val json = JsonParser.parseString(raw).asJsonObject
             json["choices"]?.asJsonArray?.firstOrNull()
                 ?.asJsonObject?.get("message")?.asJsonObject?.get("content")?.asString
-                ?: throw IllegalStateException("chat 网关没有返回内容。")
+                ?: throw IllegalStateException("The chat gateway returned no content.")
         }
     }
 
-    private fun selectVideoPromptChatGateway(snapshot: ConfigSnapshot): GatewayConfig? {
+    private fun selectMediaPromptChatGateway(snapshot: ConfigSnapshot): GatewayConfig? {
         val active = snapshot.activeGateway
         return active?.takeIf { it.isUsableExplicitChatGateway() }
             ?: snapshot.gateways.firstOrNull { it.isUsableExplicitChatGateway() }
