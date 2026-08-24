@@ -168,6 +168,7 @@ import com.mobileclaw.ui.image.ImageGenerationRequest
 import com.mobileclaw.ui.image.ImagePromptAiAction
 import com.mobileclaw.ui.video.VideoGenerationRequest
 import com.mobileclaw.ui.video.VideoPromptAiAction
+import com.mobileclaw.ui.update.AppUpdatePresentation
 import com.mobileclaw.ui.skills.SkillNoteGeneration
 import com.mobileclaw.ui.workspace.WorkspaceAreaUi
 import com.mobileclaw.ui.workspace.WorkspaceFileEntryUi
@@ -5536,7 +5537,7 @@ For example: "Create an expense-tracker MiniAPP", "Open Settings and change the 
                     }
                 },
                 onFailure = { error ->
-                    val message = error.message.orEmpty().ifBlank { "网络或配置异常" }
+                    val message = error.message.orEmpty().ifBlank { "Network or configuration error" }
                     _uiState.update { state ->
                         state.copy(
                             appUpdate = state.appUpdate.copy(
@@ -5549,7 +5550,7 @@ For example: "Create an expense-tracker MiniAPP", "Open Settings and change the 
                         )
                     }
                     if (showResultInChat) {
-                        appendConfirmationResolution("检测更新失败：${message.releaseMessageForUser()}")
+                        appendConfirmationResolution("Update check failed: ${message.releaseMessageForUser()}")
                     }
                 }
             )
@@ -5564,7 +5565,7 @@ For example: "Create an expense-tracker MiniAPP", "Open Settings and change the 
         val state = _uiState.value.appUpdate
         if (state.downloadUrl.isBlank() && state.installUrl.isBlank()) {
             _uiState.update {
-                it.copy(appUpdate = it.appUpdate.copy(showDialog = true, errorMessage = "更新服务没有返回可下载地址"))
+                it.copy(appUpdate = it.appUpdate.copy(showDialog = true, errorMessage = "The update service did not return a downloadable URL."))
             }
             return
         }
@@ -5594,67 +5595,26 @@ For example: "Create an expense-tracker MiniAPP", "Open Settings and change the 
             }
             Toast.makeText(
                 app,
-                if (result.success) "已打开更新安装流程" else "更新失败：${result.output.releaseMessageForUser()}",
+                if (result.success) "Opened the update installer." else "Update failed: ${result.output.releaseMessageForUser()}",
                 Toast.LENGTH_LONG,
             ).show()
         }
     }
 
-    private fun formatAppUpdateInfoResult(info: PgyerUpdateInfo): String = buildString {
-        appendLine(if (info.hasNewVersion) "发现新版本。" else "当前已经是最新版本。")
-        appendLine("当前版本：${info.currentVersion} (${info.currentVersionCode})")
-        info.remoteVersion.takeIf { it.isNotBlank() }?.let { appendLine("最新版本：$it") }
-        info.releaseNotes.takeIf { it.isNotBlank() }?.let { appendLine("更新内容：$it") }
-    }.trim()
+    private fun formatAppUpdateInfoResult(info: PgyerUpdateInfo): String =
+        AppUpdatePresentation.formatInfo(
+            hasNewVersion = info.hasNewVersion,
+            currentVersion = info.currentVersion,
+            currentVersionCode = info.currentVersionCode,
+            remoteVersion = info.remoteVersion,
+            releaseNotes = info.releaseNotes,
+        )
 
-    private fun formatAppUpdateResult(success: Boolean, rawOutput: String): String {
-        val lines = rawOutput
-            .lineSequence()
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-            .toList()
-        val current = lines.firstOrNull { it.startsWith("Current:", ignoreCase = true) }
-            ?.substringAfter(":")
-            ?.trim()
-        val remote = lines.firstOrNull { it.startsWith("Remote:", ignoreCase = true) }
-            ?.substringAfter(":")
-            ?.trim()
-        val notes = lines.firstOrNull { it.startsWith("Notes:", ignoreCase = true) }
-            ?.substringAfter(":")
-            ?.trim()
-
-        if (
-            rawOutput.contains("Configure pgyer_api_key", ignoreCase = true) ||
-            rawOutput.contains("Configure release channel", ignoreCase = true)
-        ) {
-            return "还没有配置更新通道，请先到用户配置里保存更新所需的 App Key 和 API Key。"
-        }
-
-        if (!success) {
-            val cleaned = rawOutput
-                .replace(Regex("(?i)pgyer"), "更新服务")
-                .replace("蒲公英", "更新服务")
-                .lineSequence()
-                .filterNot { it.startsWith("Download:", ignoreCase = true) }
-                .joinToString("\n")
-                .ifBlank { "网络或配置异常" }
-            return "检测更新失败：$cleaned"
-        }
-
-        val hasNew = rawOutput.contains("newer MobileClaw build", ignoreCase = true)
-        return buildString {
-            appendLine(if (hasNew) "发现新版本。" else "当前已经是最新版本。")
-            current?.takeIf { it.isNotBlank() }?.let { appendLine("当前版本：$it") }
-            remote?.takeIf { it.isNotBlank() }?.let { appendLine("最新版本：$it") }
-            notes?.takeIf { it.isNotBlank() }?.let { appendLine("更新内容：$it") }
-        }.trim()
-    }
+    private fun formatAppUpdateResult(success: Boolean, rawOutput: String): String =
+        AppUpdatePresentation.formatRawResult(success, rawOutput)
 
     private fun String.releaseMessageForUser(): String =
-        replace(Regex("(?i)pgyer"), "更新服务")
-            .replace("蒲公英", "更新服务")
-            .replace("Configure release channel api_key and app_key first.", "还没有配置更新通道")
-            .replace("Configure release channel", "还没有配置更新通道")
+        with(AppUpdatePresentation) { this@releaseMessageForUser.releaseMessageForUser() }
 
     private fun appendConfirmationResolution(text: String) {
         viewModelScope.launch {
