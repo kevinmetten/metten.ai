@@ -94,9 +94,8 @@ class AgentContextPromptTest {
     }
 
     @Test
-    fun `controlled prompt contains no Han characters and keeps sticker tool reference`() {
+    fun `controlled prompt contains no Han characters`() {
         assertFalse(filePrompt.any { it.code in 0x3400..0x9FFF })
-        assertTrue(filePrompt.contains("sticker_bqb"))
     }
 
     @Test

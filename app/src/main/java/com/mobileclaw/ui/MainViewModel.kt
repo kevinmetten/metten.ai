@@ -82,8 +82,6 @@ import com.mobileclaw.skill.builtin.BgScreenshotSkill
 import com.mobileclaw.skill.builtin.BgStopSkill
 import com.mobileclaw.skill.builtin.VirtualDisplaySetupSkill
 import com.mobileclaw.skill.builtin.ClipboardSkill
-import com.mobileclaw.skill.builtin.ChineseBqbStickerSkill
-import com.mobileclaw.skill.builtin.ChineseBqbStickerRepository
 import com.mobileclaw.skill.builtin.CloudinaryImageUploader
 import com.mobileclaw.skill.builtin.CodexDesktopSkill
 import com.mobileclaw.skill.builtin.CreateFileSkill
@@ -934,7 +932,7 @@ class MainViewModel : ViewModel() {
         val session = database.sessionDao().recent(50).find { it.id == sessionId }
         if (session != null && session.title == str(R.string.vm_new_) && userMsg != null) {
             val title = userMsg.text.take(30).ifBlank {
-                if (userMsg.imageBase64 != null) str(R.string.sticker_button) else str(R.string.vm_new_)
+                if (userMsg.imageBase64 != null) str(R.string.chat_20def7) else str(R.string.vm_new_)
             }
             database.sessionDao().updateTitle(sessionId, title)
             loadSessions()
@@ -1855,7 +1853,6 @@ class MainViewModel : ViewModel() {
         val contextualGoal: String,
         val directPriorContext: String,
         val agentPriorContext: String,
-        val stickerAwareChat: Boolean,
         val isPhoneControlTask: Boolean,
         val scheduleDecision: RoleScheduleDecision,
         val scheduledRole: Role,
@@ -2081,7 +2078,7 @@ class MainViewModel : ViewModel() {
                     persistUserOnlyMessage(
                         sessionId = sessionIdAtStart,
                         userMsg = userMessage,
-                        fallbackTitle = if (userMessage.imageBase64 != null) str(R.string.sticker_button) else str(R.string.vm_new_),
+                        fallbackTitle = if (userMessage.imageBase64 != null) str(R.string.chat_20def7) else str(R.string.vm_new_),
                     )
                 }
             }
@@ -2929,12 +2926,7 @@ class MainViewModel : ViewModel() {
             userGoal = goal,
             executionGoal = executionGoal,
         )
-        val stickerAwareChat = prepared.attachedImage == null &&
-            prepared.attachedFile == null &&
-            (taskType == TaskType.GENERAL || taskType == TaskType.CHAT) &&
-            route.primaryChannelForExecution() == ChannelType.CHAT &&
-            shouldUseStickerAwareChat(goal)
-        val executionTaskType = if (stickerAwareChat) TaskType.CHAT else taskType
+        val executionTaskType = taskType
         val contextualGoal = taskRouter.applyContextualTaskConstraints(workspaceResumeGoal, contextualIntent, taskType)
         val directPriorContext = buildPriorContext(
             goal = goal,
@@ -3021,7 +3013,6 @@ class MainViewModel : ViewModel() {
             contextualGoal = contextualGoal,
             directPriorContext = roleDirectPriorContext,
             agentPriorContext = roleAgentPriorContext,
-            stickerAwareChat = stickerAwareChat,
             isPhoneControlTask = executionTaskType == TaskType.PHONE_CONTROL,
             scheduleDecision = scheduleDecision,
             scheduledRole = scheduledRole,
@@ -3031,7 +3022,7 @@ class MainViewModel : ViewModel() {
             allowedToolIds = allowedToolIds,
             executionContext = orchestration.toPromptBlock(),
             visibleGoalLabel = visibleUserText.ifBlank {
-                if (prepared.attachedImage != null) str(R.string.sticker_button) else goal
+                if (prepared.attachedImage != null) str(R.string.chat_20def7) else goal
             },
         )
     }
@@ -3108,8 +3099,7 @@ class MainViewModel : ViewModel() {
             shouldAnswerImageDirectly(goal)) {
             return ChatExecutionMode.DIRECT_CHAT
         }
-        if (!execution.stickerAwareChat &&
-            prepared.attachedImage == null &&
+        if (prepared.attachedImage == null &&
             prepared.attachedFile == null &&
             shouldRunDirectChat(route, execution.roleControlPlan, goal)) {
             return ChatExecutionMode.DIRECT_CHAT
@@ -4240,28 +4230,6 @@ For pure conversational replies, greetings, explanations, and simple factual ans
         _uiState.update { it.copy(inputImageBase64 = imageBase64) }
     }
 
-    fun sendImageMessage(imageBase64: String, prompt: String = "") {
-        val hiddenPrompt = prompt.ifBlank {
-            "用户发送了一张表情包图片。请根据图片内容、情绪和当前聊天上下文自然回应；不要复述这段系统提示，也不要说“我看到了一个附件”。"
-        }
-        val sessionId = _uiState.value.currentSessionId
-        if (_uiState.value.sessionStates[sessionId]?.isRunning == true || taskJobs[sessionId] != null) {
-            stopCurrentRunForNewUserTurn(sessionId)
-        }
-        viewModelScope.launch(Dispatchers.IO) {
-            val route = resolveRouteWithAi(
-                goal = hiddenPrompt,
-                effectiveGoal = hiddenPrompt,
-                hasImage = true,
-                hasFile = false,
-                activeWorkflow = activeWorkflowForCurrentSession(),
-            )
-            withContext(Dispatchers.Main) {
-                runTaskInternal(hiddenPrompt, imageOverride = imageBase64, visibleUserText = "", routeOverride = route)
-            }
-        }
-    }
-
     fun setFileAttachment(attachment: FileAttachment?) {
         _uiState.update { it.copy(inputFileAttachment = attachment) }
     }
@@ -5005,7 +4973,6 @@ For pure conversational replies, greetings, explanations, and simple factual ans
                 File(filesDir, "chat_images"),
                 File(filesDir, "workspace_image_inputs"),
                 File(filesDir, "icons"),
-                File(filesDir, "stickers"),
                 File(filesDir, "videos"),
                 File(filesDir, "documents"),
                 File(filesDir, "html_pages"),
@@ -5768,7 +5735,6 @@ For example: "Create an expense-tracker MiniAPP", "Open Settings and change the 
             ReadFileSkill(app),
             ListFilesSkill(app),
             CreateHtmlSkill(app),
-            ChineseBqbStickerSkill(app),
             // Virtual display (background execution)
             BgLaunchSkill(app.virtualDisplayManager),
             BgReadScreenSkill(app.virtualDisplayManager),

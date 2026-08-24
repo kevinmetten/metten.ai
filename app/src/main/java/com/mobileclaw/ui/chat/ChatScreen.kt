@@ -24,7 +24,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -63,11 +62,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -104,7 +101,6 @@ import com.mobileclaw.ui.common.formatFileSize
 import com.mobileclaw.ui.common.friendlySkillDescription
 import com.mobileclaw.ui.common.ImageFileAttachmentCard
 import com.mobileclaw.ui.common.isImageFileAttachment
-import com.mobileclaw.ui.common.isStickerFileAttachment
 import com.mobileclaw.ui.common.isVideoFileAttachment
 import com.mobileclaw.ui.common.MarkdownText
 import com.mobileclaw.ui.common.MediaAttachmentCardFrame
@@ -151,7 +147,6 @@ fun ChatScreen(
     onOpenDrawer: () -> Unit = {},
     onExitDetail: () -> Unit = onOpenDrawer,
     onAttachImage: (String?) -> Unit = {},
-    onSendImage: (String, String) -> Unit = { image, _ -> onAttachImage(image) },
     onAttachFile: (FileAttachment?) -> Unit = {},
     onOpenProfile: () -> Unit = {},
     onModelChange: (String) -> Unit = {},
@@ -205,7 +200,6 @@ fun ChatScreen(
         }
     }
     var showAttachMenu by remember { mutableStateOf(false) }
-    var showStickerSearch by remember { mutableStateOf(false) }
     var historyScrollAnchor by remember(uiState.currentSessionId) { mutableStateOf<HistoryScrollAnchor?>(null) }
     var stableLiveMessages by remember(uiState.currentSessionId) { mutableStateOf<List<ChatMessage>>(emptyList()) }
 
@@ -607,28 +601,8 @@ fun ChatScreen(
             onAttachClick = { showAttachMenu = !showAttachMenu },
             onPickImage = { showAttachMenu = false; imagePicker.launch(PickVisualMediaRequest(PickVisualMedia.ImageOnly)) },
             onPickFile = { showAttachMenu = false; filePicker.launch("*/*") },
-            onPickSticker = { showAttachMenu = false; showStickerSearch = true },
             onRemoveImage = { onAttachImage(null) },
             onRemoveFile = { onAttachFile(null) },
-        )
-    }
-
-    if (showStickerSearch) {
-        StickerSearchSheet(
-            onDismiss = { showStickerSearch = false },
-            onSelected = { file ->
-                scope.launch {
-                    val dataUri = stickerFileToDataUri(file)
-                    if (dataUri != null) {
-                        onSendImage(
-                            dataUri,
-                            "用户发送了一张表情包：${file.name}。请结合这张表情图片和当前聊天上下文自然回应；不要把这段提示展示或复述给用户。",
-                        )
-                    } else {
-                        Toast.makeText(context, str(R.string.sticker_download_failed), Toast.LENGTH_SHORT).show()
-                    }
-                }
-            },
         )
     }
 
@@ -2951,7 +2925,7 @@ private fun FileAttachmentCard(attachment: SkillAttachment.FileData, context: an
     val isVideo = isVideoFileAttachment(attachment)
 
     if (isImage) {
-        ImageAttachmentCard(attachment, context, c)
+        ImageAttachmentCard(attachment, context)
     } else if (isVideo) {
         VideoAttachmentCard(
             attachment = attachment,
@@ -3060,15 +3034,12 @@ private fun FileListCard(attachment: SkillAttachment.FileList, context: android.
 private fun ImageAttachmentCard(
     attachment: SkillAttachment.FileData,
     context: android.content.Context,
-    c: ClawColors,
 ) {
-    val isSticker = isStickerFileAttachment(attachment)
-    val maxThumbWidth = if (isSticker) 144.dp else 220.dp
     ImageFileAttachmentCard(
         attachment = attachment,
         context = context,
-        maxThumbWidth = maxThumbWidth,
-        cornerRadiusDp = if (isSticker) 8.dp else 14.dp,
+        maxThumbWidth = 220.dp,
+        cornerRadiusDp = 14.dp,
     )
 }
 
@@ -3482,7 +3453,6 @@ private fun InputBar(
     onAttachClick: () -> Unit,
     onPickImage: () -> Unit,
     onPickFile: () -> Unit,
-    onPickSticker: () -> Unit,
     onRemoveImage: () -> Unit,
     onRemoveFile: () -> Unit,
 ) {
@@ -3640,9 +3610,9 @@ private fun InputBar(
                 if (isRunning) {
                     Icon(Icons.Default.Close, contentDescription = str(R.string.chat_stop), tint = c.red, modifier = Modifier.size(18.dp))
                 } else if (sendEnabled) {
-                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = str(R.string.sticker_send), tint = c.bg, modifier = Modifier.size(17.dp))
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = str(R.string.vm_send), tint = c.bg, modifier = Modifier.size(17.dp))
                 } else {
-                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = str(R.string.sticker_send), tint = c.subtext.copy(alpha = 0.42f), modifier = Modifier.size(17.dp))
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = str(R.string.vm_send), tint = c.subtext.copy(alpha = 0.42f), modifier = Modifier.size(17.dp))
                 }
             }
         }
@@ -3658,7 +3628,6 @@ private fun InputBar(
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                InputCapabilityTile("sticker", str(R.string.sticker_button), onPickSticker, enabled = true)
                 InputCapabilityTile("image", str(R.string.chat_20def7), onPickImage, enabled = supportsMultimodal)
                 InputCapabilityTile("file", str(R.string.chat_325369), onPickFile, enabled = true)
             }
@@ -3691,55 +3660,12 @@ private fun InputCapabilityTile(
                 .border(0.5.dp, c.border.copy(alpha = 0.75f), CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            if (mark == "sticker") {
-                StickerIcon(
-                    tint = if (enabled) c.text else c.subtext.copy(alpha = 0.45f),
-                    modifier = Modifier.size(21.dp),
-                )
-            } else {
-                ClawSymbolIcon(
-                    symbol = mark,
-                    tint = if (enabled) c.text else c.subtext.copy(alpha = 0.45f),
-                    modifier = Modifier.size(21.dp),
-                )
-            }
+            ClawSymbolIcon(
+                symbol = mark,
+                tint = if (enabled) c.text else c.subtext.copy(alpha = 0.45f),
+                modifier = Modifier.size(21.dp),
+            )
         }
         Text(label, color = if (enabled) c.subtext else c.subtext.copy(alpha = 0.45f), fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
-}
-
-@Composable
-private fun StickerIcon(
-    tint: Color,
-    modifier: Modifier = Modifier,
-) {
-    Canvas(modifier = modifier) {
-        val stroke = Stroke(width = size.minDimension * 0.085f)
-        val center = Offset(size.width * 0.48f, size.height * 0.48f)
-        val radius = size.minDimension * 0.36f
-        drawCircle(color = tint, radius = radius, center = center, style = stroke)
-        drawCircle(color = tint, radius = size.minDimension * 0.035f, center = Offset(size.width * 0.36f, size.height * 0.42f))
-        drawCircle(color = tint, radius = size.minDimension * 0.035f, center = Offset(size.width * 0.58f, size.height * 0.42f))
-        drawArc(
-            color = tint,
-            startAngle = 18f,
-            sweepAngle = 144f,
-            useCenter = false,
-            topLeft = Offset(size.width * 0.34f, size.height * 0.43f),
-            size = androidx.compose.ui.geometry.Size(size.width * 0.28f, size.height * 0.24f),
-            style = stroke,
-        )
-        drawLine(
-            color = tint,
-            start = Offset(size.width * 0.72f, size.height * 0.70f),
-            end = Offset(size.width * 0.86f, size.height * 0.86f),
-            strokeWidth = stroke.width,
-        )
-        drawLine(
-            color = tint,
-            start = Offset(size.width * 0.86f, size.height * 0.86f),
-            end = Offset(size.width * 0.70f, size.height * 0.82f),
-            strokeWidth = stroke.width,
-        )
     }
 }

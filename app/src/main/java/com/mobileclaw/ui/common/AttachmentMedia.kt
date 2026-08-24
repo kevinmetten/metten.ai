@@ -150,7 +150,3 @@ fun isImageFileAttachment(attachment: SkillAttachment.FileData): Boolean =
 fun isVideoFileAttachment(attachment: SkillAttachment.FileData): Boolean =
     attachment.mimeType.startsWith("video/") ||
         attachment.name.substringAfterLast('.').lowercase() in setOf("mp4", "mov", "m4v", "webm", "mkv", "3gp")
-
-fun isStickerFileAttachment(attachment: SkillAttachment.FileData): Boolean =
-    attachment.path.contains("/stickers/", ignoreCase = true) ||
-        attachment.name.contains("bqb", ignoreCase = true)

@@ -88,7 +88,6 @@ fun MainPageHost(
             onOpenDrawer = onOpenDrawer,
             onExitDetail = { vm.navigate(AppPage.HOME) },
             onAttachImage = { vm.setInputImage(it) },
-            onSendImage = { image, prompt -> vm.sendImageMessage(image, prompt) },
             onAttachFile = { vm.setFileAttachment(it) },
             onOpenProfile = { vm.navigate(AppPage.PROFILE) },
             onModelChange = { vm.setModel(it) },

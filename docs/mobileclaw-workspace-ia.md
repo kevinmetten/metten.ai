@@ -1767,7 +1767,7 @@ AI 修改产物时需要遵守：
 
 ##### F. 媒体产物
 
-由图片、视频、图标、贴纸等生成技能创建的媒体文件。
+由图片、视频、图标等生成技能创建的媒体文件。
 
 字段：
 
@@ -5572,7 +5572,7 @@ workspace_export/models/local_files/
 
 ### 3.9 媒体资产
 
-用于管理图片、视频、头像、表情包和角色视觉资源。
+用于管理图片、视频、头像和角色视觉资源。
 
 媒体资产区域不是所有文件的集合。
 
@@ -5593,7 +5593,6 @@ workspace_export/models/local_files/
 - sprite packs
 - 生成图片
 - 生成视频
-- sticker / 表情包
 - 上传图片
 - HTML/media attachments
 - 缓存媒体
@@ -5610,7 +5609,6 @@ workspace_export/models/local_files/
 - 角色肖像 pack
 - 角色动画 sprite pack
 - AI Town 房间资产
-- 表情包缓存和收藏
 - 生成图标
 - 生成图片
 - 生成视频文件
@@ -5635,7 +5633,7 @@ workspace_export/models/local_files/
 
 媒体资产和工作产物的关系：
 
-- 图片、视频、图标、表情包属于媒体资产。
+- 图片、视频和图标属于媒体资产。
 - DOCX/PDF/PPTX/HTML/代码文件属于工作产物。
 - 如果工作产物里引用了图片，图片本体可以归媒体资产，产物只保存相对引用。
 - 如果图片只是某个文档内部嵌入资源，可跟随工作产物导出，不一定进入全局媒体资产列表。
@@ -5647,7 +5645,6 @@ workspace_export/models/local_files/
 - 媒体总数
 - 图片数量
 - 视频数量
-- 表情包数量
 - 角色视觉资源数量
 - 生成图标数量
 - 最近新增媒体
@@ -5694,7 +5691,6 @@ AI 可以写入：
 - 新生成图片
 - 新生成图标
 - 新生成视频引用
-- 表情包收藏状态建议
 - 媒体标签
 - 媒体归属关系
 - 媒体说明
@@ -5881,37 +5877,7 @@ AI 使用媒体时，需要遵守：
 - `apiKey` 不应该随视频任务明文导出。
 - submit/poll raw response 默认不作为媒体资产导出。
 
-##### F. 表情包和贴纸
-
-管理普通聊天中可复用的表情包。
-
-字段：
-
-- sticker id
-- path
-- name
-- mimeType
-- sizeBytes
-- source
-- category
-- favorite
-- createdAt
-
-当前对应：
-
-- `ChineseBqbStickerSkill`
-- `ChineseBqbStickerRepository`
-- `StickerFavoritesStore`
-- `filesDir/stickers/chinese_bqb/index.json`
-- `filesDir/stickers/chinese_bqb/images/`
-
-注意：
-
-- 表情包缓存可清理。
-- 收藏表情应可导出。
-- 非收藏缓存默认不导出。
-
-##### G. 聊天媒体附件
+##### F. 聊天媒体附件
 
 管理普通会话消息中出现的媒体引用。
 
@@ -5940,7 +5906,7 @@ AI 使用媒体时，需要遵守：
 - 媒体区域只保存媒体文件和引用索引。
 - 如果附件路径指向外部 content URI，导出前需要复制或提示不可迁移。
 
-##### H. 上传和外链媒体
+##### G. 上传和外链媒体
 
 管理为了调用视频接口或外部服务而生成的临时公网 URL。
 
@@ -5972,15 +5938,12 @@ AI 使用媒体时，需要遵守：
 - `GenerateImageSkill`
 - `GenerateVideoSkill`
 - `GenerateIconSkill`
-- `ChineseBqbStickerSkill`
 - 聊天附件
 - `SkillAttachment.ImageData`
 - `SkillAttachment.FileData`
 - `SessionMessageEntity.attachmentsJson`
 - `SessionMessageEntity.imageBase64`
 - `VideoGenerationTaskEntity`
-- `StickerFavoritesStore`
-- `ChineseBqbStickerRepository`
 - `CloudinaryImageUploader`
 
 详细来源：
@@ -5994,8 +5957,6 @@ AI 使用媒体时，需要遵守：
 | 生成图标 | `GenerateIconSkill`, `filesDir/icons/` |
 | 生成视频 | `GenerateVideoSkill`, `filesDir/videos/` |
 | 视频任务 | `video_generation_tasks` |
-| 表情包缓存 | `filesDir/stickers/chinese_bqb/` |
-| 表情包收藏 | `StickerFavoritesStore` |
 | 聊天附件 | `session_messages.attachmentsJson` |
 | 用户上传图片 | `SkillAttachment.FileData`, content URI |
 
@@ -6010,9 +5971,6 @@ filesDir/agent_town/assets/sprites/
 filesDir/agent_town/assets/composed/
 filesDir/agent_town/assets/previews/
 filesDir/icons/
-filesDir/stickers/
-filesDir/stickers/chinese_bqb/index.json
-filesDir/stickers/chinese_bqb/images/
 filesDir/chat_images/
 filesDir/videos/
 filesDir/documents/
@@ -6034,7 +5992,6 @@ workspace_export/media/
   images/
   videos/
   icons/
-  stickers/
   role_visuals/
   town_assets/
   references.json
@@ -6071,7 +6028,6 @@ workspace_export/media/
 - `session_messages`
 - `video_generation_tasks`
 - `agent_town/town.json`
-- sticker favorite 配置
 - 文件目录
 
 后续建议增加：
@@ -6132,7 +6088,6 @@ workspace_export/media/
 - 角色头像和肖像
 - 角色 sprite pack
 - 已引用的 AI Town 媒体
-- 收藏表情包
 - 生成图片
 - 生成图标
 - 已下载生成视频
@@ -6141,7 +6096,6 @@ workspace_export/media/
 默认不包含：
 
 - 临时截图
-- 未收藏表情包缓存
 - 过期外链
 - base64 原文冗余副本
 - 上传 token
@@ -6151,7 +6105,6 @@ workspace_export/media/
 
 可选包含：
 
-- 全部表情包缓存
 - 未引用媒体
 - 大视频文件
 - AI Town preview HTML
@@ -6177,8 +6130,7 @@ workspace_export/media/
 4. 跳过缓存媒体
 5. 跳过大视频
 6. 角色视觉资源随角色导入
-7. 表情包收藏随表情包导入
-8. 重名文件保留本地并创建副本
+7. 重名文件保留本地并创建副本
 
 导入后需要执行：
 
@@ -6217,7 +6169,6 @@ workspace_export/media/
 - 同 hash 不同路径
 - 同角色已有头像
 - 同 sprite pack id 不同图片
-- 收藏表情包重复
 - 视频 task id 重复
 - 附件引用找不到目标消息
 
@@ -6227,7 +6178,6 @@ workspace_export/media/
 - 同 media id 不同 hash：创建新 id。
 - 角色头像冲突：保留本地，导入项作为候选。
 - sprite pack 冲突：按 id 创建副本或提示覆盖。
-- 表情包重复：合并收藏状态。
 - 视频 task id 重复：保留本地任务，导入视频文件作为媒体资产。
 - 附件目标缺失：保留媒体但标记为孤立资产。
 
@@ -6242,7 +6192,6 @@ workspace_export/media/
 - 图片数量
 - 视频数量
 - 角色视觉资源数量
-- 表情包收藏数量
 - 总体积
 - 最近新增
 
@@ -6274,7 +6223,6 @@ workspace_export/media/
 - 图片
 - 视频
 - 图标
-- 表情包
 - 聊天附件
 - 缓存
 
@@ -6301,7 +6249,6 @@ workspace_export/media/
 
 - 图片
 - 视频
-- 表情包
 - 角色视觉
 - 收藏
 - 缓存
@@ -6329,8 +6276,7 @@ workspace_export/media/
 只有缓存：
 
 ```text
-当前只有临时缓存。
-你可以收藏表情包或保存生成图片，让它们进入可迁移的媒体资产。
+当前只有临时缓存。保存生成图片后，它们会进入可迁移的媒体资产。
 ```
 
 导出空间不足：
@@ -6741,7 +6687,6 @@ AI 操作系统配置时，需要遵守：
 
 - temp
 - vpn
-- stickers
 - chat_images
 - documents
 - videos
@@ -6827,7 +6772,6 @@ AI 操作系统配置时，需要遵守：
 DataStore: agent_config
 DataStore: user_config
 filesDir/console_web/
-filesDir/stickers/
 filesDir/chat_images/
 filesDir/documents/
 filesDir/videos/

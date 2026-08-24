@@ -70,12 +70,6 @@ class CacheCleaner(private val context: Context) {
                     .orEmpty(),
             ),
             CacheSpec(
-                id = "stickers",
-                titleRes = R.string.cache_stickers_title,
-                subtitleRes = R.string.cache_stickers_subtitle,
-                paths = listOf(File(context.filesDir, "stickers")),
-            ),
-            CacheSpec(
                 id = "chat_images",
                 titleRes = R.string.cache_chat_images_title,
                 subtitleRes = R.string.cache_chat_images_subtitle,
