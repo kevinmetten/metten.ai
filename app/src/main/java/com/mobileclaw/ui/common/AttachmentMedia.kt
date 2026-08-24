@@ -26,7 +26,7 @@ private object VideoFrameCache {
     }
 }
 
-// 文件类附件的打开与图片缩略图解码在单聊/群聊完全同构，抽到 common 避免继续复制。
+// Shared file-attachment open and thumbnail helpers avoid duplicating media handling across UI surfaces.
 fun openFileAttachment(context: Context, attachment: SkillAttachment.FileData) {
     val uri = resolveFileAttachmentUri(context, attachment) ?: return
 

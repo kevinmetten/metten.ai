@@ -64,6 +64,26 @@ class TaskToolPolicyTest {
     }
 
     @Test
+    fun `generic sticker meme and reaction goals prefer surviving media generators`() {
+        val registry = registryWith(
+            meta("generate_image", SkillToolCategory.MEDIA),
+            meta("generate_icon", SkillToolCategory.MEDIA),
+            meta("generate_video", SkillToolCategory.MEDIA),
+            meta("web_search", SkillToolCategory.WEB),
+            meta("memory", SkillToolCategory.MEMORY),
+        )
+
+        listOf("make a meme", "design a sticker", "create a reaction image").forEach { goal ->
+            val ids = selectedIds(registry, TaskType.GENERAL, goal)
+
+            assertTrue("generate_image" in ids)
+            assertTrue("generate_icon" in ids)
+            assertTrue("generate_video" in ids)
+            assertFalse("web_search" in ids)
+        }
+    }
+
+    @Test
     fun `unknown language goal fails open to normal task policy`() {
         val registry = registryWith(
             meta("memory", SkillToolCategory.MEMORY),

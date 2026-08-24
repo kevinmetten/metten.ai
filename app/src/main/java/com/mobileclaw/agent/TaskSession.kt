@@ -778,7 +778,7 @@ object TaskToolPolicy {
                     listOf("app_manager", "read_file", "create_file", "list_files", "create_html", "ui_builder")
                 text.anyContains("page", "ui", "native", "native page", "app center") ->
                     listOf("ui_builder", "app_manager", "create_html", "read_file", "create_file")
-                text.anyContains("image", "picture", "icon", "avatar", "video") ->
+                text.anyContains("image", "picture", "icon", "avatar", "video", "sticker", "meme", "reaction") ->
                     listOf("generate_image", "generate_icon", "generate_video")
                 text.anyContains("web", "website", "search", "research", "source", "find", "online", "browse") ->
                     listOf("web_search", "fetch_url", "web_browse", "web_content", "web_js")
