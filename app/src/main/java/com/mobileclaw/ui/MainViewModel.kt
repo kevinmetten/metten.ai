@@ -54,6 +54,7 @@ import com.mobileclaw.config.capabilityApiKey
 import com.mobileclaw.config.capabilityEndpoint
 import com.mobileclaw.config.capabilityModel
 import com.mobileclaw.config.hasCapability
+import com.mobileclaw.config.responseLanguageShortInstruction
 import com.mobileclaw.config.supportsCapabilityMultimodal
 import com.mobileclaw.llm.ChatRequest
 import com.mobileclaw.llm.LlmCallOptions
@@ -3480,7 +3481,7 @@ class MainViewModel : ViewModel() {
         executionContext: String,
         imageBase64: String?,
     ): DirectChatContext {
-        val langSection = "\nYou MUST respond in English.\n"
+        val langSection = "\n${responseLanguageShortInstruction()}\n"
         val roleSection = if (currentRole.id != "general" && currentRole.systemPromptAddendum.isNotBlank()) {
             "\n## Your Persona\n${currentRole.systemPromptAddendum.trim()}\n"
         } else ""
