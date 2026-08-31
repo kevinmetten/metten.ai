@@ -722,7 +722,7 @@ private fun MiniAppInfoPanel(
 
         // Actions
         Spacer(Modifier.height(6.dp))
-        PanelAction(label = if (LocalAppLanguage.current == "zh") "导出" else "Export", color = c.text, onClick = onExport)
+        PanelAction(label = "Export", color = c.text, onClick = onExport)
         PanelAction(label = str(R.string.activity_close), color = c.red, onClick = onClose)
         PanelAction(label = str(R.string.activity_back), color = c.text, onClick = onDismiss)
         Spacer(Modifier.height(4.dp))
