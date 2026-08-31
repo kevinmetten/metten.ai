@@ -71,7 +71,6 @@ import com.mobileclaw.R
 import com.mobileclaw.app.MiniApp
 import com.mobileclaw.memory.db.SessionEntity
 import com.mobileclaw.ui.aipage.AiPageDef
-import com.mobileclaw.ui.LocalAppLanguage
 import com.mobileclaw.ui.LocalClawColors
 import com.mobileclaw.str
 
@@ -586,7 +585,6 @@ private fun ClassicCenterDockItem(
     modifier: Modifier = Modifier,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     Column(
         modifier = modifier
             .width(92.dp)
@@ -789,7 +787,6 @@ private fun ClassicConversationRow(
     showDivider: Boolean,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val avatarColors = classicConversationAvatarColors(index, c.isDark)
     Row(
         Modifier
@@ -829,7 +826,7 @@ private fun ClassicConversationRow(
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    formatClassicSessionTime(item.updatedAt, isZh),
+                    formatClassicSessionTime(item.updatedAt),
                     color = c.text.copy(alpha = 0.36f),
                     fontSize = 11.sp,
                     lineHeight = 11.sp,
@@ -838,7 +835,7 @@ private fun ClassicConversationRow(
             }
             Text(
                 if (selected) {
-                    if (isZh) "当前打开的会话" else "Currently open chat"
+                    "Currently open chat"
                 } else {
                     item.preview
                 },
@@ -884,7 +881,6 @@ private fun ClassicEmptyHome(
     onConfigureGateway: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     Column(
         Modifier
             .fillMaxWidth()
@@ -902,7 +898,7 @@ private fun ClassicEmptyHome(
         }
         Spacer(Modifier.height(16.dp))
         Text(
-            if (isZh) "暂无会话" else "No chats yet",
+            "No chats yet",
             color = c.text,
             fontSize = 18.sp,
             lineHeight = 22.sp,
@@ -920,9 +916,9 @@ private fun ClassicEmptyHome(
         ) {
             Text(
                 if (isConfigured) {
-                    if (isZh) "新建会话" else "New Chat"
+                    "New Chat"
                 } else {
-                    if (isZh) "去配置网关" else "Configure Gateway"
+                    "Configure Gateway"
                 },
                 color = c.bg,
                 fontSize = 13.sp,
@@ -933,17 +929,17 @@ private fun ClassicEmptyHome(
     }
 }
 
-private fun formatClassicSessionTime(updatedAt: Long, isZh: Boolean = java.util.Locale.getDefault().language == "zh") : String {
+private fun formatClassicSessionTime(updatedAt: Long) : String {
     val delta = (System.currentTimeMillis() - updatedAt).coerceAtLeast(0L)
     val minute = 60_000L
     val hour = 60 * minute
     val day = 24 * hour
     return when {
-        delta < minute -> if (isZh) "刚刚" else "Just now"
-        delta < hour -> if (isZh) "${delta / minute} 分钟前" else "${delta / minute}m ago"
-        delta < day -> if (isZh) "${delta / hour} 小时前" else "${delta / hour}h ago"
-        delta < 7 * day -> if (isZh) "${delta / day} 天前" else "${delta / day}d ago"
-        else -> if (isZh) "更早" else "Earlier"
+        delta < minute -> "Just now"
+        delta < hour -> "${delta / minute}m ago"
+        delta < day -> "${delta / hour}h ago"
+        delta < 7 * day -> "${delta / day}d ago"
+        else -> "Earlier"
     }
 }
 
@@ -962,13 +958,12 @@ fun ClassicMePage(
     onCheckUpdate: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val displayName = userName.ifBlank { str(R.string.classic_default_user) }
     val initial = displayName.firstOrNull()?.uppercaseChar()?.toString() ?: "M"
     val gatewayText = if (gatewayOnline) {
-        if (isZh) "网关在线" else "Gateway online"
+        "Gateway online"
     } else {
-        if (isZh) "等待配置" else "Setup pending"
+        "Setup pending"
     }
     Column(
         Modifier
@@ -1025,7 +1020,7 @@ fun ClassicMePage(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    if (isZh) "$gatewayText · 默认空间 · 资料已同步" else "$gatewayText · Default space · Profile synced",
+                    "$gatewayText · Default space · Profile synced",
                     color = c.text.copy(alpha = 0.46f),
                     fontSize = 11.sp,
                     lineHeight = 12.sp,
@@ -1043,7 +1038,7 @@ fun ClassicMePage(
                     .padding(horizontal = 10.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(if (isZh) "编辑" else "Edit", color = c.text.copy(alpha = 0.70f), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("Edit", color = c.text.copy(alpha = 0.70f), fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
         }
 
@@ -1052,29 +1047,29 @@ fun ClassicMePage(
             onClick = onRoles,
         )
 
-        ClassicMeSection(title = if (isZh) "空间模块" else "Space Modules") {
+        ClassicMeSection(title = "Space Modules") {
             ClassicMeRow(
                 icon = Icons.Filled.Settings,
-                title = if (isZh) "AI基础配置" else "AI Basics",
-                subtitle = if (isZh) "网关、本地模型、Image 生成" else "Gateway, local model, image generation",
+                title = "AI Basics",
+                subtitle = "Gateway, local model, image generation",
                 onClick = onAiBasicSettings,
             )
             ClassicMeRow(
                 icon = Icons.Filled.Shield,
-                title = if (isZh) "通用设置" else "General Settings",
-                subtitle = if (isZh) "主题、权限、虚拟屏幕、缓存" else "Theme, permissions, display, cache",
+                title = "General Settings",
+                subtitle = "Theme, permissions, display, cache",
                 onClick = onGeneralSettings,
             )
             ClassicMeRow(
                 icon = Icons.Filled.Extension,
-                title = if (isZh) "工具" else "Tools",
-                subtitle = if (isZh) "Skill 市场、控制台、VPN、Codex 桥接" else "Skill market, console, VPN, Codex bridge",
+                title = "Tools",
+                subtitle = "Skill market, console, VPN, Codex bridge",
                 onClick = onToolsSettings,
             )
             ClassicMeRow(
                 icon = Icons.Filled.Psychology,
-                title = if (isZh) "记忆" else "Memory",
-                subtitle = if (isZh) "记忆、历史、工具策略" else "Memory, history, tool strategy",
+                title = "Memory",
+                subtitle = "Memory, history, tool strategy",
                 onClick = onMemorySettings,
                 showDivider = false,
             )
@@ -1088,8 +1083,7 @@ private fun ClassicMeRoleEntry(
     onClick: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
-    val countText = if (isZh) "${roleCount.coerceAtLeast(0)} 个角色" else "${roleCount.coerceAtLeast(0)} roles"
+    val countText = "${roleCount.coerceAtLeast(0)} roles"
     Row(
         Modifier
             .fillMaxWidth()
@@ -1133,7 +1127,7 @@ private fun ClassicMeRoleEntry(
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(
-                if (isZh) "角色管理" else "Role Management",
+                "Role Management",
                 color = Color.White,
                 fontSize = 17.sp,
                 lineHeight = 20.sp,
@@ -1142,7 +1136,7 @@ private fun ClassicMeRoleEntry(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                if (isZh) "管理默认角色、工作区与角色包" else "Manage default roles, workspaces, and packages",
+                "Manage default roles, workspaces, and packages",
                 color = Color.White.copy(alpha = 0.58f),
                 fontSize = 11.5.sp,
                 lineHeight = 14.sp,
@@ -1305,7 +1299,6 @@ private fun ClassicWorkspaceEntry(
     onClick: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -1366,7 +1359,7 @@ private fun ClassicWorkspaceEntry(
         ) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(
-                    if (isZh) "我的工作空间" else "My Workspace",
+                    "My Workspace",
                     color = c.text.copy(alpha = 0.94f),
                     fontSize = 16.sp,
                     lineHeight = 19.sp,
@@ -1375,7 +1368,7 @@ private fun ClassicWorkspaceEntry(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    if (isZh) "$count 项内容" else "$count items",
+                    "$count items",
                     color = c.text.copy(alpha = 0.45f),
                     fontSize = 11.5.sp,
                     lineHeight = 13.sp,
@@ -1390,7 +1383,7 @@ private fun ClassicWorkspaceEntry(
                     .padding(horizontal = 12.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(if (isZh) "进入" else "Open", color = c.text.copy(alpha = 0.72f), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("Open", color = c.text.copy(alpha = 0.72f), fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -1402,7 +1395,6 @@ private fun ClassicWorkbenchGenerate(
     onGenerateVideo: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -1487,7 +1479,7 @@ private fun ClassicWorkbenchGenerate(
                 .padding(18.dp)
         ) {
             Text(
-                if (isZh) "生成" else "Create",
+                "Create",
                 color = c.text.copy(alpha = 0.44f),
                 fontSize = 10.sp,
                 lineHeight = 10.sp,
@@ -1495,7 +1487,7 @@ private fun ClassicWorkbenchGenerate(
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                if (isZh) "把想法变成素材" else "Turn ideas into assets",
+                "Turn ideas into assets",
                 color = c.text.copy(alpha = 0.90f),
                 fontSize = 20.sp,
                 lineHeight = 22.sp,
@@ -1504,14 +1496,14 @@ private fun ClassicWorkbenchGenerate(
             Spacer(Modifier.height(18.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 ClassicGenerateAction(
-                    label = if (isZh) "生图片" else "Image",
+                    label = "Image",
                     icon = HtmlImageIcon,
                     onClick = onGenerateImage,
                     highlighted = true,
                     modifier = Modifier.weight(1f),
                 )
                 ClassicGenerateAction(
-                    label = if (isZh) "生视频" else "Video",
+                    label = "Video",
                     icon = HtmlVideoIcon,
                     onClick = onGenerateVideo,
                     highlighted = false,
@@ -1557,10 +1549,9 @@ private fun ClassicGenerateAction(
 @Composable
 private fun ClassicWorkbenchBar(count: Int) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     Column(Modifier.fillMaxWidth()) {
         Text(
-            if (isZh) "空间内容" else "Workspace Content",
+            "Workspace Content",
             color = c.text,
             fontSize = 14.sp,
             lineHeight = 17.sp,
@@ -1568,7 +1559,7 @@ private fun ClassicWorkbenchBar(count: Int) {
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            if (isZh) "MiniAPP 与 Native 页面 · $count" else "MiniAPP and Native pages · $count",
+            "MiniAPP and Native pages · $count",
             color = c.text.copy(alpha = 0.42f),
             fontSize = 11.5.sp,
             lineHeight = 12.sp,
@@ -1583,7 +1574,6 @@ private fun ClassicWorkbenchFilter(
     onSelected: (String) -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     Row(
         Modifier
             .fillMaxWidth()
@@ -1597,7 +1587,7 @@ private fun ClassicWorkbenchFilter(
             val label = when (item) {
                 "miniapp" -> "MiniAPP"
                 "native" -> "Native"
-                else -> if (isZh) "全部" else "All"
+                else -> "All"
             }
             Box(
                 Modifier
@@ -1638,7 +1628,6 @@ private fun ClassicMiniAppToolbar(
     onCancelSelection: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     Row(
         Modifier
             .fillMaxWidth()
@@ -1655,7 +1644,7 @@ private fun ClassicMiniAppToolbar(
     ) {
         if (selectionMode) {
             Text(
-                if (isZh) "已选 $selectedCount" else "$selectedCount selected",
+                "$selectedCount selected",
                 color = c.bg,
                 fontSize = 12.sp,
                 lineHeight = 14.sp,
@@ -1665,20 +1654,20 @@ private fun ClassicMiniAppToolbar(
                 modifier = Modifier.weight(1f),
             )
             ClassicToolbarPill(
-                text = if (isZh) "全选" else "All",
+                text = "All",
                 filled = false,
                 onClick = onSelectAll,
                 darkBar = true,
             )
             ClassicToolbarPill(
-                text = if (isZh) "删除" else "Delete",
+                text = "Delete",
                 filled = true,
                 enabled = selectedCount > 0,
                 onClick = onDeleteSelected,
                 darkBar = true,
             )
             ClassicToolbarPill(
-                text = if (isZh) "完成" else "Done",
+                text = "Done",
                 filled = false,
                 onClick = onCancelSelection,
                 darkBar = true,
@@ -1686,7 +1675,7 @@ private fun ClassicMiniAppToolbar(
         } else {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
-                    if (isZh) "MiniAPP 包" else "MiniAPP packages",
+                    "MiniAPP packages",
                     color = c.text,
                     fontSize = 12.sp,
                     lineHeight = 14.sp,
@@ -1705,7 +1694,7 @@ private fun ClassicMiniAppToolbar(
                 )
             }
             ClassicToolbarPill(
-                text = if (isZh) "导入" else "Import",
+                text = "Import",
                 filled = true,
                 onClick = onImportMiniApp,
                 darkBar = false,
@@ -1775,7 +1764,6 @@ private fun ClassicWorkspaceList(
     onStartMiniAppSelection: (String) -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     Column(
         Modifier
             .fillMaxWidth()
@@ -1797,7 +1785,7 @@ private fun ClassicWorkspaceList(
     ) {
         if (items.isEmpty()) {
             Text(
-                if (isZh) "暂无内容" else "No content yet",
+                "No content yet",
                 color = c.text.copy(alpha = 0.42f),
                 fontSize = 13.sp,
                 textAlign = TextAlign.Center,
@@ -1843,7 +1831,6 @@ private fun ClassicWorkspaceRow(
     onLongClick: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val miniAppSelectable = item is ClassicWorkspaceItem.MiniAppItem
     Row(
         Modifier
@@ -1877,7 +1864,7 @@ private fun ClassicWorkspaceRow(
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    item.title(isZh),
+                    item.title,
                     color = c.text,
                     fontSize = 15.sp,
                     lineHeight = 18.sp,
@@ -1895,7 +1882,7 @@ private fun ClassicWorkspaceRow(
                 )
             }
             Text(
-                item.subtitle(isZh),
+                item.subtitle,
                 color = c.text.copy(alpha = 0.48f),
                 fontSize = 12.sp,
                 lineHeight = 15.sp,
@@ -1957,30 +1944,21 @@ private sealed class ClassicWorkspaceItem {
     abstract val subtitle: String
     abstract val kind: String
     abstract val createdAt: Long
-    open fun title(isZh: Boolean): String = title
-    open fun subtitle(isZh: Boolean): String = subtitle
 
     data class MiniAppItem(val app: MiniApp) : ClassicWorkspaceItem() {
-        override val title: String = app.title.ifBlank { "未命名 MiniAPP" }
+        override val title: String = app.title.ifBlank { "Untitled MiniAPP" }
         override val subtitle: String = app.description.ifBlank { app.spec.goal }.ifBlank { "MiniAPP" }
         override val kind: String = "MiniAPP"
         override val createdAt: Long = app.createdAt
-        override fun title(isZh: Boolean): String = app.title.ifBlank { if (isZh) "未命名 MiniAPP" else "Untitled MiniAPP" }
-        override fun subtitle(isZh: Boolean): String = classicWorkspaceSubtitle(subtitle, createdAt, isZh)
     }
 
     data class NativePageItem(val page: AiPageDef) : ClassicWorkspaceItem() {
-        override val title: String = page.title.ifBlank { "未命名页面" }
+        override val title: String = page.title.ifBlank { "Untitled Page" }
         override val subtitle: String = page.description.ifBlank { page.spec.goal }.ifBlank { "Native Page" }
         override val kind: String = "Native"
         override val createdAt: Long = page.createdAt
-        override fun title(isZh: Boolean): String = page.title.ifBlank { if (isZh) "未命名页面" else "Untitled Page" }
-        override fun subtitle(isZh: Boolean): String = classicWorkspaceSubtitle(subtitle, createdAt, isZh)
     }
 }
-
-private fun classicWorkspaceSubtitle(primary: String, createdAt: Long, isZh: Boolean): String =
-    "${primary.take(36)} · ${formatClassicSessionTime(createdAt, isZh)}"
 
 @Composable
 private fun ClassicPrimaryAction(
@@ -1989,7 +1967,6 @@ private fun ClassicPrimaryAction(
     modifier: Modifier = Modifier,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -2062,7 +2039,7 @@ private fun ClassicPrimaryAction(
                     .padding(horizontal = 10.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(if (isZh) "进入" else "Open", color = Color.White.copy(alpha = 0.88f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text("Open", color = Color.White.copy(alpha = 0.88f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }
@@ -2076,7 +2053,6 @@ private fun ClassicFeatureTile(
     modifier: Modifier = Modifier,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val bg = c.surface
     val fg = c.text
     val sub = c.subtext.copy(alpha = 0.86f)
@@ -2114,7 +2090,7 @@ private fun ClassicFeatureTile(
                 }
                 Spacer(Modifier.weight(1f))
                 Text(
-                    row.section.ifBlank { if (isZh) "入口" else "Entry" },
+                    row.section.ifBlank { "Entry" },
                     color = if (active) c.text else c.subtext,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -2163,7 +2139,6 @@ private fun ClassicMeRow(
     highlighted: Boolean = false,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     Row(
         Modifier
             .fillMaxWidth()
@@ -2208,7 +2183,7 @@ private fun ClassicMeRow(
                     .padding(horizontal = 8.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(if (isZh) "常用" else "Frequent", color = Color(0xFF050505), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                Text("Frequent", color = Color(0xFF050505), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
             }
             Spacer(Modifier.width(7.dp))
         }

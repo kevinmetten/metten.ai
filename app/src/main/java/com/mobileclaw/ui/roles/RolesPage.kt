@@ -66,7 +66,6 @@ import com.mobileclaw.town.AgentRoom
 import com.mobileclaw.town.RoomFurniture
 import com.mobileclaw.town.AgentTownState
 import com.mobileclaw.ui.GradientAvatar
-import com.mobileclaw.ui.LocalAppLanguage
 import com.mobileclaw.ui.LocalClawColors
 import com.mobileclaw.ui.RoleWorkspaceFileUi
 import com.mobileclaw.str
@@ -171,7 +170,6 @@ private fun RoleManagementHeader(
     onImport: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -194,11 +192,11 @@ private fun RoleManagementHeader(
                 horizontalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 Icon(Icons.Filled.ArrowBack, contentDescription = null, tint = c.text, modifier = Modifier.size(18.dp))
-                Text(if (isZh) "退出" else "Exit", color = c.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Text("Exit", color = c.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
             }
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                 Text(
-                    text = if (isZh) "角色" else "Roles",
+                    text = "Roles",
                     color = c.text,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -221,7 +219,7 @@ private fun RoleManagementHeader(
                     horizontalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null, tint = c.bg, modifier = Modifier.size(14.dp))
-                    Text(if (isZh) "导入" else "Import", color = c.bg, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Text("Import", color = c.bg, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 }
             }
         }
@@ -237,7 +235,6 @@ private fun CurrentRolePanel(
     onOpen: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -248,7 +245,7 @@ private fun CurrentRolePanel(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = if (isZh) "当前会话角色" else "Current chat role",
+                text = "Current chat role",
                 color = c.text,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -269,7 +266,7 @@ private fun CurrentRolePanel(
                         .clip(RoundedCornerShape(99.dp))
                         .background(if (isWorking) c.accent else c.bg.copy(alpha = 0.8f))
                 )
-                Text(if (isZh) "默认" else "Default", color = c.bg, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Text("Default", color = c.bg, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
             }
         }
         Row(
@@ -293,7 +290,7 @@ private fun CurrentRolePanel(
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(role.name.ifBlank { str(R.string.role_card_unnamed) }, color = c.text, fontSize = 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    text = if (isWorking) str(R.string.role_card_generating) else roleListSummary(role, room, isZh),
+                    text = if (isWorking) str(R.string.role_card_generating) else roleListSummary(role, room),
                     color = c.subtext,
                     fontSize = 11.sp,
                     lineHeight = 14.sp,
@@ -317,7 +314,6 @@ private fun RoleDirectorySection(
     onActivate: (Role) -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -329,7 +325,7 @@ private fun RoleDirectorySection(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = if (isZh) "全部角色" else "All roles",
+                text = "All roles",
                 color = c.text,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 15.sp,
@@ -364,7 +360,6 @@ private fun RoleListCard(
     onActivate: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -408,7 +403,7 @@ private fun RoleListCard(
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(role.name.ifBlank { str(R.string.role_card_unnamed) }, fontSize = 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                text = roleListSummary(role, room, isZh),
+                text = roleListSummary(role, room),
                 fontSize = 11.sp,
                 color = c.subtext,
                 maxLines = 1,
@@ -429,9 +424,9 @@ private fun RoleListCard(
         ) {
             Text(
                 if (isActive) {
-                    if (isZh) "默认" else "Default"
+                    "Default"
                 } else {
-                    if (isZh) "切换" else "Switch"
+                    "Switch"
                 },
                 color = if (isActive) c.bg else c.text,
                 fontSize = 11.sp,
@@ -449,41 +444,41 @@ private fun roleInitial(role: Role): String =
         ?: role.id.firstOrNull()?.uppercaseChar()?.toString()
         ?: "C"
 
-private fun roleRoleSummary(role: Role, room: AgentRoom?, isZh: Boolean): String =
+private fun roleRoleSummary(role: Role, room: AgentRoom?): String =
     room?.motto?.takeIf { it.isNotBlank() }
-        ?: role.preferredTaskTypes.take(3).joinToString(if (isZh) "、" else ", ") { it.roleTaskLabel(isZh) }.takeIf { it.isNotBlank() }
-        ?: role.description.ifBlank { if (isZh) "全局助手" else "General assistant" }
+        ?: role.preferredTaskTypes.take(3).joinToString(", ") { it.roleTaskLabel() }.takeIf { it.isNotBlank() }
+        ?: role.description.ifBlank { "General assistant" }
 
-private fun roleListSummary(role: Role, room: AgentRoom?, isZh: Boolean): String {
-    val base = roleRoleSummary(role, room, isZh)
+private fun roleListSummary(role: Role, room: AgentRoom?): String {
+    val base = roleRoleSummary(role, room)
     val binding = role.effectiveModelBinding() ?: return base
-    val model = roleModelBindingLabel(role, isZh, showDefault = false).takeIf { it.isNotBlank() }
+    val model = roleModelBindingLabel(role, showDefault = false).takeIf { it.isNotBlank() }
         ?: binding.legacyModelOverride().orEmpty()
     return if (model.isBlank()) base else "$base · $model"
 }
 
-private fun roleModelBindingLabel(role: Role, isZh: Boolean, showDefault: Boolean = true): String {
+private fun roleModelBindingLabel(role: Role, showDefault: Boolean = true): String {
     val binding = role.effectiveModelBinding()?.normalized()
         ?: return if (showDefault) {
-            if (isZh) "跟随默认网关" else "Follow default gateway"
+            "Follow default gateway"
         } else {
             ""
         }
     return when {
         binding.localModelId.isNotBlank() ->
-            (if (isZh) "本地" else "Local") + " / " + binding.localModelId.removePrefix("local:")
+            ("Local") + " / " + binding.localModelId.removePrefix("local:")
         binding.gatewayName.isNotBlank() && binding.model.isNotBlank() ->
             "${binding.gatewayName} / ${binding.model}"
         binding.gatewayId.isNotBlank() && binding.model.isNotBlank() ->
             "${binding.gatewayId} / ${binding.model}"
         binding.gatewayName.isNotBlank() ->
-            binding.gatewayName + " / " + if (isZh) "默认模型" else "Default model"
+            binding.gatewayName + " / " + "Default model"
         binding.gatewayId.isNotBlank() ->
-            binding.gatewayId + " / " + if (isZh) "默认模型" else "Default model"
+            binding.gatewayId + " / " + "Default model"
         binding.model.isNotBlank() ->
-            (if (isZh) "默认网关" else "Default gateway") + " / " + binding.model
+            ("Default gateway") + " / " + binding.model
         else -> if (showDefault) {
-            if (isZh) "跟随默认网关" else "Follow default gateway"
+            "Follow default gateway"
         } else {
             ""
         }
@@ -505,17 +500,17 @@ private fun roleDotBrush(role: Role, accent: Color): Brush {
     }
 }
 
-private fun TaskType.roleTaskLabel(isZh: Boolean): String = when (this) {
-    TaskType.PHONE_CONTROL -> if (isZh) "控手机" else "Phone"
-    TaskType.WEB_RESEARCH -> if (isZh) "查资料" else "Research"
-    TaskType.FILE_CREATE -> if (isZh) "写文档" else "Docs"
-    TaskType.APP_BUILD -> if (isZh) "建应用" else "Apps"
-    TaskType.IMAGE_GENERATION -> if (isZh) "做图片" else "Images"
+private fun TaskType.roleTaskLabel(): String = when (this) {
+    TaskType.PHONE_CONTROL -> "Phone"
+    TaskType.WEB_RESEARCH -> "Research"
+    TaskType.FILE_CREATE -> "Docs"
+    TaskType.APP_BUILD -> "Apps"
+    TaskType.IMAGE_GENERATION -> "Images"
     TaskType.VPN_CONTROL -> "VPN"
-    TaskType.SKILL_MANAGEMENT -> if (isZh) "管技能" else "Skills"
-    TaskType.CODE_EXECUTION -> if (isZh) "写代码" else "Code"
+    TaskType.SKILL_MANAGEMENT -> "Skills"
+    TaskType.CODE_EXECUTION -> "Code"
     TaskType.CHAT,
-    TaskType.GENERAL -> if (isZh) "聊天" else "Chat"
+    TaskType.GENERAL -> "Chat"
 }
 
 @Composable
@@ -534,40 +529,39 @@ fun RoleDetailPage(
     onBack: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val room = town.rooms[role.id]
     val pageBg = c.bg
     val summary = role.description.ifBlank {
-        role.preferredTaskTypes.take(3).joinToString(if (isZh) "、" else ", ") { it.roleTaskLabel(isZh) }
-            .ifBlank { if (isZh) "通用 AI 工作者" else "General AI worker" }
+        role.preferredTaskTypes.take(3).joinToString(", ") { it.roleTaskLabel() }
+            .ifBlank { "General AI worker" }
     }
     val isActive = role.id == currentRole.id
     val taskModesText = role.preferredTaskTypes
         .takeIf { it.isNotEmpty() }
-        ?.joinToString(" / ") { it.roleTaskLabel(isZh) }
-        ?: if (isZh) "通用对话 / 按任务自动判断" else "General chat / auto-routed"
-    val modelText = roleModelBindingLabel(role, isZh)
+        ?.joinToString(" / ") { it.roleTaskLabel() }
+        ?: "General chat / auto-routed"
+    val modelText = roleModelBindingLabel(role)
     val skillText = role.forcedSkillIds
         .takeIf { it.isNotEmpty() }
         ?.take(8)
         ?.joinToString(" / ")
-        ?: if (isZh) "无固定技能，按任务自动选择" else "No pinned skills; selected by task"
+        ?: "No pinned skills; selected by task"
     val routingText = role.keywords
         .takeIf { it.isNotEmpty() }
         ?.take(8)
         ?.joinToString(" / ")
-        ?: if (isZh) "无专门识别词，默认按对话意图判断" else "No routing hints; inferred from chat intent"
+        ?: "No routing hints; inferred from chat intent"
     val workspaceText = room?.wallPins
         ?.take(3)
         ?.joinToString(" / ") { it.title }
         .orEmpty()
         .ifBlank {
-            if (isZh) "core.md / skills.md / memory.md / model.md" else "core.md / skills.md / memory.md / model.md"
+            "core.md / skills.md / memory.md / model.md"
         }
     val promptText = role.systemPromptAddendum
         .takeIf { it.isNotBlank() }
         ?.take(180)
-        ?: if (isZh) "没有额外系统补充，使用基础角色定义。" else "No extra system addendum; using the base role definition."
+        ?: "No extra system addendum; using the base role definition."
 
     BackHandler { onBack() }
 
@@ -594,14 +588,14 @@ fun RoleDetailPage(
                     horizontalArrangement = Arrangement.spacedBy(3.dp),
                 ) {
                     Icon(Icons.Filled.ArrowBack, contentDescription = null, tint = c.text, modifier = Modifier.size(18.dp))
-                    Text(if (isZh) "退出" else "Exit", color = c.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Text("Exit", color = c.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 }
                 Box(
                     modifier = Modifier.weight(1f),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = role.name.ifBlank { if (isZh) "角色档案" else "Role Profile" },
+                        text = role.name.ifBlank { "Role Profile" },
                         color = c.text,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -627,9 +621,9 @@ fun RoleDetailPage(
                     )
                     Text(
                         if (role.id == currentRole.id) {
-                            if (isZh) "默认" else "Default"
+                            "Default"
                         } else {
-                            if (isZh) "可切换" else "Role"
+                            "Role"
                         },
                         color = if (role.id == currentRole.id) c.bg else c.text,
                         fontSize = 11.sp,
@@ -670,21 +664,21 @@ fun RoleDetailPage(
 
             item {
                 RoleDetailInfoGroup(
-                    title = if (isZh) "角色配置" else "Role configuration",
+                    title = "Role configuration",
                     items = listOf(
                         RoleDetailInfoItem(
                             icon = Icons.Outlined.SettingsSuggest,
-                            title = if (isZh) "执行方式" else "Execution",
+                            title = "Execution",
                             body = taskModesText,
                         ),
                         RoleDetailInfoItem(
                             icon = Icons.Outlined.Psychology,
-                            title = if (isZh) "模型" else "Model",
+                            title = "Model",
                             body = modelText,
                         ),
                         RoleDetailInfoItem(
                             icon = Icons.Outlined.CheckCircle,
-                            title = if (isZh) "固定技能" else "Pinned skills",
+                            title = "Pinned skills",
                             body = skillText,
                         ),
                     )
@@ -693,21 +687,21 @@ fun RoleDetailPage(
 
             item {
                 RoleDetailInfoGroup(
-                    title = if (isZh) "上下文" else "Context",
+                    title = "Context",
                     items = listOf(
                         RoleDetailInfoItem(
                             icon = Icons.Outlined.Badge,
-                            title = if (isZh) "识别线索" else "Routing hints",
+                            title = "Routing hints",
                             body = routingText,
                         ),
                         RoleDetailInfoItem(
                             icon = Icons.Outlined.Memory,
-                            title = if (isZh) "角色工作区" else "Role workspace",
+                            title = "Role workspace",
                             body = workspaceText,
                         ),
                         RoleDetailInfoItem(
                             icon = Icons.Outlined.FolderOpen,
-                            title = if (isZh) "系统补充" else "System addendum",
+                            title = "System addendum",
                             body = promptText,
                         ),
                     )
@@ -729,12 +723,11 @@ private fun RoleProfileHero(
     onGeneratePortrait: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val roleAvatar = role.avatar.ifBlank { RoleAvatarDefaults.forRoleId(role.id) }
     val hasCustomImage = com.mobileclaw.agent.isRoleImageAvatar(roleAvatar)
     val actionText = when {
         isGeneratingPortrait -> str(R.string.role_card_generating)
-        hasCustomImage -> if (isZh) "更新角色形象" else "Update identity"
+        hasCustomImage -> "Update identity"
         else -> str(R.string.role_portrait_regenerate_action)
     }
     val portraitShape = RoundedCornerShape(22.dp)
@@ -748,7 +741,7 @@ private fun RoleProfileHero(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = if (isZh) "角色形象" else "Role identity",
+                text = "Role identity",
                 color = c.text,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -771,7 +764,7 @@ private fun RoleProfileHero(
                         .background(if (isWorking) c.accent else if (isActive) c.bg.copy(alpha = 0.8f) else c.subtext.copy(alpha = 0.45f))
                 )
                 Text(
-                    if (isActive) str(R.string.role_detail_current_role) else if (isZh) "可切换" else "Available",
+                    if (isActive) str(R.string.role_detail_current_role) else "Available",
                     color = if (isActive) c.bg else c.text,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -938,7 +931,6 @@ fun RoleWorkspacePage(
     onRefresh: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val pageBg = if (c.isDark) Color(0xFF070707) else Color(0xFFF6F6F4)
     BackHandler { onBack() }
 
@@ -951,7 +943,7 @@ fun RoleWorkspacePage(
                 Icon(Icons.Default.ArrowBack, contentDescription = null, tint = c.text)
             }
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(if (isZh) "角色工作空间" else "Role Workspace", color = c.text, fontSize = 18.sp, lineHeight = 20.sp, fontWeight = FontWeight.Black)
+                Text("Role Workspace", color = c.text, fontSize = 18.sp, lineHeight = 20.sp, fontWeight = FontWeight.Black)
                 Text(role.name.ifBlank { role.id }, color = c.subtext, fontSize = 11.sp, lineHeight = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             IconButton(onClick = onRefresh, modifier = Modifier.size(44.dp)) {
@@ -976,17 +968,17 @@ fun RoleWorkspacePage(
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Box(Modifier.size(8.dp).clip(RoundedCornerShape(99.dp)).background(c.accent))
-                            Text(if (isZh) "持久角色上下文" else "Persistent role context", color = Color.White.copy(alpha = 0.68f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("Persistent role context", color = Color.White.copy(alpha = 0.68f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                         Text(
-                            text = if (isZh) "这里展示角色自己的 core、memory、skills、model 等文件。" else "Core, memory, skills, model, and other role-owned files.",
+                            text = "Core, memory, skills, model, and other role-owned files.",
                             color = Color.White,
                             fontSize = 22.sp,
                             lineHeight = 26.sp,
                             fontWeight = FontWeight.Black,
                         )
                         Text(
-                            text = if (isZh) "这些内容会参与角色后续执行和长期沉淀。" else "These files feed future execution and long-term role growth.",
+                            text = "These files feed future execution and long-term role growth.",
                             color = Color.White.copy(alpha = 0.62f),
                             fontSize = 13.sp,
                             lineHeight = 18.sp,
@@ -998,8 +990,8 @@ fun RoleWorkspacePage(
                 item {
                     RoleWorkspaceFileCard(
                         file = RoleWorkspaceFileUi(
-                            name = if (isZh) "暂无文件" else "No files",
-                            content = if (isZh) "刷新后会创建并读取角色工作空间。" else "Refresh to create and read the role workspace.",
+                            name = "No files",
+                            content = "Refresh to create and read the role workspace.",
                         )
                     )
                 }
@@ -2140,7 +2132,6 @@ private fun RoleDetailActions(
     onExport: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -2158,14 +2149,14 @@ private fun RoleDetailActions(
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             RoleActionPill(
-                text = if (isZh) "工作区" else "Workspace",
+                text = "Workspace",
                 icon = Icons.Outlined.FolderOpen,
                 filled = false,
                 onClick = onOpenWorkspace,
                 modifier = Modifier.weight(1f),
             )
             RoleActionPill(
-                text = if (isZh) "导出" else "Export",
+                text = "Export",
                 icon = Icons.Outlined.Badge,
                 filled = false,
                 onClick = onExport,
@@ -2174,14 +2165,14 @@ private fun RoleDetailActions(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             RoleActionPill(
-                text = if (isZh) "编辑" else "Edit",
+                text = "Edit",
                 icon = Icons.Default.Edit,
                 filled = false,
                 onClick = onEdit,
                 modifier = Modifier.weight(1f),
             )
             RoleActionPill(
-                text = if (isZh) "复制" else "Copy",
+                text = "Copy",
                 icon = Icons.Default.Add,
                 filled = false,
                 onClick = onCopy,
