@@ -35,15 +35,15 @@ In MobileClaw:
 Examples:
 
 ```text
-用电脑 Codex 在 /Users/me/project 里检查测试失败原因。
+Use desktop Codex in /Users/me/project to investigate the test failure.
 ```
 
 ```text
-查看电脑 Codex bridge 状态。
+Show the desktop Codex bridge status.
 ```
 
 ```text
-停止电脑 Codex 任务。
+Stop the desktop Codex task.
 ```
 
 The built-in `codex_desktop` skill supports `status`, `run`, and `stop`.
