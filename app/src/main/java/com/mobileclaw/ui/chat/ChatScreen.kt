@@ -82,14 +82,12 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.Dialog
 import com.mobileclaw.R
 import com.mobileclaw.agent.Role
-import com.mobileclaw.agent.localizedName
 import com.mobileclaw.agent.normalizeRoleAvatar
 import com.mobileclaw.llm.LocalModelInfo
 import com.mobileclaw.skill.SkillAttachment
 import com.mobileclaw.ui.ClawColors
 import com.mobileclaw.ui.ClawSymbolIcon
 import com.mobileclaw.ui.GradientAvatar
-import com.mobileclaw.ui.LocalAppLanguage
 import com.mobileclaw.ui.LocalClawColors
 import com.mobileclaw.ui.MainUiState
 import com.mobileclaw.ui.MiniAppViewport
@@ -165,7 +163,6 @@ fun ChatScreen(
     classicMode: Boolean = false,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val runState = uiState.currentRunState
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
@@ -484,7 +481,6 @@ fun ChatScreen(
                                                 attachments = msg.attachments,
                                                 streamingThought = runState.streamingThought,
                                                 streamingToken = runState.streamingToken,
-                                                isZh = isZh,
                                             ),
                                             runStartedAt = runState.runStartedAt,
                                         )
@@ -698,7 +694,7 @@ fun ChatScreen(
                     .navigationBarsPadding()
                     .verticalScroll(rememberScrollState()),
             ) {
-                // 标题先给用户一个“这是哪类进展”的心智锚点，减少机械日志感。
+                // Lead with the progress category so the details feel less like raw logs.
                 Text(detailView.title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = c.text)
                 Spacer(Modifier.height(8.dp))
                 if (detailView.purpose.isNotBlank()) {
@@ -1072,7 +1068,6 @@ private fun TopBar(
     classicMode: Boolean = false,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1095,7 +1090,7 @@ private fun TopBar(
                 horizontalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = c.text, modifier = Modifier.size(18.dp))
-                Text(if (isZh) "退出" else "Exit", color = c.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Text("Exit", color = c.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
             }
             Box(
                 modifier = Modifier.weight(1f).clickable(onClick = onRenameSession),
@@ -1132,7 +1127,6 @@ private fun CodexDesktopModePill(
     onClick: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val bg = when {
         enabled -> c.text
         configured -> c.cardAlt
@@ -1151,11 +1145,7 @@ private fun CodexDesktopModePill(
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         Text(
-            text = if (isZh) {
-                if (enabled) "电脑端" else "电脑"
-            } else {
-                if (enabled) "Desktop" else "Desk"
-            },
+            text = if (enabled) "Desktop" else "Desk",
             color = fg,
             fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold,
@@ -1177,7 +1167,6 @@ private fun ModelPickerDialog(
     onDismiss: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val localByModelId = remember(localModels) { localModels.associateBy { it.modelId } }
     val localById = remember(localModels) { localModels.associateBy { it.id } }
 
@@ -1355,16 +1344,15 @@ private fun EmptyState(
     onOpenHelp: () -> Unit = {},
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val tasks = if (recommendations.isNotEmpty()) recommendations else ExampleTasks
 
     Column(
         modifier = Modifier.fillMaxWidth().padding(top = 54.dp, bottom = 18.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(if (isZh) "今天要处理什么？" else "What should we handle today?", color = c.text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp)
+        Text("What should we handle today?", color = c.text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp)
         Spacer(Modifier.height(7.dp))
-        Text(if (isZh) "直接输入任务，或从下面选一个开始。" else "Type a task, or start with one below.", color = c.subtext, fontSize = 13.sp)
+        Text("Type a task, or start with one below.", color = c.subtext, fontSize = 13.sp)
         Spacer(Modifier.height(20.dp))
 
         Text(
@@ -1508,11 +1496,10 @@ private fun CodexOutputBubble(
     success: Boolean? = null,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val elapsed = rememberRunningElapsedLabel(runStartedAt)
     val cleanedText = remember(text) { cleanCodexDisplayText(text) }
     val progressLines = remember(logLines) { codexProgressLines(logLines) }
-    val progressSteps = remember(progressLines, isZh) { progressLines.map { it.toCodexStepDisplay(isZh) } }
+    val progressSteps = remember(progressLines) { progressLines.map { it.toCodexStepDisplay() } }
     val displayText = when {
         cleanedText.isNotBlank() -> cleanedText
         progressLines.isNotEmpty() && isRunning -> ""
@@ -1520,9 +1507,9 @@ private fun CodexOutputBubble(
         else -> ""
     }
     val statusText = when {
-        isRunning -> if (isZh) "运行中" else "Running"
-        success == false -> if (isZh) "失败" else "Failed"
-        else -> if (isZh) "完成" else "Done"
+        isRunning -> "Running"
+        success == false -> "Failed"
+        else -> "Done"
     }
     val statusColor = when {
         isRunning -> c.text
@@ -1552,7 +1539,7 @@ private fun CodexOutputBubble(
                     .background(statusColor),
             )
             Text(
-                text = if (isZh) "电脑端" else "Desktop",
+                text = "Desktop",
                 color = c.text,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
@@ -1601,7 +1588,7 @@ private fun CodexOutputBubble(
             }
         } else if (isRunning && progressSteps.isEmpty()) {
             Text(
-                text = if (isZh) "正在处理..." else "Working...",
+                text = "Working...",
                 color = c.subtext.copy(alpha = 0.74f),
                 fontSize = 12.sp,
                 lineHeight = 17.sp,
@@ -1616,9 +1603,9 @@ private fun codexProgressLines(logLines: List<LogLine>): List<LogLine> =
         .filterNot { line ->
             val text = line.text.trim()
             text.isCodexBridgeNoise() ||
-                text == "发送到电脑 Codex" ||
-                text == "电脑 Codex 已返回结果" ||
-                text == "电脑 Codex 执行失败" ||
+                text == "\u53D1\u9001\u5230\u7535\u8111 Codex" ||
+                text == "\u7535\u8111 Codex \u5DF2\u8FD4\u56DE\u7ED3\u679C" ||
+                text == "\u7535\u8111 Codex \u6267\u884C\u5931\u8D25" ||
                 text == "Send to desktop Codex" ||
                 text == "Desktop Codex returned a result" ||
                 text == "Desktop Codex failed" ||
@@ -1631,11 +1618,11 @@ private fun codexProgressLines(logLines: List<LogLine>): List<LogLine> =
         }
         .takeLast(6)
 
-private fun LogLine.toCodexStepDisplay(isZh: Boolean): CodexStepDisplay {
+private fun LogLine.toCodexStepDisplay(): CodexStepDisplay {
     val raw = text.trim()
-    val readable = raw.toReadableCodexProgress(isZh)
+    val readable = raw.toReadableCodexProgress()
     val split = readable.split(":", limit = 2)
-    val label = split.firstOrNull()?.trim()?.ifBlank { if (isZh) "处理中" else "Working" } ?: if (isZh) "处理中" else "Working"
+    val label = split.firstOrNull()?.trim()?.ifBlank { "Working" } ?: "Working"
     val detail = details.firstOrNull { it.isNotBlank() && !it.trim().isCodexBridgeNoise() }?.trim()
         ?: split.getOrNull(1)?.trim()
         ?: ""
@@ -1646,17 +1633,17 @@ private fun LogLine.toCodexStepDisplay(isZh: Boolean): CodexStepDisplay {
     )
 }
 
-private fun String.toReadableCodexProgress(isZh: Boolean): String {
+private fun String.toReadableCodexProgress(): String {
     val trimmed = trim()
     return when {
         trimmed.startsWith("exec_command", ignoreCase = true) ->
-            if (isZh) "运行命令:${trimmed.substringAfter(':', "").trim()}" else "Run command:${trimmed.substringAfter(':', "").trim()}"
-        trimmed.startsWith("apply_patch", ignoreCase = true) -> if (isZh) "修改文件" else "Edit files"
-        trimmed.startsWith("web.run", ignoreCase = true) -> if (isZh) "查找资料" else "Search"
+            "Run command:${trimmed.substringAfter(':', "").trim()}"
+        trimmed.startsWith("apply_patch", ignoreCase = true) -> "Edit files"
+        trimmed.startsWith("web.run", ignoreCase = true) -> "Search"
         trimmed.startsWith("read", ignoreCase = true) ->
-            if (isZh) "读取上下文:${trimmed.substringAfter(':', "").trim()}" else "Read context:${trimmed.substringAfter(':', "").trim()}"
+            "Read context:${trimmed.substringAfter(':', "").trim()}"
         trimmed.startsWith("open", ignoreCase = true) ->
-            if (isZh) "查看内容:${trimmed.substringAfter(':', "").trim()}" else "Open content:${trimmed.substringAfter(':', "").trim()}"
+            "Open content:${trimmed.substringAfter(':', "").trim()}"
         else -> trimmed
     }
 }
@@ -1798,7 +1785,6 @@ private fun AgentMessageHeader(
     showModel: Boolean = true,
 ) {
     val c = LocalClawColors.current
-    val appLanguage = LocalAppLanguage.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.padding(bottom = 6.dp),
@@ -1812,7 +1798,7 @@ private fun AgentMessageHeader(
         Spacer(Modifier.width(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = role.localizedName(appLanguage),
+                text = role.name,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = c.text,
@@ -1848,8 +1834,8 @@ private val nakedUiDslPattern = Regex("""\{\s*"type"\s*:\s*"(column|row|card|but
 
 private fun textPreview(text: String, limit: Int = 700): String {
     val withoutUi = text
-        .replace(uiFencePattern, "[交互内容]")
-        .replace(nakedUiDslPattern, "[交互内容]")
+        .replace(uiFencePattern, "[Interactive content]")
+        .replace(nakedUiDslPattern, "[Interactive content]")
         .trim()
     return if (withoutUi.length > limit) withoutUi.take(limit).trimEnd() + "…" else withoutUi
 }
@@ -1877,7 +1863,6 @@ private fun AgentBubble(
 ) {
     val c = LocalClawColors.current
     val context = LocalContext.current
-    val isZh = LocalAppLanguage.current == "zh"
     var stepsExpanded by remember { mutableStateOf(false) }
     var summaryExpanded by remember(summary) { mutableStateOf(false) }
     val isSuccess = logLines.none { it.type == LogType.ERROR }
@@ -1887,13 +1872,12 @@ private fun AgentBubble(
     val shouldCollapseSummary = cleanSummary.length > 420 && !hasRenderableUiDsl
     val visibleSummary = if (shouldCollapseSummary && !summaryExpanded) textPreview(cleanSummary) else cleanSummary
     val runningElapsedLabel = rememberRunningElapsedLabel(runStartedAt)
-    val livePhaseLabel = remember(logLines, attachments, streamingThought, streamingToken, isZh) {
+    val livePhaseLabel = remember(logLines, attachments, streamingThought, streamingToken) {
         inferRunningPhaseLabel(
             logLines = logLines,
             attachments = attachments,
             streamingThought = streamingThought,
             streamingToken = streamingToken,
-            isZh = isZh,
         )
     }
 
@@ -2147,14 +2131,13 @@ private fun inferRunningPhaseLabel(
     attachments: List<SkillAttachment>,
     streamingThought: String,
     streamingToken: String,
-    isZh: Boolean,
 ): String {
-    if (streamingToken.isNotBlank()) return if (isZh) "回复中" else "Replying"
-    if (attachments.isNotEmpty()) return if (isZh) "处理中" else "Working"
-    if (logLines.lastOrNull { it.isRunning }?.type == LogType.ACTION) return if (isZh) "执行中" else "Running"
-    if (streamingThought.isNotBlank()) return if (isZh) "思考中" else "Thinking"
-    if (logLines.any { it.type == LogType.THINKING }) return if (isZh) "思考中" else "Thinking"
-    return if (isZh) "处理中" else "Working"
+    if (streamingToken.isNotBlank()) return "Replying"
+    if (attachments.isNotEmpty()) return "Working"
+    if (logLines.lastOrNull { it.isRunning }?.type == LogType.ACTION) return "Running"
+    if (streamingThought.isNotBlank()) return "Thinking"
+    if (logLines.any { it.type == LogType.THINKING }) return "Thinking"
+    return "Working"
 }
 
 @Composable
@@ -2355,7 +2338,7 @@ private fun ActiveTaskBubble(
                         .clickable { thoughtExpanded = !thoughtExpanded }
                         .padding(horizontal = 8.dp, vertical = 6.dp),
                 ) {
-                    // 运行中思考也只显示“正在做什么”，不再显示字符统计这类无助于理解的噪音。
+                    // While running, show what the agent is doing instead of noisy character counts.
                     val liveThoughtSummary = conciseUserProgress(streamingThought.takeLast(160), limit = 28)
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Box(modifier = Modifier.width(2.dp).height(12.dp).background(c.accent.copy(alpha = 0.6f), RoundedCornerShape(1.dp)))
@@ -2600,7 +2583,6 @@ private fun CollapsibleStepRow(
 @Composable
 private fun LogLineItem(line: LogLine, onSelectStep: (LogLine) -> Unit = {}) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val statusText by produceState(
         initialValue = formatStepStatus(line),
         key1 = line.startedAt,
@@ -2619,7 +2601,7 @@ private fun LogLineItem(line: LogLine, onSelectStep: (LogLine) -> Unit = {}) {
     when (line.type) {
         LogType.THINKING -> {
             var expanded by remember(line.entryId) { mutableStateOf(false) }
-            // 思考卡片的摘要改成“当前思路”，避免把字符数这种机械指标展示给用户。
+            // Summarize thought cards as the current approach rather than mechanical character counts.
             val summary = stepRowSummary(line)
             CollapsibleStepRow(
                 label = stringResource(R.string.chat_f2b9df),
@@ -2648,7 +2630,7 @@ private fun LogLineItem(line: LogLine, onSelectStep: (LogLine) -> Unit = {}) {
             val skillLabel = chineseSkillLabel(line.skillId)
             val accentLong = line.skillId?.let { SkillColors[it] }
             val labelColor = (if (accentLong != null) Color(accentLong) else c.blue).copy(alpha = 0.85f)
-            // 执行动作的摘要统一走用户向提炼函数，避免出现旧的截断工具描述。
+            // Use the user-facing summary helper for actions instead of truncated tool descriptions.
             val summary = stepRowSummary(line)
             CollapsibleStepRow(
                 label = skillLabel,
@@ -2672,7 +2654,7 @@ private fun LogLineItem(line: LogLine, onSelectStep: (LogLine) -> Unit = {}) {
             var expanded by remember(line.entryId) { mutableStateOf(false) }
             val hasImage = line.imageBase64 != null
             val label = if (hasImage) stringResource(R.string.chat_a3d484) else stringResource(R.string.chat_173c2c)
-            // 观察结果优先展示“当前判断”，这样用户能立刻知道这一步看到了什么。
+            // Prefer the current assessment so users can immediately understand the observation.
             val summary = stepRowSummary(line).ifBlank {
                 if (hasImage) stringResource(R.string.chat_b3e19e) else ""
             }
@@ -2713,7 +2695,7 @@ private fun LogLineItem(line: LogLine, onSelectStep: (LogLine) -> Unit = {}) {
                     }
                     val readable = ProgressDetailProtocol.value(line.details, ProgressDetailKey.RESULT)
                         .takeIf { it.isNotBlank() }
-                        // 展开内容也优先用用户向结果描述，避免展示原始返回句式。
+                        // Prefer the user-facing result in expanded content instead of raw response phrasing.
                         ?: fallbackReadableResult(line).takeIf { it.isNotBlank() }
                     if (readable != null) {
                         Text(readable, color = c.subtext.copy(alpha = 0.78f), fontSize = 11.sp, lineHeight = 15.sp)
@@ -2793,7 +2775,6 @@ private fun SkillActionCard(text: String) {
 @Composable
 private fun ShellCommandCard(summary: String, command: String) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
 
     Column(
         modifier = Modifier
@@ -2822,7 +2803,7 @@ private fun ShellCommandCard(summary: String, command: String) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text(if (isZh) "目的" else "Purpose", color = c.accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text("Purpose", color = c.accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             Text(
                 summary,
                 color = c.text,
@@ -2833,11 +2814,7 @@ private fun ShellCommandCard(summary: String, command: String) {
         }
         if (command.isNotBlank()) {
             Text(
-                if (isZh) {
-                    "命令细节已隐藏，点开步骤详情可查看调试信息。"
-                } else {
-                    "Command details are hidden. Open step details to view debug information."
-                },
+                "Command details are hidden. Open step details to view debug information.",
                 color = c.subtext.copy(alpha = 0.62f),
                 fontSize = 10.sp,
                 lineHeight = 14.sp,
@@ -3176,7 +3153,6 @@ private fun ActionCardAttachment(
     onSendGoal: (String) -> Unit = {},
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val actionStateKey = remember(attachment) { attachment.stableUiSignature() }
     var selectedActionMessage by remember(actionStateKey) { mutableStateOf<String?>(null) }
     val accent = when (attachment.tone) {
@@ -3457,7 +3433,6 @@ private fun InputBar(
     onRemoveFile: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val hasAttachment = attachedImageBase64 != null || attachedFile != null
     val sendEnabled = (input.isNotBlank() || hasAttachment) && !isRunning
 
@@ -3563,7 +3538,7 @@ private fun InputBar(
                 placeholder = {
                     Text(
                         if (isRunning && codexDesktopMode) {
-                            if (isZh) "Codex 正在工作中..." else "Codex is working..."
+                            "Codex is working..."
                         }
                         else if (isRunning) str(R.string.input_placeholder_running)
                         else str(R.string.input_placeholder),
