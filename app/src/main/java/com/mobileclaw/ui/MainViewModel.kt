@@ -2648,7 +2648,6 @@ class MainViewModel : ViewModel() {
                     priorContext = execution.agentPriorContext,
                     episodicContext = episodicContext,
                     executionContext = execution.executionContext,
-                    language = config.language,
                     imageBase64 = prepared.attachedImage,
                     role = execution.scheduledRole,
                     userProfileContext = userProfileContext,
@@ -3002,7 +3001,6 @@ class MainViewModel : ViewModel() {
             hasImage = prepared.attachedImage != null,
             hasFile = prepared.attachedFile != null,
             role = scheduledRole,
-            language = config.language,
         )
         val allowedToolIds = resolveAllowedToolIds(route, orchestration.channelDecision.toolHints, contextualGoal)
         return PreparedRunExecution(
@@ -4430,7 +4428,7 @@ For pure conversational replies, greetings, explanations, and simple factual ans
         viewModelScope.launch(Dispatchers.IO) {
             ids.forEach { id -> runCatching { app.miniAppStore.delete(id) } }
             refreshMiniAppsSnapshot()
-            val message = localizedUiText("已删除 ${ids.size} 个 MiniAPP", "Deleted ${ids.size} MiniAPPs")
+            val message = "Deleted ${ids.size} MiniAPPs"
             withContext(Dispatchers.Main) {
                 Toast.makeText(app, message, Toast.LENGTH_SHORT).show()
             }
@@ -4445,12 +4443,12 @@ For pure conversational replies, greetings, explanations, and simple factual ans
             if (file != null) {
                 shareExportedPackage(
                     file = file,
-                    chooserTitle = localizedUiText("导出角色包", "Export role package"),
-                    successMessage = localizedUiText("角色包已生成", "Role package is ready"),
+                    chooserTitle = "Export role package",
+                    successMessage = "Role package is ready",
                 )
             } else {
                 val e = result.exceptionOrNull()
-                showPackageToast(localizedUiText("角色导出失败：", "Role export failed: ") + (e?.message ?: ""))
+                showPackageToast("Role export failed: " + (e?.message ?: ""))
             }
         }
     }
@@ -4462,9 +4460,9 @@ For pure conversational replies, greetings, explanations, and simple factual ans
                 rolePackageStore.importPackage(tempFile)
             }.onSuccess { result ->
                 townStore.ensureRooms(roleManager.all())
-                showPackageToast(localizedUiText("已导入角色：", "Imported role: ") + result.role.name.ifBlank { result.importedId })
+                showPackageToast("Imported role: " + result.role.name.ifBlank { result.importedId })
             }.onFailure { e ->
-                showPackageToast(localizedUiText("角色导入失败：", "Role import failed: ") + (e.message ?: ""))
+                showPackageToast("Role import failed: " + (e.message ?: ""))
             }
         }
     }
@@ -4477,12 +4475,12 @@ For pure conversational replies, greetings, explanations, and simple factual ans
             if (file != null) {
                 shareExportedPackage(
                     file = file,
-                    chooserTitle = localizedUiText("导出 MiniAPP 包", "Export MiniAPP package"),
-                    successMessage = localizedUiText("MiniAPP 包已生成", "MiniAPP package is ready"),
+                    chooserTitle = "Export MiniAPP package",
+                    successMessage = "MiniAPP package is ready",
                 )
             } else {
                 val e = result.exceptionOrNull()
-                showPackageToast(localizedUiText("MiniAPP 导出失败：", "MiniAPP export failed: ") + (e?.message ?: ""))
+                showPackageToast("MiniAPP export failed: " + (e?.message ?: ""))
             }
         }
     }
@@ -4494,9 +4492,9 @@ For pure conversational replies, greetings, explanations, and simple factual ans
                 app.miniAppStore.importPackage(tempFile)
             }.onSuccess { result ->
                 refreshMiniAppsSnapshot()
-                showPackageToast(localizedUiText("已导入 MiniAPP：", "Imported MiniAPP: ") + result.app.title.ifBlank { result.importedId })
+                showPackageToast("Imported MiniAPP: " + result.app.title.ifBlank { result.importedId })
             }.onFailure { e ->
-                showPackageToast(localizedUiText("MiniAPP 导入失败：", "MiniAPP import failed: ") + (e.message ?: ""))
+                showPackageToast("MiniAPP import failed: " + (e.message ?: ""))
             }
         }
     }
@@ -4505,7 +4503,7 @@ For pure conversational replies, greetings, explanations, and simple factual ans
         val importDir = File(app.cacheDir, "workspace_imports").also { it.mkdirs() }
         val outFile = File(importDir, "${prefix}_${System.currentTimeMillis()}.$extension")
         val input = app.contentResolver.openInputStream(uri)
-            ?: error(localizedUiText("无法读取选择的文件", "Unable to read the selected file"))
+            ?: error("Unable to read the selected file")
         input.use { source ->
             outFile.outputStream().use { target -> source.copyTo(target) }
         }
@@ -4531,7 +4529,7 @@ For pure conversational replies, greetings, explanations, and simple factual ans
             }.onFailure { e ->
                 Toast.makeText(
                     app,
-                    localizedUiText("打开分享失败：", "Unable to open share sheet: ") + (e.message ?: ""),
+                    "Unable to open share sheet: " + (e.message ?: ""),
                     Toast.LENGTH_LONG,
                 ).show()
             }
@@ -4542,10 +4540,6 @@ For pure conversational replies, greetings, explanations, and simple factual ans
         withContext(Dispatchers.Main) {
             Toast.makeText(app, message.take(180), Toast.LENGTH_LONG).show()
         }
-    }
-
-    private fun localizedUiText(zh: String, en: String): String {
-        return if (config.snapshot().language.startsWith("zh")) zh else en
     }
 
     fun checkPrivServer() {

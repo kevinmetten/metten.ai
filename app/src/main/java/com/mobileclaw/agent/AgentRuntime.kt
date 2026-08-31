@@ -52,7 +52,6 @@ class AgentRuntime(
         priorContext: String = "",
         episodicContext: String = "",
         executionContext: String = "",
-        language: String = "auto",
         imageBase64: String? = null,
         role: Role? = null,
         userProfileContext: String = "",
@@ -144,7 +143,6 @@ class AgentRuntime(
                 llm = llm,
                 goal = goal,
                 taskType = taskType,
-                language = language,
                 priorContext = runtimePriorContext,
             )
         }
@@ -164,7 +162,6 @@ class AgentRuntime(
             episodicContext = episodicContext,
             semanticContext = semanticContext,
             executionContext = executionContext,
-            language = language,
             role = role,
             userProfileContext = userProfileContext,
             taskType = taskType,

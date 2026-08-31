@@ -88,7 +88,6 @@ fun buildSystemPrompt(
     episodicContext: String = "",
     semanticContext: String = "",
     executionContext: String = "",
-    language: String = "auto",
     role: Role? = null,
     userProfileContext: String = "",   // kept for back-compat but no longer injected; use user_profile tool instead
     taskType: TaskType = TaskType.GENERAL,
@@ -96,7 +95,7 @@ fun buildSystemPrompt(
     roleWorkspaceContext: String = "",
 ): String {
     val skillList = groupedSkillList(skills)
-    val langSection = "\n${responseLanguageSystemInstruction(language)}\n"
+    val langSection = "\n${responseLanguageSystemInstruction()}\n"
     val semanticSection = if (semanticContext.isNotBlank()) "\n## Stored Long-Term Memory\n$semanticContext\n" else ""
     val episodicSection = if (episodicContext.isNotBlank()) "\n## Lessons from Past Tasks\n$episodicContext\n" else ""
     val contextSection = if (priorContext.isNotBlank()) "\n## Conversation History\n$priorContext\n" else ""
@@ -116,7 +115,7 @@ fun buildSystemPrompt(
 ## Execution Channels
 - Web tool channel: gather sources and extract facts.
 - Memory channel: keep previous conclusions and source notes in view.
-- Chat channel: explain results in the configured app language.
+- Chat channel: explain results in English.
 """.trimIndent()
         TaskType.APP_BUILD -> """
 ## Execution Channels

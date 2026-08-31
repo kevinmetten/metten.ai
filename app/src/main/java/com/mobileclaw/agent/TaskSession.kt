@@ -68,7 +68,6 @@ object TaskPlanner {
         llm: LlmGateway,
         goal: String,
         taskType: TaskType,
-        language: String = "en",
         priorContext: String = "",
     ): TaskPlan {
         val prompt = """
@@ -100,7 +99,7 @@ Rules:
 - For PHONE_CONTROL, plan in observe -> act -> verify terms.
 - For WEB_RESEARCH, plan source gathering then synthesis.
 - For APP_BUILD/FILE_CREATE, plan artifact creation and verification.
-- ${responseLanguageShortInstruction(language)}
+- ${responseLanguageShortInstruction()}
 """.trimIndent()
 
         val response = try {

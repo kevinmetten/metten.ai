@@ -44,7 +44,6 @@ class TaskOrchestrator(
         hasImage: Boolean,
         hasFile: Boolean,
         role: Role,
-        language: String = "en",
     ): TaskOrchestration {
         val channelDecision = channelRouter.decide(
             taskType = route.taskType,
@@ -52,7 +51,6 @@ class TaskOrchestrator(
             hasImage = hasImage,
             hasFile = hasFile,
             roleId = role.id,
-            language = language,
             aiPrimary = route.contextualIntent.aiPrimaryChannel,
             aiSupporting = route.contextualIntent.aiSupportingChannels,
             aiToolHints = route.contextualIntent.aiToolHints,

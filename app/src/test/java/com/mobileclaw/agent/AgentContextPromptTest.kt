@@ -8,7 +8,6 @@ import org.junit.Test
 class AgentContextPromptTest {
     private val filePrompt = buildSystemPrompt(
         skills = emptyList(),
-        language = "en",
         taskType = TaskType.FILE_CREATE,
     )
 
@@ -74,7 +73,6 @@ class AgentContextPromptTest {
     fun `phone control architecture and tool ids remain intact`() {
         val phonePrompt = buildSystemPrompt(
             skills = emptyList(),
-            language = "en",
             taskType = TaskType.PHONE_CONTROL,
         )
 

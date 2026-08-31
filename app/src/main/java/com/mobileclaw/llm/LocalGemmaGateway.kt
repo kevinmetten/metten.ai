@@ -12,7 +12,6 @@ import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.ExperimentalApi
-import com.mobileclaw.config.normalizedResponseLanguage
 import com.mobileclaw.config.responseLanguageShortInstruction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
@@ -51,13 +50,8 @@ class LocalGemmaGateway(
         if (request.imageBase64Present() && visionPath == null) {
             val resource = manager.visionResourceFor(modelId)
             val target = resource?.name ?: "${model.family} Web Task"
-            val language = request.preferredLocalLanguage()
             throw IllegalStateException(
-                if (language == "en") {
-                    "Local image understanding requires the vision resource pack first: $target. Download or import the matching .task file in Settings > Local Models."
-                } else {
-                    "本地图片理解需要先安装视觉资源包：$target。请在设置 > 本地模型中下载或导入对应的 .task 文件。"
-                }
+                "Local image understanding requires the vision resource pack first: $target. Download or import the matching .task file in Settings > Local Models."
             )
         }
         val rawContent = if (request.imageBase64Present()) {
@@ -101,7 +95,7 @@ class LocalGemmaGateway(
         val content = rawContent.cleanLocalGeneratedText()
         Log.i("LocalGemma", "request done model=$modelId rawChars=${rawContent.length} cleanChars=${content.length} cost=${System.currentTimeMillis() - startedAt}ms")
         content.toLocalToolResponse(request.tools)
-            ?: content.toLocalToolParseFallback(request.tools, request.preferredLocalLanguage())
+            ?: content.toLocalToolParseFallback(request.tools)
             ?: ChatResponse(content = content.ifBlank { null })
     }
 
@@ -164,35 +158,23 @@ private class LocalRenderedTextAccumulator {
 }
 
 private fun ChatRequest.toLocalVisionPrompt(): String {
-    val language = preferredLocalLanguage()
     val lastTextUser = messages.lastOrNull { it.role == "user" && !it.content.isNullOrBlank() }
     val question = lastTextUser?.content?.takeIf { it.isNotBlank() }?.middleEllipsize(600)
-        ?: if (language == "en") "Understand this image and answer concisely based on what the user may want to know." else "请理解这张图片，并用简体中文简洁回答用户可能想知道的内容。"
-    return if (language == "en") """
+        ?: "Understand this image and answer concisely based on what the user may want to know."
+    return """
 You are MobileClaw's local vision model. Answer only from the provided image and question.
 Do not output template markers such as <turn>, <|turn|>, model, or user.
 If the image is unclear, say that you cannot confirm it; do not invent details.
-${responseLanguageShortInstruction(language)}
+${responseLanguageShortInstruction()}
 
 User question:
 $question
 
 Answer:
-    """.trimIndent() else """
-你是 MobileClaw 的本地视觉模型。请只根据用户提供的图片和问题回答。
-不要输出 <turn>、<|turn|>、model、user 等模板标记。
-如果图片内容不清楚，请说明无法确认，不要编造。
-${responseLanguageShortInstruction(language)}
-
-用户问题:
-$question
-
-回答:
     """.trimIndent()
 }
 
 private fun ChatRequest.toLocalVisionToolPrompt(): String {
-    val language = preferredLocalLanguage()
     val lastTextUser = messages.lastOrNull { it.role == "user" && !it.content.isNullOrBlank() }
     val question = lastTextUser?.content?.takeIf { it.isNotBlank() }?.middleEllipsize(700)
         ?: "Analyze the latest screenshot/image and choose the next action."
@@ -208,7 +190,7 @@ private fun ChatRequest.toLocalVisionToolPrompt(): String {
     return buildString {
         appendLine("You are MobileClaw's local VLM phone-control model.")
         appendLine("Use the provided image/screenshot plus recent context to decide the next concrete action.")
-        appendLine(responseLanguageShortInstruction(language))
+        appendLine(responseLanguageShortInstruction())
         appendLine("Operate in an observe -> act -> verify loop.")
         appendLine("If the latest image shows a phone UI and the goal requires interaction, choose one concrete tool action such as tap, scroll, input_text, long_click, navigate, or phone_status.")
         appendLine("Coordinates from screenshots are image pixels. Use visible target centers from the image for x/y; the app tools map them to device coordinates.")
@@ -246,17 +228,12 @@ class HybridLlmGateway(
     private val canUseCloud: () -> Boolean,
     private val nativeOnly: () -> Boolean,
     private val localToolCallingEnabled: () -> Boolean,
-    private val language: () -> String,
 ) : LlmGateway {
     override suspend fun chat(request: ChatRequest): ChatResponse {
-        val localizedRequest = request.withResponseLanguage(language())
+        val localizedRequest = request.withResponseLanguage()
         if (localizedRequest.callOptions.hasLocalOverride) {
             return runCatching { local.chat(localizedRequest) }.getOrElse { e ->
-                ChatResponse(content = if (normalizedResponseLanguage(language()) == "en") {
-                    "The role-selected local model call failed: ${e.message}\nPlease confirm that the selected local model is installed and runnable."
-                } else {
-                    "角色指定的本地模型调用失败：${e.message}\n请确认该本地模型已经安装并可运行。"
-                })
+                ChatResponse(content = "The role-selected local model call failed: ${e.message}\nPlease confirm that the selected local model is installed and runnable.")
             }
         }
         if (localizedRequest.callOptions.hasCloudOverride) {
@@ -264,11 +241,7 @@ class HybridLlmGateway(
         }
         if (nativeOnly()) {
             return runCatching { local.chat(localizedRequest) }.getOrElse { e ->
-                ChatResponse(content = if (normalizedResponseLanguage(language()) == "en") {
-                    "Only native mode is enabled, so cloud fallback is disabled.\nLocal model call failed: ${e.message}\nPlease confirm that a runnable local model is installed and selected. For image/VLM tasks, make sure the main .litertlm model is usable and its matching vision resource is installed."
-                } else {
-                    "当前处于 Only native 本地模式，已禁止云端回退。\n本地模型调用失败：${e.message}\n请确认已安装并选择可运行的本地模型；如果是图片/VLM，请优先确认主 .litertlm 模型完整可用。"
-                })
+                ChatResponse(content = "Only native mode is enabled, so cloud fallback is disabled.\nLocal model call failed: ${e.message}\nPlease confirm that a runnable local model is installed and selected. For image/VLM tasks, make sure the main .litertlm model is usable and its matching vision resource is installed.")
             }
         }
         val canAttemptLocal = localizedRequest.tools.isEmpty() ||
@@ -301,11 +274,7 @@ class HybridLlmGateway(
                 if (canUseCloud() && !localTokenEmitted) {
                     cloud.chat(localizedRequest)
                 } else {
-                    ChatResponse(content = if (normalizedResponseLanguage(language()) == "en") {
-                        "Local model call failed: ${e.message}\nPlease confirm the local model files are complete, or switch back to a cloud model."
-                    } else {
-                        "本地模型调用失败：${e.message}\n请确认本地模型文件完整，或切回云端模型。"
-                    })
+                    ChatResponse(content = "Local model call failed: ${e.message}\nPlease confirm the local model files are complete, or switch back to a cloud model.")
                 }
             }
         }
@@ -378,18 +347,10 @@ private fun ChatRequest.toLocalPrompt(includeInlineImageNotes: Boolean = true): 
     if (tools.isEmpty()) toLocalDirectChatPrompt(includeInlineImageNotes) else toLocalToolPrompt(includeInlineImageNotes)
 
 private fun ChatRequest.toLocalDirectChatPrompt(includeInlineImageNotes: Boolean = true): String = buildString {
-    val language = preferredLocalLanguage()
-    if (language == "zh") {
-        appendLine("你是 MobileClaw 的本地助手。")
-        appendLine("请直接、自然、简洁地回答用户。")
-        appendLine("不要输出 <turn>、<|turn|>、model、user、assistant 等模板标记。")
-        appendLine("不要生成 JSON、HTML、代码块或 UI 组件，除非用户明确要求。")
-    } else {
-        appendLine("You are MobileClaw's local assistant.")
-        appendLine("Answer directly, naturally, and concisely.")
-        appendLine("Do not output template markers such as <turn>, <|turn|>, model, user, or assistant.")
-        appendLine("Do not generate JSON, HTML, code blocks, or UI components unless explicitly requested.")
-    }
+    appendLine("You are MobileClaw's local assistant.")
+    appendLine("Answer directly, naturally, and concisely.")
+    appendLine("Do not output template markers such as <turn>, <|turn|>, model, user, or assistant.")
+    appendLine("Do not generate JSON, HTML, code blocks, or UI components unless explicitly requested.")
     appendLine()
     messages
         .filter { it.role != "system" && it.toolCallId == null && it.toolCalls == null }
@@ -400,14 +361,10 @@ private fun ChatRequest.toLocalDirectChatPrompt(includeInlineImageNotes: Boolean
             val withImageNote = if (includeInlineImageNotes && !msg.imageBase64.isNullOrBlank()) {
                 "$content\n[Image attached]"
             } else content
-            val role = if (msg.role == "assistant") {
-                if (language == "zh") "助手" else "Assistant"
-            } else {
-                if (language == "zh") "用户" else "User"
-            }
+            val role = if (msg.role == "assistant") "Assistant" else "User"
             appendLine("$role: $withImageNote")
         }
-    append(if (language == "zh") "助手:" else "Assistant:")
+    append("Assistant:")
 }
 
 private fun ChatRequest.toLocalToolPrompt(includeInlineImageNotes: Boolean = true): String = buildString {
@@ -456,19 +413,6 @@ private fun List<com.mobileclaw.llm.Message>.compactForLocalModel(): List<com.mo
     return listOfNotNull(system) + recent
 }
 
-private fun ChatRequest.preferredLocalLanguage(): String {
-    val systemText = messages.filter { it.role == "system" }.joinToString("\n") { it.content.orEmpty() }
-    if (systemText.contains("app language is English", ignoreCase = true) ||
-        systemText.contains("MUST write all user-visible assistant text in English", ignoreCase = true) ||
-        systemText.contains("MUST respond in English", ignoreCase = true)
-    ) return "en"
-    if (systemText.contains("应用语言是中文") ||
-        systemText.contains("简体中文") ||
-        systemText.contains("Simplified Chinese", ignoreCase = true)
-    ) return "zh"
-    val recent = messages.takeLast(4).joinToString("\n") { it.content.orEmpty() }
-    return if (recent.any { it in '\u4e00'..'\u9fff' }) "zh" else "en"
-}
 
 private fun ChatRequest.toLocalVisionContents(prompt: String): Contents {
     val parts = mutableListOf<Content>(Content.Text(prompt))
@@ -506,13 +450,9 @@ internal fun String.toLocalToolResponse(tools: List<ToolDefinition>): ChatRespon
     }.getOrNull()
 }
 
-private fun String.toLocalToolParseFallback(tools: List<ToolDefinition>, language: String): ChatResponse? {
+private fun String.toLocalToolParseFallback(tools: List<ToolDefinition>): ChatResponse? {
     if (tools.isEmpty() || !looksLikeLocalToolDirective()) return null
-    val message = if (language == "en") {
-        "The local model produced an internal tool instruction, but MobileClaw could not match it to an executable tool. Please try rephrasing the task."
-    } else {
-        "本地模型生成了内部工具指令，但 MobileClaw 没能匹配到可执行工具。请换个说法再试一次。"
-    }
+    val message = "The local model produced an internal tool instruction, but MobileClaw could not match it to an executable tool. Please try rephrasing the task."
     return ChatResponse(content = message, finishReason = "tool_parse_failed")
 }
 

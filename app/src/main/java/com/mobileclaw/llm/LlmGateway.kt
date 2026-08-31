@@ -67,8 +67,8 @@ data class ToolProperty(
     val description: String,
 )
 
-fun ChatRequest.withResponseLanguage(language: String): ChatRequest {
-    val instruction = responseLanguageSystemInstruction(language)
+fun ChatRequest.withResponseLanguage(): ChatRequest {
+    val instruction = responseLanguageSystemInstruction()
     val hasSameInstruction = messages.any {
         it.role == "system" && it.content?.contains("## Response Language") == true
     }
