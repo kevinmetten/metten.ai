@@ -22,7 +22,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
 import com.mobileclaw.R
 import com.mobileclaw.ui.ClawSymbolIcon
-import com.mobileclaw.ui.LocalAppLanguage
 import com.mobileclaw.ui.LocalClawColors
 import com.mobileclaw.str
 
@@ -67,25 +66,25 @@ private val HELP_CONTENT = listOf(
             str(R.string.help_da967e),
         ),
     )),
-    HelpSection("code", "Codex 电脑模式", listOf(
+    HelpSection("code", "Codex Desktop Mode", listOf(
         HelpItem(
-            "用途",
-            "打开聊天页顶部的 Codex 开关后，当前会话会直接连接电脑上的 Codex CLI。你在手机里说什么，就原样发给 Codex；Codex 的执行进度和结果会回到当前聊天。",
-            "例：帮我修复当前项目的编译错误",
+            "What it does",
+            "After enabling the Codex switch at the top of the chat page, the current conversation connects directly to Codex CLI on your computer. What you say on the phone is sent to Codex as-is, and Codex progress and results return to this chat.",
+            "Example: Fix the compile errors in the current project",
         ),
         HelpItem(
-            "电脑端准备",
-            "电脑需要先安装并登录 Codex CLI，然后启动 MobileClaw Codex bridge。建议通过同一局域网或 Tailscale 访问，并设置一个长随机 token。",
-            "CODEX_BRIDGE_TOKEN=长随机token CODEX_BRIDGE_HOST=0.0.0.0 CODEX_BRIDGE_PORT=52734 python3 scripts/codex_desktop_bridge.py",
+            "Prepare the computer",
+            "Install and sign in to Codex CLI on your computer, then start the MobileClaw Codex bridge. Use the same LAN or Tailscale, and set a long random token.",
+            "CODEX_BRIDGE_TOKEN=long-random-token CODEX_BRIDGE_HOST=0.0.0.0 CODEX_BRIDGE_PORT=52734 python3 scripts/codex_desktop_bridge.py",
         ),
         HelpItem(
-            "手机端配置",
-            "在用户配置中填写电脑桥地址、token 和项目目录。配置后回到聊天页打开 Codex 开关即可使用。",
-            "codex_desktop_endpoint = http://电脑IP:52734\ncodex_desktop_token = 长随机token\ncodex_desktop_cwd = /电脑上的项目路径",
+            "Configure the phone",
+            "In User Config, enter the desktop bridge URL, token, and project directory. Then return to chat and turn on the Codex switch.",
+            "codex_desktop_endpoint = http://DESKTOP_IP:52734\ncodex_desktop_token = long-random-token\ncodex_desktop_cwd = /path/to/project/on/desktop",
         ),
         HelpItem(
-            "上下文与输出",
-            "同一个 MobileClaw 会话会绑定同一个 Codex thread，后续消息会继续同一上下文。工作步骤会实时显示，最终正文会按块渐进展示。",
+            "Context and output",
+            "Each MobileClaw conversation binds to one Codex thread, so follow-up messages continue the same context. Work steps stream in real time, and the final answer appears progressively in blocks.",
         ),
     )),
     HelpSection("profile", str(R.string.help_19122e), listOf(
@@ -102,21 +101,21 @@ private val HELP_CONTENT = listOf(
             str(R.string.help_385c19),
         ),
     )),
-    HelpSection("download", "发布与更新", listOf(
+    HelpSection("download", "Release and Updates", listOf(
         HelpItem(
-            "更新通道",
-            "MobileClaw 可以检测是否有新版本。先在用户配置中保存更新所需的 App Key 和 API Key。",
-            "app_key = 更新 App Key\napi_key = 更新 API Key",
+            "Update channel",
+            "MobileClaw can check whether a newer version is available. First save the App Key and API Key required for updates in User Config.",
+            "app_key = Update App Key\napi_key = Update API Key",
         ),
         HelpItem(
-            "检测更新",
-            "在“我的”页面点击“检测更新”，MobileClaw 会检查当前版本是否已经是最新。",
-            "检测更新",
+            "Check for updates",
+            "Tap Check for Updates on the Me page. MobileClaw will compare the installed version with the latest available version.",
+            "Check for Updates",
         ),
         HelpItem(
-            "版本规则",
-            "App 版本跟随 Git：versionName 来自 git describe，versionCode 来自 git commit 数。工作区有未提交改动时，版本名会带 dirty。",
-            "例：v0.3.7-dirty / 46",
+            "Version rules",
+            "App versions follow Git: versionName comes from git describe, and versionCode comes from the Git commit count. If the workspace has uncommitted changes, the version name includes dirty.",
+            "Example: v0.3.7-dirty / 46",
         ),
     )),
     HelpSection("roles", str(R.string.help_2a2735), listOf(
@@ -184,58 +183,10 @@ private val HELP_CONTENT = listOf(
     )),
 )
 
-private fun localizedHelpContent(isZh: Boolean): List<HelpSection> {
-    if (isZh) return HELP_CONTENT
-    return HELP_CONTENT.map { section ->
-        when (section.iconKey) {
-            "code" -> HelpSection("code", "Codex Desktop Mode", listOf(
-                HelpItem(
-                    "What it does",
-                    "After enabling the Codex switch at the top of the chat page, the current conversation connects directly to Codex CLI on your computer. What you say on the phone is sent to Codex as-is, and Codex progress and results return to this chat.",
-                    "Example: Fix the compile errors in the current project",
-                ),
-                HelpItem(
-                    "Prepare the computer",
-                    "Install and sign in to Codex CLI on your computer, then start the MobileClaw Codex bridge. Use the same LAN or Tailscale, and set a long random token.",
-                    "CODEX_BRIDGE_TOKEN=long-random-token CODEX_BRIDGE_HOST=0.0.0.0 CODEX_BRIDGE_PORT=52734 python3 scripts/codex_desktop_bridge.py",
-                ),
-                HelpItem(
-                    "Configure the phone",
-                    "In User Config, enter the desktop bridge URL, token, and project directory. Then return to chat and turn on the Codex switch.",
-                    "codex_desktop_endpoint = http://DESKTOP_IP:52734\ncodex_desktop_token = long-random-token\ncodex_desktop_cwd = /path/to/project/on/desktop",
-                ),
-                HelpItem(
-                    "Context and output",
-                    "Each MobileClaw conversation binds to one Codex thread, so follow-up messages continue the same context. Work steps stream in real time, and the final answer appears progressively in blocks.",
-                ),
-            ))
-            "download" -> HelpSection("download", "Release and Updates", listOf(
-                HelpItem(
-                    "Update channel",
-                    "MobileClaw can check whether a newer version is available. First save the App Key and API Key required for updates in User Config.",
-                    "app_key = Update App Key\napi_key = Update API Key",
-                ),
-                HelpItem(
-                    "Check for updates",
-                    "Tap Check for Updates on the Me page. MobileClaw will compare the installed version with the latest available version.",
-                    "Check for Updates",
-                ),
-                HelpItem(
-                    "Version rules",
-                    "App versions follow Git: versionName comes from git describe, and versionCode comes from the Git commit count. If the workspace has uncommitted changes, the version name includes dirty.",
-                    "Example: v0.3.7-dirty / 46",
-                ),
-            ))
-            else -> section
-        }
-    }
-}
-
 @Composable
 fun HelpPage(onBack: () -> Unit) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
-    val helpContent = remember(isZh) { localizedHelpContent(isZh) }
+    val helpContent = HELP_CONTENT
     var expandedSection by remember { mutableStateOf<String?>(helpContent.firstOrNull()?.iconKey) }
 
     Column(
