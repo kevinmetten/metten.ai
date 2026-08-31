@@ -10,8 +10,8 @@ import com.mobileclaw.agent.TaskType
  */
 internal fun TaskRoute.isDirectAttachedImageChatRoute(): Boolean =
     source == TaskRouteSource.AI_ROUTER &&
+        contextualIntent.aiRequiresExecution == false &&
         taskType in setOf(TaskType.CHAT, TaskType.GENERAL) &&
         contextualIntent.aiPrimaryChannel == ChannelType.CHAT &&
         contextualIntent.aiSupportingChannels.isEmpty() &&
-        contextualIntent.aiToolHints.isEmpty() &&
-        contextualIntent.userVisibleSteps.isEmpty()
+        contextualIntent.aiToolHints.isEmpty()
