@@ -38,11 +38,9 @@ class UiBuilderSkill(
     override val meta = SkillMeta(
         id = "ui_builder",
         name = "AI Native Page Builder",
-        nameZh = "AI 原生页面生成",
         description = "Preferred tool for creating user-facing pages inside MobileClaw: native Android pages, dashboards, forms, settings panels, management screens, data viewers, control pages, and lightweight tools. " +
             "Use this before mini-app/HTML unless the user explicitly needs a program/game/custom HTML runtime. Never return page JSON or code in chat; call this tool. " +
             "Pages support real UI components, Android APIs, app context data, HTTP, shell, notifications, sensors. Actions: create | update | analyze_change | inspect_structure | inspect_runtime | validate | list | get | delete | open | pin_shortcut | export_package | import_package | get_guide",
-        descriptionZh = "优先用于创建 MobileClaw 内的用户可见原生页面：AI 页面、仪表盘、表单、设置面板、管理页、数据查看器、控制页和轻量工具。除非用户明确需要程序/小游戏/自定义 HTML 运行时，否则优先用此工具，不要在聊天里返回页面 JSON 或代码。",
         parameters = listOf(
             SkillParam("action", "string", required = true,
                 description = "create | update | analyze_change | validate | list | get | delete | open | pin_shortcut | get_guide"),
@@ -73,7 +71,7 @@ class UiBuilderSkill(
         injectionLevel = 1,
         type = SkillType.NATIVE,
         categories = listOf(SkillToolCategory.ARTIFACT, SkillToolCategory.SKILL),
-        tags = listOf("页面", "应用"),
+        tags = listOf("Pages", "Apps"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -115,8 +113,8 @@ class UiBuilderSkill(
                     "known_bugs" to page.spec.knownBugs,
                     "non_goals" to page.spec.nonGoals,
                     "last_diff_summary" to page.spec.lastDiffSummary,
-                    "patch_focus" to inferPatchFocus(changeRequest),
-                    "change_type" to inferChangeType(changeRequest),
+                    "patch_focus" to ArtifactChangeClassifier.patchFocus(changeRequest),
+                    "change_type" to ArtifactChangeClassifier.changeType(changeRequest),
                     "patch_brief" to "update only the smallest affected part, preserve all unrelated behavior, and keep the page runnable after the edit",
                     "change_request" to changeRequest,
                     "recommended_mode" to "patch",
@@ -509,28 +507,6 @@ class UiBuilderSkill(
         }.take(400)
     }
 
-    private fun inferPatchFocus(changeRequest: String): String {
-        val text = changeRequest.lowercase()
-        return when {
-            text.contains("ui") || text.contains("样式") || text.contains("布局") || text.contains("美化") -> "ui_surface"
-            text.contains("bug") || text.contains("修复") || text.contains("错误") -> "bug_fix"
-            text.contains("功能") || text.contains("按钮") || text.contains("交互") || text.contains("逻辑") -> "behavior"
-            text.contains("文案") || text.contains("文字") || text.contains("翻译") -> "copywriting"
-            else -> "targeted_patch"
-        }
-    }
-
-    private fun inferChangeType(changeRequest: String): String {
-        val text = changeRequest.lowercase()
-        return when {
-            text.contains("新增") || text.contains("添加") || text.contains("增加") -> "extend"
-            text.contains("删除") || text.contains("移除") -> "remove"
-            text.contains("修复") || text.contains("bug") || text.contains("错误") -> "fix"
-            text.contains("优化") || text.contains("调整") || text.contains("改") -> "refine"
-            else -> "modify"
-        }
-    }
-
     private fun validateNativePageRuntime(layoutJson: String, actionsJson: String): List<String> {
         val issues = mutableListOf<String>()
         val merged = (layoutJson + "\n" + actionsJson).lowercase()
@@ -699,7 +675,7 @@ Body stored in state[result_key]; use ${'$'}{state.response} in layout.
 
 ### AI / Default LLM Gateway
 Request AI through MobileClaw's default gateway config. Never put API keys or OpenAI-compatible endpoints into page JSON.
-{"type":"ai_chat","prompt":"请总结：${'$'}{input.text}","system":"你是简洁可靠的助手","result_key":"summary"}
+{"type":"ai_chat","prompt":"Summarize: ${'$'}{input.text}","system":"You are a concise and reliable assistant","result_key":"summary"}
 Result text is stored in state[result_key]; full fields are available via ${'$'}{result.text}, ${'$'}{result.ok}, ${'$'}{result.error}.
 
 ### Background / Parallel Execution
@@ -708,7 +684,7 @@ Start another named action without blocking the current action:
 Run independent steps concurrently and wait for all to finish:
 {"type":"parallel","steps":[
   {"type":"http","url":"https://api.example.com/a","method":"GET","result_key":"a"},
-  {"type":"ai_chat","prompt":"生成一句欢迎语","result_key":"welcome"}
+  {"type":"ai_chat","prompt":"Generate a welcome message","result_key":"welcome"}
 ]}
 
 ### Shell
@@ -730,18 +706,18 @@ Use app_context(domain="skills") first if you need the current skill inventory.
 {"type":"skill_call","skill":"web_search","params":{"query":"${'$'}{input.query}"},"result_key":"search_out"}
 
 ### Android System
-{"type":"notify","title":"完成","body":"${'$'}{state.result}"}
+{"type":"notify","title":"Done","body":"${'$'}{state.result}"}
 {"type":"vibrate","ms":100}
 {"type":"toast","text":"${'$'}{state.msg}"}
 {"type":"launch_app","package":"com.tencent.wechat"}
 {"type":"open_url","url":"https://example.com"}
-{"type":"share","text":"${'$'}{state.result}","title":"分享"}
+{"type":"share","text":"${'$'}{state.result}","title":"Share"}
 {"type":"clipboard_set","text":"${'$'}{state.result}"}
 {"type":"clipboard_get","result_key":"pasted"}
 {"type":"call_phone","number":"10086"}
-{"type":"send_sms","number":"10086","body":"查询余额"}
-{"type":"set_alarm","hour":9,"minute":0,"message":"早会"}
-{"type":"open_map","query":"北京故宫"}
+{"type":"send_sms","number":"10086","body":"Check account balance"}
+{"type":"set_alarm","hour":9,"minute":0,"message":"Morning meeting"}
+{"type":"open_map","query":"Forbidden City, Beijing"}
 {"type":"send_intent","action":"android.intent.action.VIEW","data":"geo:39.9,116.4"}
 {"type":"navigate_page","id":"other_page_id"}
 
@@ -761,20 +737,20 @@ ${'$'}{state.x == "done"}   — equality
 
 ## Full Example — Weather Dashboard
 
-ui_builder(action=create, title="天气查询", icon="weather",
-  state={"city":"北京","weather":"点击查询"},
+ui_builder(action=create, title="Weather lookup", icon="weather",
+  state={"city":"Beijing","weather":"Tap to search"},
   layout={"type":"column","gap":12,"padding":16,"children":[
-    {"type":"text","content":"天气查询","bold":true,"size":18},
-    {"type":"input","key":"city","placeholder":"输入城市名","label":"城市"},
-    {"type":"button","label":"查询天气","action":"fetch","style":"filled"},
-    {"type":"card","title":"结果","children":[
+    {"type":"text","content":"Weather lookup","bold":true,"size":18},
+    {"type":"input","key":"city","placeholder":"Enter a city name","label":"City"},
+    {"type":"button","label":"Check weather","action":"fetch","style":"filled"},
+    {"type":"card","title":"Result","children":[
       {"type":"text","content":"${'$'}{state.weather}","size":16}
     ]}
   ]},
   actions={"fetch":[
-    {"type":"set_state","key":"weather","value":"查询中..."},
+    {"type":"set_state","key":"weather","value":"Searching..."},
     {"type":"http","url":"https://wttr.in/${'$'}{input.city}?format=3&lang=zh","method":"GET","result_key":"weather"},
-    {"type":"toast","text":"查询完成"}
+    {"type":"toast","text":"Search complete"}
   ]}
 )
 

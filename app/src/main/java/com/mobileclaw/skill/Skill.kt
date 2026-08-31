@@ -14,8 +14,6 @@ data class SkillMeta(
     val internalTool: Boolean = false,  // true=AI-owned tool, not shown as a user-installable skill
     val minApiLevel: Int = 30,
     val version: String = "1.0.0",
-    val nameZh: String? = null,
-    val descriptionZh: String? = null,
     val tags: List<String> = emptyList(),
     val categories: List<SkillToolCategory> = emptyList(),
 )

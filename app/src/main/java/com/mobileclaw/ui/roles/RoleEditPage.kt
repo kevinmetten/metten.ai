@@ -73,7 +73,6 @@ import com.mobileclaw.agent.TaskType
 import com.mobileclaw.skill.SkillMeta
 import com.mobileclaw.ui.CropImageDialog
 import com.mobileclaw.ui.GradientAvatar
-import com.mobileclaw.ui.LocalAppLanguage
 import com.mobileclaw.ui.LocalClawColors
 import com.mobileclaw.ui.RoleWorkspaceFileUi
 import com.mobileclaw.ui.chat.runtime.RoleChatControlPlanCompiler
@@ -109,7 +108,6 @@ fun RoleEditPage(
 ) {
     val context = LocalContext.current
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val gson = remember { GsonBuilder().setPrettyPrinting().create() }
 
     var name by remember { mutableStateOf(initial.name) }
@@ -214,12 +212,12 @@ fun RoleEditPage(
     fun saveRole() {
         val roleToSave = if (editMode == RoleEditMode.FULL) {
             val parsed = runCatching { gson.fromJson(rawDefinition, Role::class.java) }.getOrElse {
-                fullEditError = if (isZh) "定义不是有效 JSON" else "Definition is not valid JSON"
+                fullEditError = "Definition is not valid JSON"
                 return
             }
             val parsedName = runCatching { parsed.name.trim() }.getOrDefault("")
             if (parsedName.isBlank()) {
-                fullEditError = if (isZh) "角色名称不能为空" else "Role name cannot be empty"
+                fullEditError = "Role name cannot be empty"
                 return
             }
             parsed.copy(
@@ -289,14 +287,14 @@ fun RoleEditPage(
             )
 
             if (editMode == RoleEditMode.FULL) {
-                RoleEditSectionTitle(if (isZh) "完整定义" else "Full definition")
+                RoleEditSectionTitle("Full definition")
                 OutlinedTextField(
                     value = rawDefinition,
                     onValueChange = {
                         rawDefinition = it
                         fullEditError = ""
                     },
-                    label = { Text(if (isZh) "Role JSON" else "Role JSON") },
+                    label = { Text("Role JSON") },
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 18,
                     maxLines = 32,
@@ -307,13 +305,13 @@ fun RoleEditPage(
                     Text(fullEditError, color = c.red, fontSize = 12.sp, lineHeight = 16.sp)
                 }
                 Text(
-                    text = if (isZh) "保存会保留当前角色 ID，其他字段按定义写入。" else "Save keeps this role ID and writes the rest of the definition.",
+                    text = "Save keeps this role ID and writes the rest of the definition.",
                     color = c.subtext,
                     fontSize = 11.sp,
                     lineHeight = 15.sp,
                 )
                 Text(
-                    text = if (isZh) "Chat 控制协议保存在角色工作空间的 chat_protocol.md，保存时会一起写入。" else "Chat control is stored in role workspace chat_protocol.md and is saved together.",
+                    text = "Chat control is stored in role workspace chat_protocol.md and is saved together.",
                     color = c.subtext,
                     fontSize = 11.sp,
                     lineHeight = 15.sp,
@@ -387,7 +385,7 @@ fun RoleEditPage(
                 )
             }
 
-            RoleEditSectionTitle(if (isZh) "Chat 控制" else "Chat control")
+            RoleEditSectionTitle("Chat control")
             RoleChatControlEditor(
                 expanded = chatControlExpanded,
                 onToggleExpanded = { chatControlExpanded = !chatControlExpanded },
@@ -420,7 +418,6 @@ fun RoleEditPage(
                     role = draftRole(),
                     markdown = if (rawProtocolExpanded) protocolMarkdown else currentProtocolMarkdown(),
                     skills = allSkills,
-                    isZh = isZh,
                 ),
             )
 
@@ -477,7 +474,7 @@ fun RoleEditPage(
                                     }
                                 }
                                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    Text(skill.nameZh ?: skill.name, fontSize = 14.sp, lineHeight = 18.sp, color = c.text, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(skill.name, fontSize = 14.sp, lineHeight = 18.sp, color = c.text, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text(skill.id, fontSize = 11.sp, lineHeight = 14.sp, color = c.subtext, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                             }
@@ -509,7 +506,6 @@ private fun RoleEditTopBar(
     onSave: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -532,7 +528,7 @@ private fun RoleEditTopBar(
                 horizontalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 Icon(Icons.Filled.ArrowBack, contentDescription = null, tint = c.text, modifier = Modifier.size(18.dp))
-                Text(if (isZh) "退出" else "Exit", color = c.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Text("Exit", color = c.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
             }
             Box(
                 modifier = Modifier.weight(1f),
@@ -577,10 +573,9 @@ private fun RoleIdentityEditorPanel(
     onResetAvatar: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val displayName = name.trim().ifBlank { str(R.string.role_card_unnamed) }
     val displayDescription = description.trim().ifBlank {
-        if (isZh) "描述这个角色负责什么、擅长什么。" else "Describe what this role owns and does well."
+        "Describe what this role owns and does well."
     }
     Column(
         modifier = Modifier
@@ -590,7 +585,7 @@ private fun RoleIdentityEditorPanel(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(
-            text = if (isZh) "角色形象" else "Role identity",
+            text = "Role identity",
             color = c.text,
             fontSize = 15.sp,
             fontWeight = FontWeight.SemiBold,
@@ -645,13 +640,13 @@ private fun RoleIdentityEditorPanel(
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     RoleIdentityPillButton(
-                        text = if (isZh) "选择图片" else "Choose",
+                        text = "Choose",
                         dark = false,
                         onClick = onChooseImage,
                         modifier = Modifier.weight(1f),
                     )
                     RoleIdentityPillButton(
-                        text = if (isZh) "默认" else "Default",
+                        text = "Default",
                         dark = true,
                         enabled = isImageAvatar,
                         onClick = onResetAvatar,
@@ -742,7 +737,6 @@ private fun RoleEditModeSwitch(
     onSelect: (RoleEditMode) -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -765,8 +759,8 @@ private fun RoleEditModeSwitch(
             ) {
                 Text(
                     text = when (mode) {
-                        RoleEditMode.QUICK -> if (isZh) "快速编辑" else "Quick edit"
-                        RoleEditMode.FULL -> if (isZh) "完整定义" else "Full definition"
+                        RoleEditMode.QUICK -> "Quick edit"
+                        RoleEditMode.FULL -> "Full definition"
                     },
                     color = if (active) c.bg else c.subtext,
                     fontSize = 13.sp,
@@ -831,7 +825,6 @@ private fun RoleModelBindingPanel(
     onFetchGatewayModels: (String) -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val gateways = configSnapshot.gateways
     val selectedGateway = gateways.firstOrNull { it.id == selectedGatewayId }
     val modelGateway = selectedGateway ?: configSnapshot.activeGateway
@@ -853,20 +846,20 @@ private fun RoleModelBindingPanel(
         }
     }
 
-    RoleEditSectionCard(if (isZh) "模型调用" else "Model routing") {
+    RoleEditSectionCard("Model routing") {
         ExposedDropdownMenuBox(
             expanded = gatewayDropdownExpanded,
             onExpandedChange = { gatewayDropdownExpanded = it },
         ) {
             OutlinedTextField(
                 value = when {
-                    gateways.isEmpty() -> if (isZh) "还没有配置网关" else "No gateway configured"
+                    gateways.isEmpty() -> "No gateway configured"
                     selectedGateway != null -> selectedGateway.name
-                    else -> if (isZh) "跟随默认网关" else "Follow default gateway"
+                    else -> "Follow default gateway"
                 },
                 onValueChange = {},
                 readOnly = true,
-                label = { Text(if (isZh) "网关" else "Gateway") },
+                label = { Text("Gateway") },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = gatewayDropdownExpanded) },
                 modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
                 shape = RoundedCornerShape(16.dp),
@@ -879,8 +872,8 @@ private fun RoleModelBindingPanel(
                 DropdownMenuItem(
                     text = {
                         Column {
-                            Text(if (isZh) "跟随默认网关" else "Follow default gateway", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                            Text(configSnapshot.activeGateway?.name.orEmpty().ifBlank { if (isZh) "使用全局当前配置" else "Use the current global config" }, fontSize = 11.sp, color = c.subtext)
+                            Text("Follow default gateway", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Text(configSnapshot.activeGateway?.name.orEmpty().ifBlank { "Use the current global config" }, fontSize = 11.sp, color = c.subtext)
                         }
                     },
                     onClick = {
@@ -894,7 +887,7 @@ private fun RoleModelBindingPanel(
                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(gateway.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(
-                                    listOf(gateway.endpoint.hostLabel(), gateway.defaultChatModel().ifBlank { if (isZh) "默认模型" else "Default model" })
+                                    listOf(gateway.endpoint.hostLabel(), gateway.defaultChatModel().ifBlank { "Default model" })
                                         .filter { it.isNotBlank() }
                                         .joinToString(" · "),
                                     fontSize = 11.sp,
@@ -915,7 +908,7 @@ private fun RoleModelBindingPanel(
 
         if (gateways.isEmpty()) {
             Text(
-                text = if (isZh) "请先在 AI 基础配置里添加 OpenAI 兼容网关。" else "Add an OpenAI-compatible gateway in AI basic settings first.",
+                text = "Add an OpenAI-compatible gateway in AI basic settings first.",
                 color = c.subtext,
                 fontSize = 11.sp,
                 lineHeight = 15.sp,
@@ -926,11 +919,11 @@ private fun RoleModelBindingPanel(
         when {
             loadingModels -> {
                 OutlinedTextField(
-                    value = if (isZh) "正在读取模型列表..." else "Loading models...",
+                    value = "Loading models...",
                     onValueChange = {},
                     readOnly = true,
                     enabled = false,
-                    label = { Text(if (isZh) "模型" else "Model") },
+                    label = { Text("Model") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
                     colors = roleEditorTextFieldColors(c),
@@ -943,11 +936,11 @@ private fun RoleModelBindingPanel(
                 ) {
                     OutlinedTextField(
                         value = selectedModel.ifBlank {
-                            modelGateway?.defaultChatModel().orEmpty().ifBlank { if (isZh) "使用网关默认模型" else "Use gateway default" }
+                            modelGateway?.defaultChatModel().orEmpty().ifBlank { "Use gateway default" }
                         },
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text(if (isZh) "模型" else "Model") },
+                        label = { Text("Model") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelDropdownExpanded) },
                         modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
                         shape = RoundedCornerShape(16.dp),
@@ -958,7 +951,7 @@ private fun RoleModelBindingPanel(
                         onDismissRequest = { modelDropdownExpanded = false },
                     ) {
                         DropdownMenuItem(
-                            text = { Text(if (isZh) "使用网关默认模型" else "Use gateway default", fontSize = 13.sp) },
+                            text = { Text("Use gateway default", fontSize = 13.sp) },
                             onClick = {
                                 onModelSelect("")
                                 modelDropdownExpanded = false
@@ -981,7 +974,7 @@ private fun RoleModelBindingPanel(
                     OutlinedTextField(
                         value = selectedModel,
                         onValueChange = onModelSelect,
-                        label = { Text(if (isZh) "模型 ID" else "Model ID") },
+                        label = { Text("Model ID") },
                         placeholder = { Text("gpt-4o", fontSize = 12.sp, color = c.subtext) },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
@@ -1002,9 +995,9 @@ private fun RoleModelBindingPanel(
 
         val summaryGateway = selectedGateway?.name
             ?: configSnapshot.activeGateway?.name
-            ?: if (isZh) "默认网关" else "Default gateway"
+            ?: "Default gateway"
         val summaryModel = selectedModel.ifBlank {
-            modelGateway?.defaultChatModel().orEmpty().ifBlank { if (isZh) "默认模型" else "Default model" }
+            modelGateway?.defaultChatModel().orEmpty().ifBlank { "Default model" }
         }
         Row(
             modifier = Modifier
@@ -1103,7 +1096,6 @@ private fun RoleChatControlEditor(
     controlSummary: List<String>,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1119,20 +1111,20 @@ private fun RoleChatControlEditor(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = if (isZh) "角色如何驱动 Chat" else "How this role drives chat",
+                    text = "How this role drives chat",
                     color = c.text,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    text = if (isZh) "这会直接写入 chat_protocol.md，并参与每次对话执行计划。" else "Saved to chat_protocol.md and compiled into every chat run.",
+                    text = "Saved to chat_protocol.md and compiled into every chat run.",
                     color = c.subtext,
                     fontSize = 11.sp,
                     lineHeight = 15.sp,
                 )
             }
             Text(
-                text = if (expanded) if (isZh) "收起" else "Hide" else if (isZh) "编辑" else "Edit",
+                text = if (expanded) "Hide" else "Edit",
                 color = c.text,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -1157,9 +1149,9 @@ private fun RoleChatControlEditor(
         TextButton(onClick = onToggleRaw, modifier = Modifier.align(Alignment.Start)) {
             Text(
                 text = if (rawExpanded) {
-                    if (isZh) "切回表单编辑" else "Use form editor"
+                    "Use form editor"
                 } else {
-                    if (isZh) "编辑完整协议 Markdown" else "Edit full protocol Markdown"
+                    "Edit full protocol Markdown"
                 },
                 color = c.text,
                 fontSize = 12.sp,
@@ -1184,37 +1176,37 @@ private fun RoleChatControlEditor(
                 onSelect = onExecutionPreferenceChange,
             )
             RoleProtocolField(
-                label = if (isZh) "意图识别" else "Input understanding",
+                label = "Input understanding",
                 value = inputUnderstanding,
                 onValueChange = onInputUnderstandingChange,
                 minLines = 3,
             )
             RoleProtocolField(
-                label = if (isZh) "上下文读取" else "Context reading",
+                label = "Context reading",
                 value = contextReading,
                 onValueChange = onContextReadingChange,
                 minLines = 3,
             )
             RoleProtocolField(
-                label = if (isZh) "记忆策略" else "Memory policy",
+                label = "Memory policy",
                 value = memoryPolicy,
                 onValueChange = onMemoryPolicyChange,
                 minLines = 3,
             )
             RoleProtocolField(
-                label = if (isZh) "工具/技能选择" else "Tool and skill policy",
+                label = "Tool and skill policy",
                 value = skillPolicy,
                 onValueChange = onSkillPolicyChange,
                 minLines = 4,
             )
             RoleProtocolField(
-                label = if (isZh) "回复方式" else "Response policy",
+                label = "Response policy",
                 value = responsePolicy,
                 onValueChange = onResponsePolicyChange,
                 minLines = 3,
             )
             RoleProtocolField(
-                label = if (isZh) "沉淀与持久化" else "Persistence policy",
+                label = "Persistence policy",
                 value = persistencePolicy,
                 onValueChange = onPersistencePolicyChange,
                 minLines = 3,
@@ -1250,10 +1242,9 @@ private fun RoleExecutionPreferenceSelector(
     onSelect: (RoleExecutionPreference) -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-            text = if (isZh) "执行倾向" else "Execution preference",
+            text = "Execution preference",
             color = c.subtext,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
@@ -1279,7 +1270,7 @@ private fun RoleExecutionPreferenceSelector(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = preference.label(isZh),
+                        text = preference.label(),
                         color = if (active) c.bg else c.subtext,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Black,
@@ -1291,10 +1282,10 @@ private fun RoleExecutionPreferenceSelector(
     }
 }
 
-private fun RoleExecutionPreference.label(isZh: Boolean): String = when (this) {
-    RoleExecutionPreference.AUTO -> if (isZh) "自动" else "Auto"
-    RoleExecutionPreference.DIRECT_FIRST -> if (isZh) "直接优先" else "Direct"
-    RoleExecutionPreference.AGENT_FIRST -> if (isZh) "执行优先" else "Agent"
+private fun RoleExecutionPreference.label(): String = when (this) {
+    RoleExecutionPreference.AUTO -> "Auto"
+    RoleExecutionPreference.DIRECT_FIRST -> "Direct"
+    RoleExecutionPreference.AGENT_FIRST -> "Agent"
 }
 
 @Composable
@@ -1398,7 +1389,6 @@ private fun buildRoleControlPreview(
     role: Role,
     markdown: String,
     skills: List<SkillMeta>,
-    isZh: Boolean,
 ): List<String> {
     val protocol = RoleExecutionProtocolParser.parse(role.id, markdown)
     val profile = RoleRuntimeProfile(
@@ -1420,22 +1410,10 @@ private fun buildRoleControlPreview(
     val plan = RoleChatControlPlanCompiler.compile(profile)
     val readFiles = plan.contextPolicy.readRoleFiles.joinToString(", ").ifBlank { "none" }
     val preferredTools = plan.toolPolicy.preferredToolIds.joinToString(", ").ifBlank {
-        if (isZh) "按任务选择" else "task-based"
+        "task-based"
     }
-    val modeHint = plan.executionModeHint?.name ?: if (isZh) "自动" else "auto"
-    return if (isZh) {
-        listOf(
-            "执行倾向：$modeHint",
-            "意图理解：短句 ${plan.intentPolicy.shortFollowUpMode}；产物 ${plan.intentPolicy.artifactReferenceMode}",
-            "回复方式：${plan.responsePolicy.style}；UI ${if (plan.responsePolicy.allowUiBlocks) "允许" else "默认关闭"}",
-            "会读取：$readFiles",
-            "最近对话：${if (plan.contextPolicy.includeRecentMessages) "纳入" else "按需/默认不强制"}；用户记忆：${if (plan.contextPolicy.includeUserMemory) "纳入" else "不读取"}",
-            "技能选择：$preferredTools；MCP：${if (plan.toolPolicy.allowMcp) "允许" else "禁用"}",
-            "记忆写入：角色 ${if (plan.persistencePolicy.allowRoleMemoryWrite) "允许" else "不主动"} / 用户 ${if (plan.persistencePolicy.allowUserMemoryWrite) "允许" else "禁用"}",
-            "过程展示：工具 ${if (plan.visibilityPolicy.showTimelineForToolCalls) "展示" else "低打扰"} / 记忆 ${if (plan.visibilityPolicy.showTimelineForMemoryWrites) "展示" else "隐藏"}",
-        )
-    } else {
-        listOf(
+    val modeHint = plan.executionModeHint?.name ?: "auto"
+    return listOf(
             "Execution hint: $modeHint",
             "Intent: short ${plan.intentPolicy.shortFollowUpMode}; artifact ${plan.intentPolicy.artifactReferenceMode}",
             "Response: ${plan.responsePolicy.style}; UI ${if (plan.responsePolicy.allowUiBlocks) "allowed" else "off by default"}",
@@ -1445,5 +1423,4 @@ private fun buildRoleControlPreview(
             "Memory writes: role ${if (plan.persistencePolicy.allowRoleMemoryWrite) "allowed" else "passive"} / user ${if (plan.persistencePolicy.allowUserMemoryWrite) "allowed" else "disabled"}",
             "Timeline: tools ${if (plan.visibilityPolicy.showTimelineForToolCalls) "shown" else "quiet"} / memory ${if (plan.visibilityPolicy.showTimelineForMemoryWrites) "shown" else "hidden"}",
         )
-    }
 }

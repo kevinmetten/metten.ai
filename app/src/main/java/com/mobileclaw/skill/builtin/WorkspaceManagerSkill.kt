@@ -15,9 +15,7 @@ class WorkspaceManagerSkill(
     override val meta = SkillMeta(
         id = "workspace_manager",
         name = "Workspace Manager",
-        nameZh = "工作空间管理",
         description = "Manage the agent's internal workspaces. Use this to create, inspect, summarize, and persist task-scoped working context, notes, checkpoints, and artifact links.",
-        descriptionZh = "管理 AI 自己的内部工作空间，用于缓存任务上下文、中间笔记、检查点和产物关联。",
         parameters = listOf(
             SkillParam("action", "string", "create | get | list | summarize | current_state | write_note | write_json | read_file | link_artifact | checkpoint | record_run"),
             SkillParam("workspace_id", "string", "Workspace id", required = false),

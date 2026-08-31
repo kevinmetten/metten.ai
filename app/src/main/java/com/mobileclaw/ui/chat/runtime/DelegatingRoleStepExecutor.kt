@@ -60,7 +60,7 @@ private fun unsupportedHandler(action: RoleStepAction): RoleStepHandler = { _, d
     RoleStepResult(
         success = false,
         summary = "${action.title} is not wired yet.",
-        userSummary = "当前步骤还没有接入：${action.title}",
+        userSummary = "This step is not implemented yet: ${action.title}",
         errorMessage = "Role step action '${action.id}' is not wired yet. purpose=${decision.purpose}",
     )
 }

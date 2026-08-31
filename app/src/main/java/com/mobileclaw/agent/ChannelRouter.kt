@@ -32,7 +32,6 @@ class ChannelRouter {
         hasImage: Boolean = false,
         hasFile: Boolean = false,
         roleId: String = "general",
-        @Suppress("UNUSED_PARAMETER") language: String = "en",
         aiPrimary: ChannelType? = null,
         aiSupporting: List<ChannelType> = emptyList(),
         aiToolHints: List<String> = emptyList(),

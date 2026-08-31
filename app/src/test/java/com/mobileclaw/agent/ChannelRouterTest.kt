@@ -58,7 +58,7 @@ class ChannelRouterTest {
 
     @Test
     fun `supporting channels and summary remain deterministic English`() {
-        val phone = router.decide(TaskType.PHONE_CONTROL, goal = "Open Gmail", language = "zh")
+        val phone = router.decide(TaskType.PHONE_CONTROL, goal = "Open Gmail",)
         assertTrue(ChannelType.MEMORY in phone.supporting)
         assertTrue(ChannelType.PLAN in phone.supporting)
         assertTrue(phone.userVisibleSummary.startsWith("Primary channel: Phone control"))

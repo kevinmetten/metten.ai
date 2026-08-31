@@ -39,10 +39,8 @@ class UserProfileSkill(
         ),
         type = SkillType.NATIVE,
         injectionLevel = 1,
-        nameZh = "用户画像",
-        descriptionZh = "读取或更新用户的持久化画像信息（职业、兴趣、习惯等）。",
         categories = listOf(SkillToolCategory.MEMORY),
-        tags = listOf("记忆"),
+        tags = listOf("Memory"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -65,7 +63,7 @@ class UserProfileSkill(
                     ?: return SkillResult(false, "value is required for update")
                 val storageKey = if (key.startsWith(PROFILE_PREFIX)) key else "$PROFILE_PREFIX$key"
                 memory.set(key = storageKey, value = value, source = "user_profile_skill")
-                userConfig?.let { MemoryWriter(memory, it).syncUserConfig("user.${storageKey.removePrefix(PROFILE_PREFIX)}", value, "由用户画像同步") }
+                userConfig?.let { MemoryWriter(memory, it).syncUserConfig("user.${storageKey.removePrefix(PROFILE_PREFIX)}", value, "Synced from user profile") }
                 SkillResult(true, "Profile updated: $key = $value")
             }
             "delete" -> {

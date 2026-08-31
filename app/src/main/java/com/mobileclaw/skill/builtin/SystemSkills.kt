@@ -28,9 +28,7 @@ class ClipboardSkill : Skill {
     override val meta = SkillMeta(
         id = "clipboard",
         name = "Clipboard",
-        nameZh = "剪贴板",
         description = "Read from or write to the system clipboard. Action 'get' returns current clipboard text. Action 'set' writes text to clipboard.",
-        descriptionZh = "读写系统剪贴板。action=get 返回当前剪贴板内容，action=set 将文本写入剪贴板。",
         parameters = listOf(
             SkillParam("action", "string", "'get' to read clipboard, 'set' to write to clipboard"),
             SkillParam("text", "string", "Text to write (required when action=set)", required = false),
@@ -39,7 +37,7 @@ class ClipboardSkill : Skill {
         injectionLevel = 1,
         isBuiltin = true,
         categories = listOf(SkillToolCategory.SYSTEM, SkillToolCategory.CHAT),
-        tags = listOf("系统"),
+        tags = listOf("System"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -72,9 +70,7 @@ class ShowToastSkill : Skill {
     override val meta = SkillMeta(
         id = "show_toast",
         name = "Show Toast",
-        nameZh = "显示提示",
         description = "Shows a brief toast notification on screen. Useful for notifying the user of background task results.",
-        descriptionZh = "在屏幕上显示短暂的 Toast 提示，适合用于后台任务完成后通知用户。",
         parameters = listOf(
             SkillParam("message", "string", "The message to display (max 200 characters)"),
         ),
@@ -82,7 +78,7 @@ class ShowToastSkill : Skill {
         injectionLevel = 1,
         isBuiltin = true,
         categories = listOf(SkillToolCategory.SYSTEM, SkillToolCategory.CHAT),
-        tags = listOf("系统"),
+        tags = listOf("System"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -101,15 +97,13 @@ class DeviceInfoSkill : Skill {
     override val meta = SkillMeta(
         id = "device_info",
         name = "Device Info",
-        nameZh = "设备信息",
         description = "Returns device hardware info, battery level, network type, and screen dimensions.",
-        descriptionZh = "返回设备型号、电量、网络类型、屏幕尺寸等信息。",
         parameters = emptyList(),
         type = SkillType.NATIVE,
         injectionLevel = 1,
         isBuiltin = true,
         categories = listOf(SkillToolCategory.SYSTEM),
-        tags = listOf("系统"),
+        tags = listOf("System"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult = withContext(Dispatchers.IO) {

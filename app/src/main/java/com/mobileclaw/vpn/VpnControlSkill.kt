@@ -24,15 +24,13 @@ class VpnControlSkill(
         ),
         type = SkillType.NATIVE,
         injectionLevel = 0,
-        nameZh = "VPN 控制",
-        descriptionZh = "开启、关闭或检查全局 VPN。需要用户先在 VPN 页面授权一次系统 VPN 权限。",
-        tags = listOf("系统"),
+        tags = listOf("System"),
         categories = listOf(SkillToolCategory.VPN, SkillToolCategory.SYSTEM),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
         return when ((params["action"] as? String)?.lowercase()) {
-            "start", "on", "enable", "开启" -> {
+            "start", "on", "enable" -> {
                 if (vpnManager.prepareIntent() != null) {
                     return SkillResult(
                         false,
@@ -48,11 +46,11 @@ class VpnControlSkill(
                 vpnManager.startVpn(sub, proxy)
                 SkillResult(true, "VPN starting — proxy: ${proxy.name} (${proxy.typeName} ${proxy.server}:${proxy.port})")
             }
-            "stop", "off", "disable", "关闭" -> {
+            "stop", "off", "disable" -> {
                 vpnManager.stopVpn()
                 SkillResult(true, "VPN stopped.")
             }
-            "status", "状态" -> {
+            "status" -> {
                 val running = ClawVpnService.isRunning
                 val proxy = getSelectedProxy()?.second
                 SkillResult(

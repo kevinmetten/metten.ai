@@ -20,12 +20,10 @@ class AiHomeAssetSkill(
     override val meta = SkillMeta(
         id = "ai_home_assets",
         name = "AI Home Asset Catalog",
-        nameZh = "AI Home 素材库",
         description = "Search and inspect RPG room image assets for AI Home decoration. " +
             "Use this before town_builder when a role wants to decorate its room with real image resources. " +
             "Actions: list_packs, list_assets, search_assets, get_asset, recommend_room_assets, usage_guide. " +
             "Return asset_id/path/tile size/layer/orientation, then place selected assets through town_builder.place_furniture.",
-        descriptionZh = "查询 AI Home 的 RPG 房间素材资源。角色装修房间时先用它找床、桌子、墙体、门窗、摆饰等图片素材，再用 town_builder 写入房间结构。",
         parameters = listOf(
             SkillParam("action", "string", "list_packs | list_assets | search_assets | get_asset | recommend_room_assets | room_schema | validate_layout | usage_guide"),
             SkillParam("query", "string", "Free-text search, e.g. bed, workbench, north wall, cozy, terminal, library.", required = false),
@@ -40,7 +38,7 @@ class AiHomeAssetSkill(
         injectionLevel = 1,
         internalTool = true,
         categories = listOf(SkillToolCategory.SELF_EVOLUTION, SkillToolCategory.ARTIFACT, SkillToolCategory.MEDIA),
-        tags = listOf("home", "room", "rpg", "pixel", "asset", "tileset", "furniture", "房间", "素材", "装修"),
+        tags = listOf("home", "room", "rpg", "pixel", "asset", "tileset", "furniture", "Room", "Assets", "Decor"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -146,11 +144,11 @@ class AiHomeAssetSkill(
     private fun recommendAssetsForRole(roleId: String, name: String, description: String, keywords: List<String>): List<RoomAsset> {
         val text = listOf(roleId, name, description, keywords.joinToString(" ")).joinToString(" ").lowercase()
         val preferredTypes = when {
-            text.containsAny("code", "coder", "bug", "terminal", "代码", "编程", "调试") -> listOf("terminal", "desk", "chair", "cable", "lamp")
-            text.containsAny("image", "design", "paint", "creative", "图像", "绘画", "设计", "创意") -> listOf("bench", "crate", "art", "plant", "lamp")
-            text.containsAny("web", "search", "research", "资料", "搜索", "研究") -> listOf("bookcase", "desk", "chair", "art", "lamp")
-            text.containsAny("phone", "android", "手机", "无障碍", "操作") -> listOf("terminal", "cable", "desk", "crate", "sign")
-            text.containsAny("skill", "tool", "工具", "技能") -> listOf("crate", "bench", "bookcase", "sign", "lamp")
+            text.containsAny("code", "coder", "bug", "terminal") -> listOf("terminal", "desk", "chair", "cable", "lamp")
+            text.containsAny("image", "design", "paint", "creative") -> listOf("bench", "crate", "art", "plant", "lamp")
+            text.containsAny("web", "search", "research") -> listOf("bookcase", "desk", "chair", "art", "lamp")
+            text.containsAny("phone", "android") -> listOf("terminal", "cable", "desk", "crate", "sign")
+            text.containsAny("skill", "tool") -> listOf("crate", "bench", "bookcase", "sign", "lamp")
             else -> listOf("bed", "desk", "chair", "plant", "lamp", "art")
         }
         val base = townStore.roomAssets()

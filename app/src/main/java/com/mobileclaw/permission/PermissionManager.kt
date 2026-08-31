@@ -384,7 +384,7 @@ class PermissionManager(private val context: Context) {
                     append(if (isAccessibilityEnabled()) "✓ Accessibility OK. " else "✗ Accessibility Service is DISABLED. ")
                     append("Input method status: ")
                     append(ClawIME.statusSummary(context))
-                    append(" For WeChat and other protected input fields, MobileClaw 输入法 usually must be enabled and selected as the current keyboard.")
+                    append(" For WeChat and other protected input fields, the MobileClaw input method usually must be enabled and selected as the current keyboard.")
                 }
             "overlay", "floating_window" ->
                 if (isOverlayEnabled()) "✓ Overlay OK — floating window can be shown."

@@ -24,13 +24,11 @@ class TownBuilderSkill(
     override val meta = SkillMeta(
         id = "town_builder",
         name = "AI Home Builder",
-        nameZh = "AI Home 构建器",
         description = "Read and evolve an AI role's RPG home. Treat this as the dedicated Home channel, not a chat response. " +
             "Use it when a role wants to decorate its house, pin memories, showcase MiniAPP/AI Page/file/image artifacts, expose favorite tools, update mood lines, or inspect its home. " +
             "Actions: get_town, get_room, get_map, plan_room_layout, update_map_theme, replace_map, patch_tile, place_sprite, update_room, decorate_room, place_furniture, remove_furniture, pin_memory, pin_artifact, pin_skill, reset_room. " +
             "For role home work, call this tool to update structured room/map data instead of describing visual changes in chat. " +
             "Typical flow: get_room -> plan_room_layout -> update_room/decorate_room -> place_furniture -> pin_memory/pin_artifact/pin_skill.",
-        descriptionZh = "读取并演化 AI 角色的 RPG Home。角色可以用它布置自己的房间、钉住记忆、展示 MiniAPP/AI 页面/文件/图片作品、公开常用技能、更新心情台词，或查看自己的 Home。",
         parameters = listOf(
             SkillParam("action", "string", "get_town | get_room | get_map | plan_room_layout | update_map_theme | replace_map | patch_tile | place_sprite | update_room | decorate_room | place_furniture | remove_furniture | pin_memory | pin_artifact | pin_skill | reset_room"),
             SkillParam("role_id", "string", "Target role id. Defaults to current/known role when possible.", required = false),
@@ -62,7 +60,7 @@ class TownBuilderSkill(
         injectionLevel = 1,
         internalTool = true,
         categories = listOf(SkillToolCategory.SELF_EVOLUTION, SkillToolCategory.MEMORY, SkillToolCategory.ARTIFACT),
-        tags = listOf("home", "room", "role", "memory", "decor", "furniture", "artifact", "角色", "房间", "装修"),
+        tags = listOf("home", "room", "role", "memory", "decor", "furniture", "artifact", "Roles", "Room", "Decor"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -232,14 +230,14 @@ class TownBuilderSkill(
             role?.keywords.orEmpty().joinToString(" "),
         ).joinToString(" ").lowercase()
         val sprite = when {
-            listOf("code", "coder", "开发", "代码", "编程", "bug", "修复", "工程").any { it in text } -> "terminal"
-            listOf("image", "design", "paint", "art", "creative", "图像", "绘画", "设计", "创意").any { it in text } -> "workshop"
-            listOf("web", "search", "research", "browser", "网页", "搜索", "研究", "资料").any { it in text } -> "library"
-            listOf("phone", "android", "accessibility", "手机", "无障碍", "操作").any { it in text } -> "tower"
-            listOf("vpn", "proxy", "network", "线路", "代理", "网络").any { it in text } -> "bunker"
-            listOf("skill", "tool", "plugin", "工具", "技能", "插件").any { it in text } -> "warehouse"
-            listOf("market", "shop", "store", "商品", "商店", "市场").any { it in text } -> "shop"
-            listOf("write", "book", "story", "doc", "写作", "文档", "小说").any { it in text } -> "library"
+            listOf("code", "coder", "bug").any { it in text } -> "terminal"
+            listOf("image", "design", "paint", "art", "creative").any { it in text } -> "workshop"
+            listOf("web", "search", "research", "browser").any { it in text } -> "library"
+            listOf("phone", "android", "accessibility").any { it in text } -> "tower"
+            listOf("vpn", "proxy", "network").any { it in text } -> "bunker"
+            listOf("skill", "tool", "plugin").any { it in text } -> "warehouse"
+            listOf("market", "shop", "store").any { it in text } -> "shop"
+            listOf("write", "book", "story", "doc").any { it in text } -> "library"
             else -> currentSprite.ifBlank { "studio" }
         }
         val accent = currentAccent.ifBlank {
@@ -265,15 +263,15 @@ class TownBuilderSkill(
             else -> "cozy pixel studio"
         }
         val motto = when (sprite) {
-            "terminal" -> "我把问题拆开，再把答案跑通"
-            "workshop" -> "灵感先进工坊，再变成作品"
-            "library" -> "把线索整理成可靠结论"
-            "tower" -> "需要动手机时，我替你跑一趟"
-            "warehouse" -> "能力都归位，调用才顺手"
-            "bunker" -> "先把通路稳住，再谈速度"
-            "shop" -> "把好东西摆出来，让它有用"
-            "cabin" -> "我在安静处整理思路"
-            else -> "${role?.name?.ifBlank { roleId } ?: roleId} 的房间会随使用生长"
+            "terminal" -> "Break down the problem and validate the answer"
+            "workshop" -> "Bring ideas into the workshop and turn them into creations"
+            "library" -> "Organize clues into reliable conclusions"
+            "tower" -> "I can handle tasks that require phone interaction"
+            "warehouse" -> "Keep capabilities organized and ready to use"
+            "bunker" -> "Stabilize the connection before optimizing speed"
+            "shop" -> "Put useful things where they can help"
+            "cabin" -> "I organize my thoughts in a quiet place"
+            else -> "${role?.name?.ifBlank { roleId } ?: roleId}’s room grows through use"
         }
         val furniture = when (sprite) {
             "terminal" -> listOf(
@@ -325,8 +323,8 @@ class TownBuilderSkill(
             "style" to style,
             "accent" to accent,
             "motto" to motto,
-            "idle_line" to "我在房间里整理今天的工具。",
-            "working_line" to "我正在处理一个任务，房间灯亮着。",
+            "idle_line" to "I am organizing today’s tools in my room.",
+            "working_line" to "I am working on a task with the room lights on.",
             "furniture" to furniture,
             "apply_flow" to listOf("decorate_room", "place_furniture for each furniture item"),
         )

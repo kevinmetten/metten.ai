@@ -76,9 +76,7 @@ import com.mobileclaw.str
 private data class RemoteSkillEntry(
     val id: String,
     val name: String,
-    val nameZh: String?,
     val description: String,
-    val descriptionZh: String?,
     val tags: List<String>,
     val stars: Int,
     val platform: String,
@@ -93,7 +91,7 @@ fun SkillMarketPage(
     showHeader: Boolean = true,
 ) {
     var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf(str(R.string.skill_market_228a7d), "接入 MCP")
+    val tabs = listOf(str(R.string.skill_market_228a7d), "Connect MCP")
 
     BackHandler { onBack() }
 
@@ -174,7 +172,7 @@ private fun RecommendedTab(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            SectionLabel(text = "推荐")
+            SectionLabel(text = "Recommended")
         }
         grouped.forEach { (category, entries) ->
             item {
@@ -190,8 +188,8 @@ private fun RecommendedTab(
             items(entries, key = { it.def.meta.id }) { entry ->
                 MarketSkillRow(
                     source = category,
-                    name = entry.def.meta.nameZh ?: entry.def.meta.name,
-                    description = entry.def.meta.descriptionZh ?: entry.def.meta.description,
+                    name = entry.def.meta.name,
+                    description = entry.def.meta.description,
                     tags = entry.def.meta.tags,
                     stars = null,
                     installed = entry.def.meta.id in installedIds,
@@ -232,8 +230,8 @@ private fun PublicMcpTab(
             }
             loading = false
             when {
-                found == null -> error = "无法连接公开 MCP，请检查 SSE/HTTP 地址、配置 JSON、Headers 或网络"
-                found.isEmpty() -> error = "这个 MCP Server 没有返回可安装工具"
+                found == null -> error = "Unable to connect to the public MCP server. Check the SSE/HTTP URL, configuration JSON, headers, and network."
+                found.isEmpty() -> error = "This MCP server did not return any installable tools."
                 else -> results.addAll(found)
             }
         }
@@ -247,7 +245,7 @@ private fun PublicMcpTab(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
-                "粘贴公开 MCP 的 SSE/Streamable HTTP 地址，或包含 mcpServers 的配置 JSON。",
+                "Paste a public MCP SSE/Streamable HTTP URL or configuration JSON containing mcpServers.",
                 fontSize = 12.sp,
                 color = SkillMarketMuted,
                 lineHeight = 17.sp,
@@ -256,14 +254,14 @@ private fun PublicMcpTab(
             MarketInput(
                 value = endpointInput,
                 onValueChange = { endpointInput = it },
-                placeholder = "https://example.com/sse 或 {\"mcpServers\":{...}}",
+                placeholder = "https://example.com/sse or {\"mcpServers\":{...}}",
                 singleLine = false,
                 minHeight = 86.dp,
             )
             MarketInput(
                 value = headersInput,
                 onValueChange = { headersInput = it },
-                placeholder = "可选 Headers JSON，例如 {\"Authorization\":\"Bearer ...\"}",
+                placeholder = "Optional headers JSON, such as {\"Authorization\":\"Bearer ...\"}",
                 singleLine = false,
                 minHeight = 70.dp,
             )
@@ -274,7 +272,7 @@ private fun PublicMcpTab(
                     .clickable { discoverInput() }
                     .padding(horizontal = 16.dp, vertical = 9.dp),
             ) {
-                Text("从地址发现工具", fontSize = 13.sp, color = Color.White, fontWeight = FontWeight.SemiBold)
+                Text("Discover tools", fontSize = 13.sp, color = Color.White, fontWeight = FontWeight.SemiBold)
             }
         }
 
@@ -290,12 +288,12 @@ private fun PublicMcpTab(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                item { SectionLabel(text = "公开 MCP") }
+                item { SectionLabel(text = "Public MCP") }
                 items(results, key = { it.id }) { entry ->
                     MarketSkillRow(
                         source = entry.platform,
-                        name = entry.nameZh ?: entry.name,
-                        description = entry.descriptionZh ?: entry.description,
+                        name = entry.name,
+                        description = entry.description,
                         tags = entry.tags,
                         stars = entry.stars,
                         installed = entry.id in installedIds,
@@ -306,9 +304,9 @@ private fun PublicMcpTab(
             }
             else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("等待公开 MCP 地址", fontSize = 14.sp, color = SkillMarketMuted)
+                    Text("Waiting for a public MCP URL", fontSize = 14.sp, color = SkillMarketMuted)
                     Spacer(Modifier.height(4.dp))
-                    Text("发现后会把每个 MCP tool 安装成手机端技能", fontSize = 12.sp, color = SkillMarketMuted.copy(alpha = 0.6f))
+                    Text("Discovered MCP tools can be installed as mobile skills.", fontSize = 12.sp, color = SkillMarketMuted.copy(alpha = 0.6f))
                 }
             }
         }
@@ -432,13 +430,13 @@ private fun RemoteSearchTab(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
-                    SectionLabel(text = "热榜")
+                    SectionLabel(text = "Trending")
                 }
                 items(results, key = { it.id }) { entry ->
                     MarketSkillRow(
                         source = entry.platform,
-                        name = entry.nameZh ?: entry.name,
-                        description = entry.descriptionZh ?: entry.description,
+                        name = entry.name,
+                        description = entry.description,
                         tags = entry.tags,
                         stars = entry.stars,
                         installed = entry.id in installedIds,
@@ -558,7 +556,7 @@ private fun MarketSkillRow(
                     }
                     Spacer(Modifier.width(3.dp))
                     Text(
-                        if (busy) "发现中" else str(R.string.skill_market_done),
+                        if (busy) "Discovering" else str(R.string.skill_market_done),
                         fontSize = 11.sp,
                         color = SkillMarketTagInk,
                         fontWeight = FontWeight.SemiBold,
@@ -707,9 +705,7 @@ private fun parseRemoteResults(platform: String, json: String): List<RemoteSkill
         entries += RemoteSkillEntry(
             id = id,
             name = name,
-            nameZh = item.optString("name_zh").ifBlank { null },
             description = desc,
-            descriptionZh = item.optString("description_zh").ifBlank { null },
             tags = tags,
             stars = stars,
             platform = platform,
@@ -750,25 +746,21 @@ private suspend fun discoverPublicMcpTools(
             val meta = SkillMeta(
                 id = safeId,
                 name = tool.title ?: tool.name,
-                nameZh = tool.title ?: tool.name,
                 description = tool.description ?: "Public MCP tool: ${tool.name}",
-                descriptionZh = tool.description ?: "公开 MCP 工具：${tool.name}",
                 parameters = params,
                 type = SkillType.MCP,
                 injectionLevel = 2,
                 isBuiltin = false,
-                tags = listOf("MCP", "公开"),
+                tags = listOf("MCP", "Public"),
             )
             val categorizedMeta = meta.copy(categories = SkillToolTaxonomy.categoriesFor(meta).toList())
             RemoteSkillEntry(
                 id = safeId,
                 name = meta.name,
-                nameZh = meta.nameZh,
                 description = meta.description,
-                descriptionZh = meta.descriptionZh,
                 tags = categorizedMeta.tags,
                 stars = 0,
-                platform = "公开 MCP",
+                platform = "Public MCP",
                 def = SkillDefinition(
                     meta = categorizedMeta,
                     mcpConfig = McpSkillConfig(

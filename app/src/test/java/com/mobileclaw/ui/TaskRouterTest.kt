@@ -1,5 +1,7 @@
 package com.mobileclaw.ui
 
+import com.mobileclaw.agent.AiTaskRouteDecision
+import com.mobileclaw.agent.ChannelType
 import com.mobileclaw.agent.Role
 import com.mobileclaw.agent.TaskType
 import com.mobileclaw.skill.SkillAttachment
@@ -14,6 +16,34 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TaskRouterTest {
+    @Test
+    fun `accepted semantic route is not reclassified by artifact keywords`() {
+        val goal = "为我创建一个页面"
+        val route = router().resolveWithAiDecision(
+            goal = goal,
+            effectiveGoal = goal,
+            hasImage = false,
+            hasFile = false,
+            activeWorkflow = null,
+            decision = AiTaskRouteDecision(
+                taskType = TaskType.GENERAL,
+                requiresExecution = false,
+                confidence = 0.95f,
+                reason = "Conversational request in context",
+                normalizedGoal = goal,
+                targetApp = "",
+                primaryChannel = ChannelType.CHAT,
+                supportingChannels = emptyList(),
+                toolHints = emptyList(),
+                userVisibleSteps = emptyList(),
+            ),
+        )
+
+        assertEquals(TaskType.GENERAL, route?.taskType)
+        assertEquals(false, route?.contextualIntent?.aiRequiresExecution)
+        assertEquals(ChannelType.CHAT, route?.contextualIntent?.aiPrimaryChannel)
+    }
+
     @Test
     fun `explicit English MiniAPP and native page intents keep distinct tool orientation`() {
         val router = router()
@@ -92,6 +122,19 @@ class TaskRouterTest {
         val route = router(messages = listOf(message)).resolve("keep going", "keep going", false, false, null)
 
         assertEquals(TaskType.APP_BUILD, route.taskType)
+        assertEquals(TaskRouteSource.RECENT_CONTEXT, route.source)
+    }
+
+    @Test
+    fun `typed image result drives recent continuation independent of prose`() {
+        val message = ChatMessage(
+            role = MessageRole.AGENT,
+            text = "تمت الخطوة الأولى",
+            attachments = listOf(SkillAttachment.ImageData("data:image/png;base64,AA==")),
+        )
+        val route = router(messages = listOf(message)).resolve("continue", "continue", false, false, null)
+
+        assertEquals(TaskType.IMAGE_GENERATION, route.taskType)
         assertEquals(TaskRouteSource.RECENT_CONTEXT, route.source)
     }
 

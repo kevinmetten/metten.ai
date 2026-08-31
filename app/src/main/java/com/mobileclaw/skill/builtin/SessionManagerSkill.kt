@@ -15,7 +15,7 @@ import java.util.Date
 import java.util.Locale
 
 sealed class SessionRequest {
-    data class Create(val title: String = "新对话") : SessionRequest()
+    data class Create(val title: String = "New chat") : SessionRequest()
     data class Switch(val id: String) : SessionRequest()
     data class Delete(val id: String) : SessionRequest()
     data class Rename(val id: String, val title: String) : SessionRequest()
@@ -24,7 +24,7 @@ sealed class SessionRequest {
 class SessionManagerSkill(
     private val sessionDao: SessionDao,
     val sessionRequests: MutableSharedFlow<SessionRequest>,
-    // 返回非空字符串表示拒绝执行该请求（任务执行中切走/删掉正在运行的会话会让用户眼前的聊天记录消失）。
+    // Return a non-empty string to reject the request; switching away from or deleting an active session would make its visible chat history disappear.
     private val mutationGuard: (SessionRequest) -> String? = { null },
 ) : Skill {
 
@@ -41,10 +41,8 @@ class SessionManagerSkill(
         ),
         type = SkillType.NATIVE,
         injectionLevel = 1,
-        nameZh = "会话管理",
-        descriptionZh = "创建、切换和删除对话会话。",
         categories = listOf(SkillToolCategory.MEMORY, SkillToolCategory.CHAT),
-        tags = listOf("会话"),
+        tags = listOf("Sessions"),
     )
 
     private val dateFmt = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
@@ -65,7 +63,7 @@ class SessionManagerSkill(
             }
 
             "create" -> {
-                val title = params["title"] as? String ?: "新对话"
+                val title = params["title"] as? String ?: "New chat"
                 val request = SessionRequest.Create(title)
                 mutationGuard(request)?.let { return@withContext SkillResult(false, it) }
                 sessionRequests.emit(request)

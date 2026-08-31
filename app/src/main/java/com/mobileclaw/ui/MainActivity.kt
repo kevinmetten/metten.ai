@@ -159,7 +159,7 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         } else {
-                            // 经典模式下二级页不再强塞进 tab 根壳，否则 currentPage 已经切了，内容区仍停留在根页。
+                            // Do not force nested Classic-mode pages into the tab root shell; otherwise currentPage changes while the content remains on the root page.
                             MainPageHost(
                                 uiState = uiState,
                                 vm = vm,

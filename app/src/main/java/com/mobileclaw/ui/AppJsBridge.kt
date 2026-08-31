@@ -492,7 +492,7 @@ _env_info = json.dumps({
                 if (title.isNotBlank()) putExtra(android.content.Intent.EXTRA_SUBJECT, title)
                 addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            mainHandler.post { context.startActivity(android.content.Intent.createChooser(intent, "分享").apply {
+            mainHandler.post { context.startActivity(android.content.Intent.createChooser(intent, "Share").apply {
                 addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             }) }
             gson.toJson(mapOf("ok" to true))

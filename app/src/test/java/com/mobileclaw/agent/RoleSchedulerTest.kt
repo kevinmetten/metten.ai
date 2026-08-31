@@ -94,17 +94,6 @@ class RoleSchedulerTest {
         )
     }
 
-    @Test
-    fun `localized name returns canonical built-in and exact custom names`() {
-        val builtin = Role.BUILTINS.first { it.id == "coder" }
-        val custom = customRole(name = "مترجم")
-
-        assertEquals("Code Expert", builtin.localizedName("en"))
-        assertEquals("Code Expert", builtin.localizedName("ar"))
-        assertEquals("مترجم", custom.localizedName("en"))
-        assertEquals("مترجم", custom.localizedName("ar"))
-    }
-
     private fun schedule(
         taskType: TaskType,
         goal: String,

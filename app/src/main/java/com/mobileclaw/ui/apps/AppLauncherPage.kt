@@ -72,7 +72,6 @@ import com.mobileclaw.app.MiniApp
 import com.mobileclaw.ui.AppJsBridge
 import com.mobileclaw.ui.ClawIconTile
 import com.mobileclaw.ui.ClawSymbolIcon
-import com.mobileclaw.ui.LocalAppLanguage
 import com.mobileclaw.ui.LocalClawColors
 import com.mobileclaw.ui.clawIconForSymbol
 import java.io.File
@@ -91,7 +90,6 @@ fun AppLauncherPage(
     showHeader: Boolean = true,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     var isEditMode by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf(setOf<String>()) }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -132,11 +130,11 @@ fun AppLauncherPage(
                     horizontalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
                     ClawSymbolIcon("download", tint = c.bg, modifier = Modifier.size(14.dp))
-                    Text(if (isZh) "导入" else "Import", color = c.bg, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Text("Import", color = c.bg, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 }
                 if (miniApps.isNotEmpty()) {
                     Text(
-                        if (isEditMode) str(R.string.app_launcher_done) else if (isZh) "${miniApps.size} 个" else "${miniApps.size} apps",
+                        if (isEditMode) str(R.string.app_launcher_done) else "${miniApps.size} apps",
                         color = if (isEditMode) c.text else c.subtext,
                         fontSize = 13.sp,
                         fontWeight = if (isEditMode) FontWeight.Medium else FontWeight.Normal,
@@ -195,7 +193,7 @@ fun AppLauncherPage(
                         horizontalArrangement = Arrangement.spacedBy(7.dp),
                     ) {
                         ClawSymbolIcon("download", tint = c.bg, modifier = Modifier.size(15.dp))
-                        Text(if (isZh) "导入 MiniAPP" else "Import MiniAPP", color = c.bg, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                        Text("Import MiniAPP", color = c.bg, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                     }
                 }
             }
@@ -359,7 +357,6 @@ private fun AppLauncherSelectionBar(
     onDone: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -372,7 +369,7 @@ private fun AppLauncherSelectionBar(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
-            if (isZh) "已选 $selectedCount / $totalCount" else "$selectedCount / $totalCount selected",
+            "$selectedCount / $totalCount selected",
             color = c.text,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
@@ -380,9 +377,9 @@ private fun AppLauncherSelectionBar(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        AppLauncherMiniPill(if (isZh) "全选" else "All", filled = false, onClick = onSelectAll)
-        AppLauncherMiniPill(if (isZh) "删除" else "Delete", filled = true, enabled = selectedCount > 0, onClick = onDeleteSelected)
-        AppLauncherMiniPill(if (isZh) "完成" else "Done", filled = false, onClick = onDone)
+        AppLauncherMiniPill("All", filled = false, onClick = onSelectAll)
+        AppLauncherMiniPill("Delete", filled = true, enabled = selectedCount > 0, onClick = onDeleteSelected)
+        AppLauncherMiniPill("Done", filled = false, onClick = onDone)
     }
 }
 

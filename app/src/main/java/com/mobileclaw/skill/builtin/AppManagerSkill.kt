@@ -60,7 +60,6 @@ class AppManagerSkill(
     override val meta = SkillMeta(
         id = "app_manager",
         name = "Mini App Program Builder",
-        nameZh = "MiniAPP 程序生成",
         description = "Creates and manages persistent HTML+JS mini-app programs that run inside MobileClaw. " +
             "Use for explicit app/mini-app/program/game requests, custom HTML/CSS/JavaScript, canvas, complex browser rendering, SQLite, or Python backend. " +
             "For ordinary pages, dashboards, forms, settings panels, data viewers, and management screens, use ui_builder instead. " +
@@ -68,7 +67,6 @@ class AppManagerSkill(
             "All Claw async methods (fetch/sql/python/shell) MUST be used with await — synchronous calls will freeze the UI. " +
             "Use Claw.log.info/warn/error/debug and Claw.log.read() for runtime diagnostics and debugging. " +
             "Actions: get_guide | create | update | analyze_change | validate | inspect_logs | list | delete | open | set_icon | export_package | import_package",
-        descriptionZh = "创建和管理在 MobileClaw 中运行的持久化 HTML+JS MiniAPP 程序。仅在用户明确要求应用/小程序/程序/游戏，或需要自定义 HTML/CSS/JavaScript、Canvas、复杂浏览器渲染、SQLite、Python 后端时使用。普通页面、仪表盘、表单、管理页优先使用 ui_builder。重要：创建或更新应用前请先调用 action=get_guide 获取完整 API 参考和起始模板。",
         parameters = listOf(
             SkillParam("action", "string", "Action: 'get_guide' | 'create' | 'update' | 'analyze_change' | 'validate' | 'inspect_logs' | 'list' | 'delete' | 'open' | 'set_icon' | 'export_package' | 'import_package'"),
             SkillParam("id", "string", "App ID (snake_case). Required for update/delete/open. Auto-generated for create.", required = false),
@@ -90,7 +88,7 @@ class AppManagerSkill(
         type = SkillType.NATIVE,
         injectionLevel = 1,
         categories = listOf(SkillToolCategory.ARTIFACT, SkillToolCategory.SKILL),
-        tags = listOf("应用"),
+        tags = listOf("Apps"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -125,8 +123,8 @@ class AppManagerSkill(
                     "known_bugs" to app.spec.knownBugs,
                     "non_goals" to app.spec.nonGoals,
                     "last_diff_summary" to app.spec.lastDiffSummary,
-                    "patch_focus" to inferPatchFocus(changeRequest),
-                    "change_type" to inferChangeType(changeRequest),
+                    "patch_focus" to ArtifactChangeClassifier.patchFocus(changeRequest),
+                    "change_type" to ArtifactChangeClassifier.changeType(changeRequest),
                     "patch_brief" to "update only the smallest affected part, preserve all unrelated behavior, and keep the app runnable after the edit",
                     "change_request" to changeRequest,
                     "recent_logs" to recentLogs,
@@ -622,28 +620,6 @@ private fun buildFeatureDiffSummary(previous: List<String>, current: List<String
         if (added.isNotEmpty()) append(" | added=${added.take(8).joinToString(", ")}")
         if (removed.isNotEmpty()) append(" | removed=${removed.take(8).joinToString(", ")}")
     }.take(400)
-}
-
-private fun inferPatchFocus(changeRequest: String): String {
-    val text = changeRequest.lowercase()
-    return when {
-        text.contains("ui") || text.contains("样式") || text.contains("布局") || text.contains("美化") -> "ui_surface"
-        text.contains("bug") || text.contains("修复") || text.contains("错误") -> "bug_fix"
-        text.contains("功能") || text.contains("按钮") || text.contains("交互") || text.contains("逻辑") -> "behavior"
-        text.contains("文案") || text.contains("文字") || text.contains("翻译") -> "copywriting"
-        else -> "targeted_patch"
-    }
-}
-
-private fun inferChangeType(changeRequest: String): String {
-    val text = changeRequest.lowercase()
-    return when {
-        text.contains("新增") || text.contains("添加") || text.contains("增加") -> "extend"
-        text.contains("删除") || text.contains("移除") -> "remove"
-        text.contains("修复") || text.contains("bug") || text.contains("错误") -> "fix"
-        text.contains("优化") || text.contains("调整") || text.contains("改") -> "refine"
-        else -> "modify"
-    }
 }
 
 private fun validateMiniAppRuntime(html: String, python: String): List<String> {

@@ -722,7 +722,7 @@ private fun MiniAppInfoPanel(
 
         // Actions
         Spacer(Modifier.height(6.dp))
-        PanelAction(label = if (LocalAppLanguage.current == "zh") "导出" else "Export", color = c.text, onClick = onExport)
+        PanelAction(label = "Export", color = c.text, onClick = onExport)
         PanelAction(label = str(R.string.activity_close), color = c.red, onClick = onClose)
         PanelAction(label = str(R.string.activity_back), color = c.text, onClick = onDismiss)
         Spacer(Modifier.height(4.dp))
@@ -731,7 +731,6 @@ private fun MiniAppInfoPanel(
 
 private fun exportMiniAppPackage(context: Context, appId: String) {
     val app = ClawApplication.instance
-    val isZh = app.agentConfig.snapshot().language.startsWith("zh")
     CoroutineScope(Dispatchers.IO).launch {
         val result = runCatching { app.miniAppStore.exportPackage(appId) }
         withContext(Dispatchers.Main) {
@@ -740,7 +739,7 @@ private fun exportMiniAppPackage(context: Context, appId: String) {
                 val message = result.exceptionOrNull()?.message.orEmpty()
                 android.widget.Toast.makeText(
                     context,
-                    (if (isZh) "MiniAPP 导出失败：" else "MiniAPP export failed: ") + message,
+                    "MiniAPP export failed: " + message,
                     android.widget.Toast.LENGTH_LONG,
                 ).show()
                 return@withContext
@@ -755,7 +754,7 @@ private fun exportMiniAppPackage(context: Context, appId: String) {
                 context.startActivity(
                     Intent.createChooser(
                         shareIntent,
-                        if (isZh) "导出 MiniAPP 包" else "Export MiniAPP package",
+                        "Export MiniAPP package",
                     ).apply {
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
@@ -763,7 +762,7 @@ private fun exportMiniAppPackage(context: Context, appId: String) {
             }.onFailure { e ->
                 android.widget.Toast.makeText(
                     context,
-                    (if (isZh) "打开分享失败：" else "Unable to open share sheet: ") + (e.message ?: ""),
+                    "Unable to open share sheet: " + (e.message ?: ""),
                     android.widget.Toast.LENGTH_LONG,
                 ).show()
             }

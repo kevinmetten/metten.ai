@@ -27,13 +27,10 @@ class PipInstallSkill : Skill {
     override val meta = SkillMeta(
         id = "pip_install",
         name = "Pip Install",
-        nameZh = "pip 安装",
         description = "Installs a pure-Python package from PyPI at runtime (no pip needed — uses requests+zipfile). " +
             "Works for any package with a py3-none-any wheel (e.g. pydantic, httpx, toml, yaml, etc.). " +
             "Native packages (numpy, pandas, pillow, requests, bs4) are pre-installed — no need to install them. " +
             "After install the package is immediately importable in run_python.",
-        descriptionZh = "从 PyPI 下载纯 Python 包（py3-none-any wheel）并安装到 filesDir/pip_packages，无需 pip。" +
-            "numpy/pandas/pillow/requests/bs4 已预装，无需安装。安装后立即可在 run_python 中 import。",
         parameters = listOf(
             SkillParam("package", "string", "Package name with optional version spec, e.g. 'pandas' or 'numpy==1.26.0'"),
         ),
@@ -41,7 +38,7 @@ class PipInstallSkill : Skill {
         injectionLevel = 0,
         isBuiltin = true,
         categories = listOf(SkillToolCategory.CODE),
-        tags = listOf("Python", "系统"),
+        tags = listOf("Python", "System"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {

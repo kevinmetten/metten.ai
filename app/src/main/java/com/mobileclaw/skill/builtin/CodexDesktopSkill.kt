@@ -44,11 +44,9 @@ class CodexDesktopSkill(
     override val meta = SkillMeta(
         id = "codex_desktop",
         name = "Codex Desktop Bridge",
-        nameZh = "电脑 Codex 桥接",
         description = "Controls a Codex CLI bridge running on the user's desktop over LAN. " +
             "Use action=status to verify the bridge, action=run to send a coding task, or action=stop to cancel the active desktop Codex process. " +
             "Requires user config keys codex_desktop_endpoint and codex_desktop_token.",
-        descriptionZh = "通过局域网控制电脑上的 Codex CLI 桥接服务。status 检查连接，run 发送编程任务，stop 停止电脑端 Codex 进程。需要先配置 codex_desktop_endpoint 和 codex_desktop_token。",
         parameters = listOf(
             SkillParam("action", "string", "status | run | stop", required = false),
             SkillParam("prompt", "string", "Task prompt to send to desktop Codex when action=run.", required = false),
@@ -62,7 +60,7 @@ class CodexDesktopSkill(
         type = SkillType.NATIVE,
         injectionLevel = 1,
         categories = listOf(SkillToolCategory.CODE),
-        tags = listOf("codex", "desktop", "code", "电脑", "代码"),
+        tags = listOf("codex", "desktop", "code", "Desktop", "Code"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult = withContext(Dispatchers.IO) {

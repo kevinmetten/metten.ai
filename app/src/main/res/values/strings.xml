@@ -989,9 +989,7 @@ Example: "Create an expense tracker app with a database"</string>
     <string name="mainactivity_515fdc">Press again to exit</string>
     <string name="vm_new_">New chat</string>
     <string name="vm_c96809">Call parameters:</string>
-    <string name="vm_00cf2c">
-You MUST respond in Simplified Chinese.
-</string>
+    <string name="vm_00cf2c">Write all user-visible output in English.</string>
     <string name="vm_708c9d">Please choose</string>
     <string name="vm_05f87b">Option A</string>
     <string name="vm_1152c9">send:Option A</string>

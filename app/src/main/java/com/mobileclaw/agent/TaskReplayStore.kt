@@ -166,15 +166,15 @@ class TaskRecipeStore(filesDir: File) {
     fun delete(id: String): Boolean = File(dir, "$id.json").delete()
 
     fun buildRunPrompt(recipe: TaskRecipe): String = buildString {
-        appendLine("请执行这个已保存的 MobileClaw 任务配方。")
-        appendLine("配方：${recipe.title}")
-        appendLine("原始目标：${recipe.goal}")
-        appendLine("任务类型：${recipe.taskType}")
+        appendLine("Execute this saved MobileClaw task recipe.")
+        appendLine("Recipe: ${recipe.title}")
+        appendLine("Original goal: ${recipe.goal}")
+        appendLine("Task type: ${recipe.taskType}")
         appendLine()
-        appendLine("历史成功步骤仅作为参考，不要盲目照抄。当前界面或网络状态可能已经变化。")
-        appendLine("请先判断当前状态；如果可以复用这些步骤，就按相同意图执行；如果不匹配，就观察后调整。")
+        appendLine("Previous successful steps are references only. Do not copy them blindly because the UI or network state may have changed.")
+        appendLine("Assess the current state first. Reuse the steps when they fit the same intent; otherwise observe and adapt.")
         appendLine()
-        appendLine("参考步骤：")
+        appendLine("Reference steps:")
         recipe.steps.forEach { step ->
             appendLine("${step.index}. ${step.skillId} ${step.paramsJson.take(500)}")
             if (step.note.isNotBlank()) appendLine("   result: ${step.note.replace('\n', ' ').take(180)}")

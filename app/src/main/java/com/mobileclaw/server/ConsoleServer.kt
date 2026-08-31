@@ -415,7 +415,6 @@ class ConsoleServer(
             mapOf(
                 "id" to skill.meta.id,
                 "name" to skill.meta.name,
-                "nameZh" to (skill.meta.nameZh ?: skill.meta.name),
                 "description" to skill.meta.description,
                 "type" to skill.meta.type.name.lowercase(),
                 "injectionLevel" to skill.meta.injectionLevel,
@@ -610,10 +609,13 @@ class ConsoleServer(
                 file.writeText(DEFAULT_CONSOLE_HTML)
             } else {
                 val current = file.readText()
+                // Historical factory-console signature retained only to migrate persisted pre-English installations.
+                val legacyChineseFactoryConsole =
+                    "--accent:#c7f43a" in current && "输入任务，MobileClaw 会直接开始执行" in current
                 val looksLikeOldFactoryConsole =
                     "MobileClaw Console" in current &&
                         (("--accent:#a78bfa" in current && "Enter a task below" in current) ||
-                            ("--accent:#c7f43a" in current && "输入任务，MobileClaw 会直接开始执行" in current))
+                            legacyChineseFactoryConsole)
                 if (looksLikeOldFactoryConsole) file.writeText(DEFAULT_CONSOLE_HTML)
             }
         } catch (t: Throwable) {
@@ -858,22 +860,22 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
     <div class="sh">History</div>
     <div id="slist"><div class="sysmsg" style="margin:14px 8px">Loading…</div></div>
     <div class="codexbox">
-      <h3>Codex 连接</h3>
-      <p>电脑安装并登录 Codex 后，在手机端填写桥接地址和 Token。</p>
+      <h3>Codex connection</h3>
+      <p>Install and sign in to Codex on the computer, then enter the bridge URL and token on the phone.</p>
       <div class="codexcmd" onclick="copyCodexCmd(this)">npm install -g @openai/codex</div>
       <div class="codexcmd" onclick="copyText('codex --login',this)">codex --login</div>
-      <div class="codexhint">点击命令可复制。安装完成后，回到手机端配置桥接。</div>
+      <div class="codexhint">Click a command to copy it. After installation, return to the phone to configure the bridge.</div>
     </div>
   </div>
   <div id="cw">
     <div id="msgs">
       <div id="empty">
         <div class="ico"></div>
-        <div class="hint">从这里发送一条任务。</div>
+        <div class="hint">Send a task from here.</div>
       </div>
     </div>
     <div id="ia">
-      <div id="iw"><textarea id="inp" rows="1" placeholder="输入任务，Enter 发送" autocomplete="off" spellcheck="false"></textarea></div>
+      <div id="iw"><textarea id="inp" rows="1" placeholder="Enter a task; press Enter to send" autocomplete="off" spellcheck="false"></textarea></div>
       <button id="sbtn" onclick="send()" title="Send">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9z"/>
@@ -944,12 +946,12 @@ function send(){
   if(!text||running)return;
   inp.value='';inp.style.height='auto';
   hideEmpty();
-  var row=mkRow('u','你');
+  var row=mkRow('u','You');
   var bbl=document.createElement('div');bbl.className='bbl done';bbl.textContent=text;
   row.appendChild(bbl);scrollBot();
   apiFetch('/api/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text})}).catch(function(){
     var err=mkRow('a','MobileClaw');
-    var eb=document.createElement('div');eb.className='bbl done';eb.textContent='发送失败，请检查控制台服务连接。';
+    var eb=document.createElement('div');eb.className='bbl done';eb.textContent='Send failed. Check the console service connection.';
     err.appendChild(eb);scrollBot();
   });
 }
@@ -986,7 +988,7 @@ function finalizeStream(stopped){
   if(stBubble){
     var c=document.getElementById('cur');if(c)c.remove();
     stBubble.classList.add('done');
-    if(stopped&&!stText)stBubble.textContent='已停止';
+    if(stopped&&!stText)stBubble.textContent='Stopped';
     stBubble=null;stText='';
   }
 }
@@ -1022,7 +1024,7 @@ function loadMsgs(sid){
     if(!data.messages||!data.messages.length){if(empty)empty.style.display='';return;}
     if(empty)empty.style.display='none';
     data.messages.forEach(function(m){
-      var row=mkRow(m.role==='user'?'u':'a',m.role==='user'?'你':'MobileClaw');
+      var row=mkRow(m.role==='user'?'u':'a',m.role==='user'?'You':'MobileClaw');
       var bbl=document.createElement('div');bbl.className='bbl done';bbl.textContent=m.text;
       row.appendChild(bbl);
     });

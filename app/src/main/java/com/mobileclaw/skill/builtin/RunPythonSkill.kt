@@ -25,14 +25,10 @@ class RunPythonSkill : Skill {
     override val meta = SkillMeta(
         id = "run_python",
         name = "Run Python",
-        nameZh = "执行 Python",
         description = "Executes Python 3 code via Chaquopy (embedded Python 3.11). " +
             "Pre-installed: requests, beautifulsoup4, numpy, pillow. " +
             "Use pip_install skill first for other packages. " +
             "Script output (print/return) is returned as the result. Timeout 60s.",
-        descriptionZh = "通过 Chaquopy 执行 Python 3.11 代码。" +
-            "已预装：requests、beautifulsoup4、numpy、pillow。" +
-            "其他包请先用 pip_install skill 安装，脚本的 print 输出作为结果返回，超时 60 秒。",
         parameters = listOf(
             SkillParam("code", "string", "Python code to execute. Use print() to produce output."),
         ),
@@ -40,7 +36,7 @@ class RunPythonSkill : Skill {
         injectionLevel = 1,
         isBuiltin = true,
         categories = listOf(SkillToolCategory.CODE),
-        tags = listOf("Python", "代码"),
+        tags = listOf("Python", "Code"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {

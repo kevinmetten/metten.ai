@@ -41,7 +41,7 @@ class RoleStepReadOnlyHandlers(
         return RoleStepResult(
             success = true,
             summary = "Read role file: $fileName",
-            userSummary = "已读取角色文件：$fileName",
+            userSummary = "Read role file: $fileName",
             content = content,
             workspaceDelta = block,
         )
@@ -66,7 +66,7 @@ class RoleStepReadOnlyHandlers(
         return RoleStepResult(
             success = true,
             summary = if (matches.isEmpty()) "No matching memory found." else "Found ${matches.size} memory facts.",
-            userSummary = if (matches.isEmpty()) "没有找到相关长期记忆。" else "找到 ${matches.size} 条相关长期记忆。",
+            userSummary = if (matches.isEmpty()) "No relevant long-term memories found." else "Found ${matches.size} relevant long-term memories.",
             content = memoryBlock,
             memoryDelta = memoryBlock,
         )
@@ -108,7 +108,7 @@ class RoleStepReadOnlyHandlers(
         return RoleStepResult(
             success = true,
             summary = "Read workspace context: $label",
-            userSummary = "已读取工作空间上下文：$label",
+            userSummary = "Read workspace context: $label",
             content = content,
             workspaceDelta = block,
         )
@@ -123,9 +123,7 @@ class RoleStepReadOnlyHandlers(
                 val haystack = buildString {
                     appendLine(skill.id)
                     appendLine(skill.name)
-                    appendLine(skill.nameZh.orEmpty())
                     appendLine(skill.description)
-                    appendLine(skill.descriptionZh.orEmpty())
                     appendLine(skill.tags.joinToString(" "))
                     appendLine(skill.categories.joinToString(" ") { it.name })
                 }.lowercase()
@@ -139,7 +137,7 @@ class RoleStepReadOnlyHandlers(
         return RoleStepResult(
             success = true,
             summary = if (selected.isEmpty()) "No matching skills found." else "Selected ${selected.size} candidate skills.",
-            userSummary = if (selected.isEmpty()) "没有找到匹配技能。" else "筛选出 ${selected.size} 个候选技能。",
+            userSummary = if (selected.isEmpty()) "No matching skills found." else "Selected ${selected.size} candidate skills.",
             content = block,
             workspaceDelta = block,
             selectedToolIds = selected.map { it.id },

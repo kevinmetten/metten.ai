@@ -24,6 +24,7 @@ data class ContextualTaskIntent(
     val fileAttachment: SkillAttachment.FileData? = null,
     val htmlAttachment: SkillAttachment.HtmlData? = null,
     val executionHint: String = "",
+    val aiRequiresExecution: Boolean? = null,
     val aiPrimaryChannel: ChannelType? = null,
     val aiSupportingChannels: List<ChannelType> = emptyList(),
     val aiToolHints: List<String> = emptyList(),
@@ -85,16 +86,6 @@ class TaskRouter(
         activeWorkflow: ActiveWorkflow?,
         decision: AiTaskRouteDecision,
     ): TaskRoute? {
-        explicitArtifactIntent(goal)?.let { forcedIntent ->
-            return TaskRoute(
-                taskType = TaskType.APP_BUILD,
-                contextualIntent = forcedIntent,
-                goalForExecution = effectiveGoal,
-                source = TaskRouteSource.AI_ROUTER,
-                goalToRemember = effectiveGoal,
-                debugReason = "Explicit artifact intent overrode AI router output.",
-            )
-        }
         if (decision.taskType == null || decision.confidence < 0.52f) {
             Log.w(TAG, "Rejecting AI route because taskType=${decision.taskType} confidence=${decision.confidence} goal=${goal.take(160)}")
             return null
@@ -140,6 +131,7 @@ class TaskRouter(
                 classificationGoal = normalizedGoal,
                 taskTypeOverride = decision.taskType,
                 executionHint = executionHint,
+                aiRequiresExecution = decision.requiresExecution,
                 aiPrimaryChannel = decision.primaryChannel,
                 aiSupportingChannels = decision.supportingChannels,
                 aiToolHints = decision.toolHints,
@@ -480,15 +472,18 @@ class TaskRouter(
         return when {
             msg.senderRoleId == "phone_operator" ||
                 skillIds.any { it in PHONE_CONTROL_SKILLS } ||
-                text.containsAnyTerm("vlm_phone_control", "phone control", "foreground app") -> TaskType.PHONE_CONTROL
+                text.containsAnyTerm("vlm_phone_control") -> TaskType.PHONE_CONTROL
             skillIds.any { it in APP_BUILD_SKILLS } ||
-                text.containsAnyTerm("ui_builder", "app_manager", "ai native page", "miniapp") -> TaskType.APP_BUILD
+                text.containsAnyTerm("ui_builder", "app_manager") -> TaskType.APP_BUILD
+            msg.attachments.any { it is SkillAttachment.FileData || it is SkillAttachment.HtmlData || it is SkillAttachment.FileList } ||
             skillIds.any { it in FILE_SKILLS } ||
-                text.containsAnyTerm("generate_document", "create_file", "read_file", "file_list", "file", "document") -> TaskType.FILE_CREATE
+                text.containsAnyTerm("generate_document", "create_file", "read_file", "file_list") -> TaskType.FILE_CREATE
+            msg.attachments.any { it is SkillAttachment.WebPage || it is SkillAttachment.SearchResults } ||
             skillIds.any { it in WEB_SKILLS } ||
                 text.containsAnyTerm("web_search", "fetch_url", "web_browse", "search_results") -> TaskType.WEB_RESEARCH
+            msg.attachments.any { it is SkillAttachment.ImageData } ||
             skillIds.any { it in IMAGE_SKILLS } ||
-                text.containsAnyTerm("generate_image", "generate_icon", "image generated") -> TaskType.IMAGE_GENERATION
+                text.containsAnyTerm("generate_image", "generate_icon", "generate_video") -> TaskType.IMAGE_GENERATION
             skillIds.any { it == "vpn_control" } ||
                 text.containsAnyTerm("vpn", "mihomo") -> TaskType.VPN_CONTROL
             skillIds.any { it in CODE_SKILLS } -> TaskType.CODE_EXECUTION

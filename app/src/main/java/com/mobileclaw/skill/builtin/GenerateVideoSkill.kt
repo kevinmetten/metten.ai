@@ -45,7 +45,7 @@ private const val VIDEO_LOG_TAG = "GenerateVideoSkill"
  * Fallback config source: legacy user_config values such as video_api_endpoint/video_api_key.
  *
  * Supported providers:
- *   - Kling AI  (快手可灵):  https://api.klingai.com
+ *   - Kling AI  (Kling AI):  https://api.klingai.com
  *   - Agnes APIHub:         https://apihub.agnes-ai.com
  *   - Any OpenAI-compatible video endpoint
  *
@@ -68,14 +68,11 @@ class GenerateVideoSkill(
     override val meta = SkillMeta(
         id = "generate_video",
         name = "Generate Video",
-        nameZh = "生成视频",
         description = "Generates a video from a text prompt using an external async video API (e.g. Kling AI / Agnes APIHub). " +
             "Prefer the active gateway video capability; legacy video_api_endpoint/video_api_key is only a fallback. " +
             "Parameters: prompt (required), duration in seconds (optional, default 5), " +
             "aspect_ratio e.g. 16:9 (optional), model (optional), image for image-to-video (optional). " +
             "Returns the generated video as a downloadable file attachment.",
-        descriptionZh = "通过外部异步视频 API（如快手可灵、Agnes APIHub）生成视频。" +
-            "优先使用当前网关里的 video 能力配置，旧的 video_api_endpoint / video_api_key 仅作为兼容兜底。",
         parameters = listOf(
             SkillParam("prompt", "string", "Text description of the video to generate"),
             SkillParam("gateway_id", "string", "Optional configured gateway id to use for video generation", required = false),
@@ -102,7 +99,7 @@ class GenerateVideoSkill(
         injectionLevel = 1,
         isBuiltin = true,
         categories = listOf(SkillToolCategory.MEDIA),
-        tags = listOf("创作"),
+        tags = listOf("Creative"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult = withContext(Dispatchers.IO) {
@@ -216,17 +213,17 @@ class GenerateVideoSkill(
             cloudinaryApiSecret = cloudinaryApiSecret,
         )
         if (submission == null) {
-            return@withContext SkillResult(false, "视频任务提交失败，未收到服务端响应。")
+            return@withContext SkillResult(false, "Video submission failed because the server returned no response.")
         }
         if (submission.taskId.isBlank()) {
             val failure = buildString {
-                append("视频任务提交失败")
-                submission.httpCode?.let { append("，HTTP $it") }
+                append("Video submission failed")
+                submission.httpCode?.let { append(", HTTP $it") }
                 if (submission.errorMessage.isNotBlank()) {
-                    append("：")
+                    append(": ")
                     append(submission.errorMessage)
                 } else if (submission.rawResponse.isNotBlank()) {
-                    append("：")
+                    append(": ")
                     append(submission.rawResponse.take(300))
                 }
             }
@@ -254,7 +251,7 @@ class GenerateVideoSkill(
         if (!waitForCompletion) {
             return@withContext SkillResult(
                 success = true,
-                output = "视频任务已提交，已加入任务列表后台追踪。task_id: $taskId",
+                output = "Video submitted and queued for background tracking.task_id: $taskId",
             )
         }
 
@@ -264,7 +261,7 @@ class GenerateVideoSkill(
             taskManager.markTimedOut(taskId)
             return@withContext SkillResult(
                 success = true,
-                output = "视频任务已提交，生成时间较长，已加入长任务列表继续追踪。task_id: $taskId",
+                output = "Video submitted; because generation may take time, it was added to long-running task tracking.task_id: $taskId",
             )
         }
 
@@ -282,7 +279,7 @@ class GenerateVideoSkill(
 
         SkillResult(
             success = true,
-            output = "视频已生成：${outputFile.name}",
+            output = "Video generated: ${outputFile.name}",
             data = SkillAttachment.FileData(outputFile.absolutePath, outputFile.name, "video/mp4", outputFile.length()),
         )
     }
@@ -715,8 +712,6 @@ class GenerateVideoSkill(
         val normalized = trim().lowercase()
         if (normalized.isBlank()) return false
         return listOf(
-            "图生视频", "图转视频", "图片生成视频", "按图生成视频", "用图生成视频",
-            "用这张图", "根据这张图", "基于这张图", "这张图片", "这个图片", "刚才的图",
             "image to video", "image-to-video", "use this image", "from this image",
         ).any { normalized.contains(it) }
     }

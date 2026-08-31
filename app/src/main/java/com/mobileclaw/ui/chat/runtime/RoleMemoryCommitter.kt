@@ -73,12 +73,10 @@ class RoleMemoryCommitDecider {
         "$goal\n$summary".lowercase(Locale.getDefault())
 
     private val durableSignalNeedles = listOf(
-        "记住", "以后", "下次", "长期", "偏好", "习惯", "不要", "总是", "固定", "可复用", "经验",
         "remember", "from now on", "next time", "preference", "prefer", "habit", "always", "never", "reusable",
     )
 
     private val userMemoryNeedles = listOf(
-        "我的", "我喜欢", "我不喜欢", "我希望", "我的习惯", "用户偏好",
         "my ", "i prefer", "i like", "i don't like", "my preference", "my habit",
     )
 }
@@ -123,10 +121,10 @@ class RoleMemoryCommitter(
     }.trim()
 
     private fun renderMemoryEntry(input: RoleMemoryCommitInput): String = buildString {
-        appendLine("### ${nowText()} · 任务经验")
-        appendLine("- 触发条件: ${input.controlPlan.persistencePolicy.memoryImportanceThreshold}")
-        appendLine("- 用户目标: ${input.goal.compactLine(500)}")
-        appendLine("- 可复用经验: ${input.summary.compactLine(900)}")
+        appendLine("### ${nowText()} · Task experience")
+        appendLine("- Trigger condition: ${input.controlPlan.persistencePolicy.memoryImportanceThreshold}")
+        appendLine("- User goal: ${input.goal.compactLine(500)}")
+        appendLine("- Reusable experience: ${input.summary.compactLine(900)}")
     }.trim()
 
     private fun String.compactLine(maxChars: Int): String =

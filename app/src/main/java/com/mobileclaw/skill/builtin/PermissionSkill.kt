@@ -24,10 +24,8 @@ class PermissionSkill(
             )
         ),
         injectionLevel = 0,
-        nameZh = "检查权限",
-        descriptionZh = "检查并请求应用所需的 Android 权限。",
         categories = listOf(SkillToolCategory.SYSTEM, SkillToolCategory.PHONE),
-        tags = listOf("系统"),
+        tags = listOf("System"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {

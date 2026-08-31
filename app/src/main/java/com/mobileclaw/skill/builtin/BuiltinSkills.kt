@@ -111,10 +111,8 @@ class ScreenshotSkill : Skill {
             "For normal phone control, prefer see_screen first because it returns coordinates.",
         type = SkillType.NATIVE,
         injectionLevel = 0,
-        nameZh = "截图",
-        descriptionZh = "屏幕感知兜底工具。XML/无障碍节点不可用，或视觉标注不可用时截图供分析。",
         categories = listOf(SkillToolCategory.PHONE, SkillToolCategory.SYSTEM),
-        tags = listOf("控制"),
+        tags = listOf("Control"),
     )
     override suspend fun execute(params: Map<String, Any>): SkillResult {
         if (!ClawAccessibilityService.isEnabled()) return accessibilityNotAvailable(meta.name)
@@ -135,10 +133,8 @@ class ReadScreenSkill : Skill {
         description = "Returns the current screen UI as structured XML with node IDs. Legacy tool — only use when explicitly debugging accessibility trees. Prefer see_screen for all normal screen reading.",
         type = SkillType.NATIVE,
         injectionLevel = 2,
-        nameZh = "读取屏幕（XML）",
-        descriptionZh = "以 XML 格式读取屏幕 UI 结构（无障碍旧版）。",
         categories = listOf(SkillToolCategory.PHONE, SkillToolCategory.SYSTEM),
-        tags = listOf("控制"),
+        tags = listOf("Control"),
     )
     override suspend fun execute(params: Map<String, Any>): SkillResult {
         if (!ClawAccessibilityService.isEnabled()) return accessibilityNotAvailable(meta.name)
@@ -169,10 +165,8 @@ class SeeScreenSkill : Skill {
             "after this tool, take an action instead of calling see_screen again unless the UI has changed.",
         type = SkillType.NATIVE,
         injectionLevel = 0,
-        nameZh = "看屏幕（视觉）",
-        descriptionZh = "截图后由视觉模型描述屏幕内容。",
         categories = listOf(SkillToolCategory.PHONE, SkillToolCategory.SYSTEM),
-        tags = listOf("控制"),
+        tags = listOf("Control"),
     )
     override suspend fun execute(params: Map<String, Any>): SkillResult {
         if (!ClawAccessibilityService.isEnabled()) return accessibilityNotAvailable(meta.name)
@@ -229,10 +223,8 @@ class TapSkill : Skill {
         ),
         type = SkillType.NATIVE,
         injectionLevel = 0,
-        nameZh = "点击",
-        descriptionZh = "点击屏幕上的指定坐标或元素。",
         categories = listOf(SkillToolCategory.PHONE, SkillToolCategory.SYSTEM),
-        tags = listOf("控制"),
+        tags = listOf("Control"),
     )
     override suspend fun execute(params: Map<String, Any>): SkillResult {
         if (!ClawAccessibilityService.isEnabled()) return accessibilityNotAvailable(meta.name)
@@ -287,10 +279,8 @@ class InputTextSkill : Skill {
         ),
         type = SkillType.NATIVE,
         injectionLevel = 0,
-        nameZh = "输入文字",
-        descriptionZh = "在当前焦点输入框中输入文本。",
         categories = listOf(SkillToolCategory.PHONE, SkillToolCategory.SYSTEM),
-        tags = listOf("控制"),
+        tags = listOf("Control"),
     )
     override suspend fun execute(params: Map<String, Any>): SkillResult {
         if (!ClawAccessibilityService.isEnabled()) return accessibilityNotAvailable(meta.name)
@@ -324,10 +314,8 @@ class NavigateSkill(
         ),
         type = SkillType.NATIVE,
         injectionLevel = 0,
-        nameZh = "导航",
-        descriptionZh = "通过包名或 URL 跳转到指定页面或应用。",
         categories = listOf(SkillToolCategory.PHONE, SkillToolCategory.SYSTEM),
-        tags = listOf("控制"),
+        tags = listOf("Control"),
     )
     override suspend fun execute(params: Map<String, Any>): SkillResult {
         if (!ClawAccessibilityService.isEnabled()) return accessibilityNotAvailable(meta.name)
@@ -383,10 +371,8 @@ class ScrollSkill : Skill {
         ),
         type = SkillType.NATIVE,
         injectionLevel = 0,
-        nameZh = "滚动 / 滑动",
-        descriptionZh = "在屏幕上执行滚动或滑动操作。",
         categories = listOf(SkillToolCategory.PHONE, SkillToolCategory.SYSTEM),
-        tags = listOf("控制"),
+        tags = listOf("Control"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -451,10 +437,8 @@ class LongClickSkill : Skill {
         ),
         type = SkillType.NATIVE,
         injectionLevel = 0,
-        nameZh = "长按",
-        descriptionZh = "长按屏幕上的指定坐标。",
         categories = listOf(SkillToolCategory.PHONE, SkillToolCategory.SYSTEM),
-        tags = listOf("控制"),
+        tags = listOf("Control"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -503,10 +487,8 @@ class PhoneStatusSkill : Skill {
         description = "Returns the current foreground app package/activity and the latest screenshot coordinate mapping. Use after phone actions to verify whether the target app is open.",
         type = SkillType.NATIVE,
         injectionLevel = 0,
-        nameZh = "手机状态",
-        descriptionZh = "返回当前前台 App 包名/Activity，以及最近一次截图坐标映射。",
         categories = listOf(SkillToolCategory.PHONE, SkillToolCategory.SYSTEM),
-        tags = listOf("控制"),
+        tags = listOf("Control"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -522,10 +504,8 @@ class ListAppsSkill : Skill {
         description = "Returns all installed apps with their package names and display names. Use this before navigate(launch) to find the correct package_name.",
         type = SkillType.NATIVE,
         injectionLevel = 1,
-        nameZh = "查看已安装应用",
-        descriptionZh = "列出设备上已安装的所有应用。",
         categories = listOf(SkillToolCategory.PHONE, SkillToolCategory.SYSTEM),
-        tags = listOf("控制"),
+        tags = listOf("Control"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {

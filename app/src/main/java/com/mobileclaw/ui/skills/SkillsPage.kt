@@ -54,7 +54,6 @@ import com.mobileclaw.skill.SkillToolTaxonomy
 import com.mobileclaw.ui.ClawColors
 import com.mobileclaw.ui.ClawIconTile
 import com.mobileclaw.ui.ClawSymbolIcon
-import com.mobileclaw.ui.LocalAppLanguage
 import com.mobileclaw.ui.LocalClawColors
 import com.mobileclaw.str
 
@@ -75,13 +74,12 @@ fun SkillsPage(
     showHeader: Boolean = true,
 ) {
     val c = LocalClawColors.current
-    val locale = LocalAppLanguage.current
     var pendingPromotion by remember { mutableStateOf<SkillMeta?>(null) }
     var pendingDelete by remember { mutableStateOf<SkillMeta?>(null) }
     val installedIds = remember(allSkills) { allSkills.map { it.id }.toSet() }
 
     // Group by execution channel so the AI and the user see the same capability taxonomy.
-    val tagGroups = remember(allSkills, locale) {
+    val tagGroups = remember(allSkills) {
         val categoryOrder = listOf(
             SkillToolCategory.CHAT,
             SkillToolCategory.MEMORY,
@@ -99,10 +97,10 @@ fun SkillsPage(
             .flatMap { skill -> SkillToolTaxonomy.categoriesFor(skill).map { category -> category to skill } }
             .groupBy({ it.first }, { it.second })
         categoryOrder.mapNotNull { category ->
-            grouped[category]?.let { Triple(skillCategoryLabel(category, locale), category.name.lowercase(), it.distinctBy { s -> s.id }) }
+            grouped[category]?.let { Triple(skillCategoryLabel(category), category.name.lowercase(), it.distinctBy { s -> s.id }) }
         } + (grouped.keys - categoryOrder.toSet()).sortedBy { it.name }.mapNotNull { category ->
             grouped[category]?.let {
-                Triple(skillCategoryLabel(category, locale), category.name.lowercase(), it.distinctBy { s -> s.id })
+                Triple(skillCategoryLabel(category), category.name.lowercase(), it.distinctBy { s -> s.id })
             }
         }
     }
@@ -270,21 +268,18 @@ data class CompactTabItem(
     val onClick: () -> Unit,
 )
 
-private fun skillCategoryLabel(category: SkillToolCategory, locale: String): String {
-    val zh = locale == "zh"
-    return when (category) {
-        SkillToolCategory.CHAT -> if (zh) "聊天表达" else "Chat"
-        SkillToolCategory.MEMORY -> if (zh) "记忆" else "Memory"
-        SkillToolCategory.SKILL -> if (zh) "技能管理" else "Skills"
-        SkillToolCategory.SELF_EVOLUTION -> if (zh) "自我进化" else "Evolution"
-        SkillToolCategory.ARTIFACT -> if (zh) "产物" else "Artifacts"
-        SkillToolCategory.PHONE -> if (zh) "手机操作" else "Phone"
-        SkillToolCategory.WEB -> if (zh) "网页" else "Web"
-        SkillToolCategory.MEDIA -> if (zh) "媒体" else "Media"
-        SkillToolCategory.VPN -> "VPN"
-        SkillToolCategory.CODE -> if (zh) "代码" else "Code"
-        SkillToolCategory.SYSTEM -> if (zh) "系统" else "System"
-    }
+private fun skillCategoryLabel(category: SkillToolCategory): String = when (category) {
+    SkillToolCategory.CHAT -> "Chat"
+    SkillToolCategory.MEMORY -> "Memory"
+    SkillToolCategory.SKILL -> "Skills"
+    SkillToolCategory.SELF_EVOLUTION -> "Evolution"
+    SkillToolCategory.ARTIFACT -> "Artifacts"
+    SkillToolCategory.PHONE -> "Phone"
+    SkillToolCategory.WEB -> "Web"
+    SkillToolCategory.MEDIA -> "Media"
+    SkillToolCategory.VPN -> "VPN"
+    SkillToolCategory.CODE -> "Code"
+    SkillToolCategory.SYSTEM -> "System"
 }
 
 private fun skillsWorkbenchBrush(c: ClawColors): Brush =
@@ -407,9 +402,8 @@ private fun MarketSkillCard(
     onInstall: () -> Unit,
     c: ClawColors,
 ) {
-    val lang = LocalAppLanguage.current
-    val name = if (lang == "zh") entry.def.meta.nameZh ?: entry.def.meta.name else entry.def.meta.name
-    val desc = if (lang == "zh") entry.def.meta.descriptionZh ?: entry.def.meta.description else entry.def.meta.description
+    val name = entry.def.meta.name
+    val desc = entry.def.meta.description
 
     Row(
         modifier = Modifier
@@ -653,9 +647,8 @@ private fun SkillRow(
     var localNote by remember { mutableStateOf(note) }
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
-    val lang = LocalAppLanguage.current
-    val displayName = if (lang == "zh") skill.nameZh ?: skill.name else skill.name
-    val displayDesc = if (lang == "zh") skill.descriptionZh ?: skill.description else skill.description
+    val displayName = skill.name
+    val displayDesc = skill.description
 
     // Sync external note changes (e.g. from AI generation) into local state
     LaunchedEffect(note) {

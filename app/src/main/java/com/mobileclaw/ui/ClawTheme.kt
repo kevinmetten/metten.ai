@@ -76,7 +76,6 @@ fun lightClawColors(accent: Color = DefaultAccent): ClawColors {
 }
 
 val LocalClawColors = staticCompositionLocalOf { darkClawColors() }
-val LocalAppLanguage = staticCompositionLocalOf { "en" }
 
 private val ClawTypography = Typography(
     displayLarge  = TextStyle(fontWeight = FontWeight.Bold,     fontSize = 42.sp, lineHeight = 48.sp),
@@ -159,7 +158,6 @@ fun ClawTheme(
 
     CompositionLocalProvider(
         LocalClawColors provides clawColors,
-        LocalAppLanguage provides "en",
     ) {
         MaterialTheme(colorScheme = materialColors, typography = ClawTypography, content = content)
     }

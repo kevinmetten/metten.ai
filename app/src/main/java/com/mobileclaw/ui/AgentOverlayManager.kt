@@ -47,7 +47,6 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import com.mobileclaw.ClawApplication
 
 // ── Color palette ─────────────────────────────────────────────────────────────
 
@@ -195,7 +194,7 @@ class AgentOverlayManager(private val context: Context) {
 
     fun onObservation(text: String) { runOnMain { state.lastObservation = text.take(100) } }
 
-    // Warning 只更新说明，不切换到错误态，避免用户把 guard / 约束误解成任务失败。
+    // Warnings update the explanation without entering an error state, so guards are not mistaken for task failures.
     fun onWarning(message: String) { runOnMain { state.isError = false; state.lastObservation = message.take(100) } }
 
     fun onError(message: String) { runOnMain { state.isError = true; state.lastObservation = message.take(100) } }
@@ -203,11 +202,11 @@ class AgentOverlayManager(private val context: Context) {
     fun showCompleted(summary: String) {
         runOnMain {
             if (hostFrame == null) {
-                showInternal(if (overlayIsZh()) "任务已完成" else "Task completed", compact = false)
+                showInternal("Task completed", compact = false)
             }
             state.completed = true
             state.compact = false
-            state.task = if (overlayIsZh()) "任务已完成" else "Task completed"
+            state.task = "Task completed"
             state.currentSkill = ""
             state.streamingThought = ""
             state.lastObservation = ""
@@ -351,9 +350,6 @@ class AgentOverlayManager(private val context: Context) {
         }
     }
 }
-
-private fun overlayIsZh(): Boolean =
-    ClawApplication.instance.agentConfig.language != "en"
 
 // ── Capsule Composable ────────────────────────────────────────────────────────
 
@@ -542,7 +538,6 @@ private fun CompletionOverlayCard(
     onMinimize: () -> Unit,
     onClose: () -> Unit,
 ) {
-    val isZh = overlayIsZh()
     Column(
         modifier = Modifier
             .pointerInput(Unit) {
@@ -557,10 +552,10 @@ private fun CompletionOverlayCard(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.size(9.dp).clip(CircleShape).background(DotGreen))
-            Text(if (isZh) "执行完成" else "Completed", color = CapsuleText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Text("Completed", color = CapsuleText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
         }
         Text(
-            text = summary.ifBlank { if (isZh) "内容已经执行完毕，可以回到 MobileClaw 查看结果。" else "The task is complete. Return to MobileClaw to view the result." },
+            text = summary.ifBlank { "The task is complete. Return to MobileClaw to view the result." },
             color = CapsuleText.copy(alpha = 0.76f),
             fontSize = 12.sp,
             lineHeight = 17.sp,
@@ -568,9 +563,9 @@ private fun CompletionOverlayCard(
             overflow = TextOverflow.Ellipsis,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OverlayActionButton(if (isZh) "回到APP" else "Return", primary = true, modifier = Modifier.weight(1.18f), onClick = onReturnToApp)
-            OverlayActionButton(if (isZh) "缩小" else "Minimize", primary = false, modifier = Modifier.weight(0.82f), onClick = onMinimize)
-            OverlayActionButton(if (isZh) "关闭" else "Close", primary = false, modifier = Modifier.weight(0.82f), onClick = onClose)
+            OverlayActionButton("Return", primary = true, modifier = Modifier.weight(1.18f), onClick = onReturnToApp)
+            OverlayActionButton("Minimize", primary = false, modifier = Modifier.weight(0.82f), onClick = onMinimize)
+            OverlayActionButton("Close", primary = false, modifier = Modifier.weight(0.82f), onClick = onClose)
         }
     }
 }

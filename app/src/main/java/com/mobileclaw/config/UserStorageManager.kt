@@ -72,8 +72,8 @@ class UserStorageManager(private val context: Context) {
     suspend fun listDir(path: String): Result<List<FileEntry>> = withContext(Dispatchers.IO) {
         runCatching {
             val dir = File(path)
-            require(dir.exists()) { "路径不存在: $path" }
-            require(dir.isDirectory) { "不是目录: $path" }
+            require(dir.exists()) { "Path does not exist: $path" }
+            require(dir.isDirectory) { "Not a directory: $path" }
             (dir.listFiles() ?: emptyArray()).map { f ->
                 FileEntry(f.name, f.absolutePath, f.isDirectory, if (f.isFile) f.length() else 0L, f.lastModified())
             }.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
@@ -83,11 +83,11 @@ class UserStorageManager(private val context: Context) {
     suspend fun readFile(path: String, maxBytes: Int = 512_000): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
             val file = File(path)
-            require(file.exists()) { "文件不存在: $path" }
-            require(file.isFile) { "不是文件: $path" }
+            require(file.exists()) { "File does not exist: $path" }
+            require(file.isFile) { "Not a file: $path" }
             if (file.length() > maxBytes) {
                 file.inputStream().use { it.readNBytes(maxBytes).toString(Charsets.UTF_8) } +
-                    "\n\n[文件过大，仅显示前 ${maxBytes / 1024} KB]"
+                    "\n\n[File is too large; showing only the first ${maxBytes / 1024} KB]"
             } else {
                 file.readText()
             }
@@ -117,7 +117,7 @@ class UserStorageManager(private val context: Context) {
         runCatching {
             val srcFile = File(src)
             val dstFile = File(dst)
-            require(srcFile.exists()) { "源文件不存在: $src" }
+            require(srcFile.exists()) { "Source file does not exist: $src" }
             dstFile.parentFile?.mkdirs()
             srcFile.copyTo(dstFile, overwrite = true)
             Unit
@@ -128,7 +128,7 @@ class UserStorageManager(private val context: Context) {
         runCatching {
             val srcFile = File(src)
             val dstFile = File(dst)
-            require(srcFile.exists()) { "源文件不存在: $src" }
+            require(srcFile.exists()) { "Source file does not exist: $src" }
             dstFile.parentFile?.mkdirs()
             if (!srcFile.renameTo(dstFile)) {
                 srcFile.copyTo(dstFile, overwrite = true)

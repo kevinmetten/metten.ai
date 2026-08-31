@@ -27,10 +27,8 @@ class CreateFileSkill(private val context: Context) : Skill {
         ),
         type = SkillType.NATIVE,
         injectionLevel = 1,
-        nameZh = "创建文件",
-        descriptionZh = "在本地存储中创建或覆盖文件。",
         categories = listOf(SkillToolCategory.ARTIFACT),
-        tags = listOf("文件"),
+        tags = listOf("Files"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult = withContext(Dispatchers.IO) {
@@ -71,9 +69,7 @@ class ReadFileSkill(private val context: Context) : Skill {
     override val meta = SkillMeta(
         id = "read_file",
         name = "Read File",
-        nameZh = "读取文件",
         description = "Reads a text file from the app's created_files directory. Returns up to 50,000 characters.",
-        descriptionZh = "读取 created_files 目录中的文本文件，最多返回 50,000 字符。",
         parameters = listOf(
             SkillParam("filename", "string", "Filename to read, e.g. 'report.txt' or 'data.json'"),
         ),
@@ -81,7 +77,7 @@ class ReadFileSkill(private val context: Context) : Skill {
         injectionLevel = 1,
         isBuiltin = true,
         categories = listOf(SkillToolCategory.ARTIFACT),
-        tags = listOf("文件"),
+        tags = listOf("Files"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult = withContext(Dispatchers.IO) {
@@ -108,11 +104,9 @@ class ListFilesSkill(private val context: Context) : Skill {
     override val meta = SkillMeta(
         id = "list_files",
         name = "List Files",
-        nameZh = "列出文件",
         description = "Lists files in a directory — shown as tappable file cards in chat. " +
             "directory: 'created_files' (AI-created, default), 'downloads', 'documents', 'pictures', 'music', or an absolute path. " +
             "Returns at most 50 files, no recursion. Do NOT call this in a loop — one call gives you the complete flat listing.",
-        descriptionZh = "列出目录中的文件，结果以文件卡片形式展示。directory 可为 'created_files'（默认）、'downloads'、'documents'、'pictures'、'music' 或绝对路径。最多 50 个文件，不递归。",
         parameters = listOf(
             SkillParam("directory", "string", "Which folder to list: 'created_files' (default), 'downloads', 'documents', 'pictures', 'music', or absolute path.", required = false),
         ),
@@ -120,7 +114,7 @@ class ListFilesSkill(private val context: Context) : Skill {
         injectionLevel = 1,
         isBuiltin = true,
         categories = listOf(SkillToolCategory.ARTIFACT),
-        tags = listOf("文件"),
+        tags = listOf("Files"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult = withContext(Dispatchers.IO) {
@@ -200,10 +194,8 @@ class CreateHtmlSkill(private val context: Context) : Skill {
         ),
         type = SkillType.NATIVE,
         injectionLevel = 1,
-        nameZh = "创建一次性 HTML 预览",
-        descriptionZh = "生成一次性 HTML 报告/预览并在聊天中打开。持久页面优先使用 ui_builder，真正的 MiniAPP 程序使用 app_manager，不要直接在聊天里返回 HTML。",
         categories = listOf(SkillToolCategory.ARTIFACT),
-        tags = listOf("文件"),
+        tags = listOf("Files"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult = withContext(Dispatchers.IO) {

@@ -16,13 +16,13 @@ private const val MAX_TEXT_ATTACHMENT_BYTES = 1_000_000L
 private const val MAX_BINARY_ATTACHMENT_BYTES = 8_000_000L
 private const val GROUP_INLINE_TEXT_LIMIT = 10_000
 
-// 聊天与群聊都需要“图片/文本/二进制附件识别”这套能力，抽到 common 后页面只保留交互编排。
+// Centralize image, text, and binary attachment recognition so screens only coordinate interactions.
 sealed class PickedChatInput {
     data class Image(val base64: String) : PickedChatInput()
     data class File(val attachment: FileAttachment) : PickedChatInput()
 }
 
-// 群聊发送附件时除了附件本体，还可能附带一段内联文本摘要，因此单独保留一个结果模型。
+// Keep a separate result model because an attachment can include an inline text summary.
 data class GroupPickedAttachment(
     val attachments: List<SkillAttachment>,
     val textAppend: String = "",
@@ -98,7 +98,7 @@ fun buildGroupPickedAttachment(context: Context, uri: Uri): GroupPickedAttachmen
             val content = bytes.toString(Charsets.UTF_8).take(GROUP_INLINE_TEXT_LIMIT)
             GroupPickedAttachment(
                 attachments = listOf(SkillAttachment.FileData(uri.toString(), name, mimeType, bytes.size.toLong())),
-                textAppend = "\n\n[附件: $name]\n```\n$content\n```",
+                textAppend = "\n\n[Attachment: $name]\n```\n$content\n```",
             )
         }
         else -> GroupPickedAttachment(

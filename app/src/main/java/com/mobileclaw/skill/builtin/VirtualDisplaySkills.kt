@@ -23,10 +23,8 @@ class BgLaunchSkill(private val manager: VirtualDisplayManager) : Skill {
         ),
         type = SkillType.NATIVE,
         injectionLevel = 1,
-        nameZh = "虚拟屏幕启动应用",
-        descriptionZh = "在后台虚拟显示器上启动指定应用。",
         categories = listOf(SkillToolCategory.PHONE, SkillToolCategory.SYSTEM),
-        tags = listOf("后台"),
+        tags = listOf("Background"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -74,10 +72,8 @@ class BgReadScreenSkill(private val manager: VirtualDisplayManager) : Skill {
             "If the tree is empty, use bg_screenshot for visual analysis instead.",
         type = SkillType.NATIVE,
         injectionLevel = 1,
-        nameZh = "读取虚拟屏幕（XML）",
-        descriptionZh = "以 XML 格式读取虚拟显示器的 UI 结构。",
         categories = listOf(SkillToolCategory.PHONE, SkillToolCategory.SYSTEM),
-        tags = listOf("后台"),
+        tags = listOf("Background"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -108,10 +104,8 @@ class BgScreenshotSkill(private val manager: VirtualDisplayManager) : Skill {
             "Use after bg_launch when bg_read_screen returns no useful content (Flutter/game/WebView apps).",
         type = SkillType.NATIVE,
         injectionLevel = 1,
-        nameZh = "虚拟屏幕截图",
-        descriptionZh = "对虚拟显示器进行截图。",
         categories = listOf(SkillToolCategory.PHONE, SkillToolCategory.SYSTEM),
-        tags = listOf("后台"),
+        tags = listOf("Background"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -136,10 +130,8 @@ class BgStopSkill(private val manager: VirtualDisplayManager) : Skill {
             "Call this when the background task is complete to free resources.",
         type = SkillType.NATIVE,
         injectionLevel = 1,
-        nameZh = "停止虚拟显示器",
-        descriptionZh = "停止并关闭虚拟显示器。",
         categories = listOf(SkillToolCategory.PHONE, SkillToolCategory.SYSTEM),
-        tags = listOf("后台"),
+        tags = listOf("Background"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -156,10 +148,8 @@ class VirtualDisplaySetupSkill(private val manager: VirtualDisplayManager) : Ski
             "Call this when bg_launch fails or the user reports the virtual display is unavailable.",
         type = SkillType.NATIVE,
         injectionLevel = 2,
-        nameZh = "虚拟显示器配置指南",
-        descriptionZh = "获取虚拟显示器的安装和配置步骤。",
         categories = listOf(SkillToolCategory.PHONE, SkillToolCategory.SYSTEM),
-        tags = listOf("后台"),
+        tags = listOf("Background"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -171,21 +161,21 @@ class VirtualDisplaySetupSkill(private val manager: VirtualDisplayManager) : Ski
             val id = testResult.substringAfter(":")
             SkillResult(
                 success = true,
-                output = "✓ 虚拟屏可用 (display #$id，设备: $romName)\n\n$guide",
+                output = "✓ Virtual display available (display #$id, device: $romName)\n\n$guide",
             )
         } else {
             val error = testResult.substringAfter(":")
             SkillResult(
                 success = false,
                 output = buildString {
-                    appendLine("✗ 虚拟屏不可用: $error")
+                    appendLine("✗ Virtual display unavailable: $error")
                     appendLine()
-                    appendLine("设备: $romName")
+                    appendLine("Device: $romName")
                     appendLine()
                     appendLine(guide)
                     appendLine()
                     appendLine("─────────────────────────")
-                    appendLine("📲 也可在应用「设置 → Virtual Display → 设置向导」查看图文步骤和一键复制命令。")
+                    appendLine("📲 You can also open Settings → Virtual Display → Setup guide for illustrated steps and copyable commands.")
                 },
             )
         }
@@ -209,59 +199,59 @@ class VirtualDisplaySetupSkill(private val manager: VirtualDisplayManager) : Ski
 
     private fun romGuide(rom: String): String = when {
         rom.contains("MIUI") -> """
-            📱 MIUI 设置步骤:
-            1. 设置 → 我的设备 → 全部参数 → 连点 MIUI 版本7次 → 开发者模式开启
-            2. 设置 → 更多设置 → 开发者选项
-            3. 开启【自由窗口】(Free-form windows)
-            4. 然后重启 app，再试 bg_launch
+            📱 MIUI setup steps:
+            1. Settings → My device → All specs → tap MIUI version seven times to enable developer mode
+            2. Settings → Additional settings → Developer options
+            3. Enable Free-form windows
+            4. Restart the app, then retry bg_launch
 
-            如仍不行，ADB 命令（连接电脑）:
+            If it still fails, run this ADB command from a connected computer:
               adb shell settings put global enable_freeform_support 1
         """.trimIndent()
 
         rom.contains("EMUI") || rom.contains("HarmonyOS") -> """
-            📱 EMUI/HarmonyOS 设置步骤:
-            1. 设置 → 关于手机 → 版本号 连点7次 → 开发者模式开启
-            2. 设置 → 系统 → 开发者选项
-            3. 开启【多窗口】和【自由窗口】
-            4. 然后重启 app，再试 bg_launch
+            📱 EMUI/HarmonyOS setup steps:
+            1. Settings → About phone → tap Build number seven times to enable developer mode
+            2. Settings → System → Developer options
+            3. Enable multi-window and free-form windows
+            4. Restart the app, then retry bg_launch
 
-            如仍不行，ADB 命令:
+            If it still fails, run this ADB command:
               adb shell settings put global enable_freeform_support 1
         """.trimIndent()
 
         rom.contains("ColorOS") -> """
-            📱 ColorOS 设置步骤 (OPPO/Realme/OnePlus):
-            1. 设置 → 关于本机 → 版本号 连点7次 → 开启开发者模式
-            2. 设置 → 其他设置 → 开发者选项
-            3. 开启【自由窗口】(部分机型叫"强制活动可调整大小")
-            4. 重启 app，再试 bg_launch
+            📱 ColorOS setup steps (OPPO/Realme/OnePlus):
+            1. Settings → About device → tap Build number seven times to enable developer mode
+            2. Settings → Additional settings → Developer options
+            3. Enable free-form windows (called Force activities to be resizable on some devices)
+            4. Restart the app, then retry bg_launch
 
-            如果设置后仍不行（ColorOS 12+ 常见），ADB 命令（连接电脑）:
+            If it still fails after configuration (common on ColorOS 12+), run this ADB command from a connected computer:
               adb shell settings put global enable_freeform_support 1
               adb shell settings put global force_desktop_mode_on_external_displays 1
 
-            执行后无需重启，直接重试 bg_launch 即可。
+            No restart is needed after running it; retry bg_launch directly.
         """.trimIndent()
 
         rom.contains("OriginOS") || rom.contains("FuntouchOS") -> """
-            📱 OriginOS/FuntouchOS 设置步骤:
-            1. 设置 → 通用 → 关于手机 → 连点版本号7次 → 开启开发者模式
-            2. 设置 → 通用 → 开发者选项
-            3. 开启【多任务显示】
-            4. 重启 app，再试 bg_launch
+            📱 OriginOS/FuntouchOS setup steps:
+            1. Settings → General → About phone → tap Build number seven times to enable developer mode
+            2. Settings → General → Developer options
+            3. Enable multi-task display
+            4. Restart the app, then retry bg_launch
 
-            如仍不行，ADB 命令:
+            If it still fails, run this ADB command:
               adb shell settings put global enable_freeform_support 1
         """.trimIndent()
 
         else -> """
-            📱 通用设置步骤:
-            1. 设置 → 关于手机 → 版本号 连点7次 → 开启开发者选项
-            2. 开发者选项 → 开启【自由窗口】或【多窗口】
-            3. 如仍不行，ADB 命令（连接电脑）:
+            📱 General setup steps:
+            1. Settings → About phone → tap Build number seven times to enable Developer options
+            2. Developer options → enable free-form windows or multi-window
+            3. If it still fails, run this ADB command from a connected computer:
                adb shell settings put global enable_freeform_support 1
-            4. 重启 app 后再试。
+            4. Restart the app and try again.
         """.trimIndent()
     }
 }

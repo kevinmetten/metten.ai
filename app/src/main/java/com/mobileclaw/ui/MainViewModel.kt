@@ -467,8 +467,8 @@ class MainViewModel : ViewModel() {
     private val pendingConfirmedRoutes = mutableMapOf<String, TaskRoute>()
     private var videoTaskAutoRefreshJob: Job? = null
 
-    // 每个会话一个运行代次：新一轮任务接管会话时递增。被取消的旧协程恢复后必须先校验代次，
-    // 过期回调不得再改写 isRunning/activeLogLines/任务句柄，否则会击穿 loadSession 的防覆盖守卫。
+    // Track one run generation per session. Increment it when a new task takes over, and validate it when cancelled coroutines resume.
+    // Stale callbacks must not overwrite isRunning, activeLogLines, or task handles, which would bypass loadSession safeguards.
     private val runGenerations = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
     private fun beginRunGeneration(sessionId: String): Long =
@@ -481,8 +481,8 @@ class MainViewModel : ViewModel() {
     private fun isRunGenerationCurrent(sessionId: String, generation: Long): Boolean =
         runGenerations[sessionId] == generation
 
-    // 任务执行中禁止 agent 新建/切走当前会话或删除正在运行的会话：
-    // 切换会触发 loadSessionMessages 重载，删除会物理清掉整段聊天记录，都表现为“聊天记录被覆盖/丢失”。
+    // Prevent the agent from creating, switching away from, or deleting the active session while a task runs.
+    // Switching reloads messages and deletion removes history; both would appear as lost or overwritten chat history.
     private fun guardSessionMutation(request: SessionRequest): String? {
         fun isBusy(id: String) = id.isNotBlank() && _uiState.value.sessionStates[id]?.isRunning == true
         val currentId = _uiState.value.currentSessionId
@@ -788,7 +788,7 @@ class MainViewModel : ViewModel() {
         val roleId = _uiState.value.currentRole.id
         database.sessionDao().insert(SessionEntity(
             id = id,
-            title = if (codexDesktopMode) "Codex 会话" else str(R.string.vm_new_),
+            title = if (codexDesktopMode) "Codex session" else str(R.string.vm_new_),
             roleId = roleId,
         ))
         _uiState.update {
@@ -845,7 +845,7 @@ class MainViewModel : ViewModel() {
         }.getOrDefault(emptyList()).reversed()  // DESC→reversed gives ASC order
         val messages = entities.map { it.toChatMessage() }
         val hasMore = total > pageSize
-        // 合并而非整体替换：内存里可能还有未落库的消息（正在执行/刚被打断的轮次），整体替换会把它们冲掉。
+        // Merge instead of replacing because memory may contain unpersisted messages from an active or interrupted turn.
         updateSession(sessionId) { it.copy(messages = mergeLoadedMessages(messages, it.messages)) }
         _uiState.update { it.copy(
             historyOffset = pageSize,
@@ -854,8 +854,8 @@ class MainViewModel : ViewModel() {
         )}
     }
 
-    // 会话消息是只追加的：DB 页是已持久化的最新一段，内存尾部可能有尚未落库的新消息。
-    // 以 DB 页为基底，把内存中比 DB 更新的尾部接回去，避免加载时冲掉未持久化的消息。
+    // Session messages are append-only: the database page is persisted, while the in-memory tail may still be pending.
+    // Use the database page as the base and reattach the newer in-memory tail to preserve pending messages.
     private fun mergeLoadedMessages(dbMessages: List<ChatMessage>, inMemory: List<ChatMessage>): List<ChatMessage> {
         if (inMemory.isEmpty()) return dbMessages
         if (dbMessages.isEmpty()) return inMemory
@@ -863,8 +863,8 @@ class MainViewModel : ViewModel() {
         val unsavedTail = if (anchor >= 0) {
             inMemory.drop(anchor + 1)
         } else {
-            // DB 最后一条不在内存中（内存窗口落后于 DB）：取内存中最后一条已入库消息之后的部分，
-            // 再排除 DB 页里已有的，剩下的就是未持久化的尾部。
+            // If the database tail is absent from memory, keep the portion after the last in-memory message known to be persisted,
+            // then exclude messages already on the database page to isolate the unpersisted tail.
             val lastSharedIdx = inMemory.indexOfLast { mem -> dbMessages.any { it == mem } }
             inMemory.drop(lastSharedIdx + 1).filter { mem -> dbMessages.none { it == mem } }
         }
@@ -1178,7 +1178,7 @@ class MainViewModel : ViewModel() {
                 var imageGenerationFailure: String? = null
                 val generatedDataUri = imageReadiness.target?.let { target ->
                     val selfBrief = createRoleSelfPortraitBrief(role)
-                    // 角色页的“生图”只在真实图片生成链路可用时才调用。
+                    // Generate role images only when a real image-generation path is available.
                     val basePrompt = selfBrief["portrait_prompt"]?.asString?.takeIf { it.isNotBlank() }
                         ?: selfBrief["render_prompt"]?.asString?.takeIf { it.isNotBlank() }
                         ?: error("role visual brief did not return a portrait prompt")
@@ -1243,12 +1243,12 @@ class MainViewModel : ViewModel() {
                         portrait.attemptedImageGeneration -> {
                             val reason = portrait.failureMessage?.lineSequence()?.firstOrNull()?.take(90)
                             if (reason.isNullOrBlank()) {
-                                "图片生成失败，已使用简洁本地形象"
+                                "Image generation failed; using a simple local avatar"
                             } else {
-                                "图片生成失败，已使用简洁本地形象：$reason"
+                                "Image generation failed; using a simple local avatar: $reason"
                             }
                         }
-                        else -> "图片生成不可用，已使用简洁本地形象"
+                        else -> "Image generation is unavailable; using a simple local avatar"
                     }
                     Toast.makeText(app, message, Toast.LENGTH_SHORT).show()
                 }.onFailure { e ->
@@ -1425,8 +1425,8 @@ class MainViewModel : ViewModel() {
     }
 
     private fun ensureRolePortraits(roles: List<Role>) {
-        // 角色页首次打开不再自动生成形象。用户点击“生成形象”时再根据图片模型配置决定
-        // 调用真实生图模型或使用简洁本地文字头像，避免无配置时静默触发外部接口。
+        // Do not generate an avatar automatically when the role page first opens. Wait for the explicit user action,
+        // then use the configured image model or a simple local text avatar without silently calling external services.
     }
 
     private suspend fun configuredRolePortraitImageModelOrNull(): String? {
@@ -1474,7 +1474,7 @@ class MainViewModel : ViewModel() {
                 role.id,
                 RoomTool(
                     id = skillId,
-                    title = meta?.nameZh?.takeIf { it.isNotBlank() } ?: meta?.name ?: skillId,
+                    title = meta?.name ?: skillId,
                     category = purpose.take(40),
                 )
             )
@@ -1492,7 +1492,7 @@ class MainViewModel : ViewModel() {
             is SkillAttachment.ImageData -> RoomArtifact(
                 id = stableHomeId("image", attachment.prompt ?: purpose),
                 type = "image",
-                title = attachment.prompt?.take(36)?.ifBlank { null } ?: "生成图片",
+                title = attachment.prompt?.take(36)?.ifBlank { null } ?: "Generated image",
                 subtitle = purpose.take(80),
             )
             is SkillAttachment.FileData -> RoomArtifact(
@@ -1516,13 +1516,13 @@ class MainViewModel : ViewModel() {
             is SkillAttachment.SearchResults -> RoomArtifact(
                 id = stableHomeId("search", attachment.query),
                 type = "search",
-                title = "搜索：${attachment.query}".take(50),
+                title = "Search: ${attachment.query}".take(50),
                 subtitle = "${attachment.engine} · ${attachment.pages.size} results",
             )
             is SkillAttachment.FileList -> RoomArtifact(
                 id = stableHomeId("file_list", attachment.directory),
                 type = "files",
-                title = attachment.directory.ifBlank { "文件列表" }.take(50),
+                title = attachment.directory.ifBlank { "File list" }.take(50),
                 subtitle = "${attachment.files.size} files",
             )
             is SkillAttachment.ActionCard,
@@ -1541,15 +1541,15 @@ class MainViewModel : ViewModel() {
         runCatching {
             townStore.pinMemory(
                 roleId = role.id,
-                title = if (success) "完成：${goal.take(34)}" else "未完成：${goal.take(34)}",
+                title = if (success) "Completed: ${goal.take(34)}" else "Incomplete: ${goal.take(34)}",
                 body = summary.take(140),
                 source = "task",
             )
             townStore.updateRoom(role.id) { room ->
                 room.copy(
                     mood = if (success) "focused" else "review",
-                    idleLine = if (success) "我刚把一个任务成果放进了房间。" else "我在复盘刚才没有完成好的地方。",
-                    workingLine = "我正在把任务产物整理进 Home。",
+                    idleLine = if (success) "I just placed a task result in the room." else "I am reviewing what was not completed successfully.",
+                    workingLine = "I am organizing task artifacts in Home.",
                 )
             }
         }
@@ -1655,7 +1655,7 @@ class MainViewModel : ViewModel() {
     fun runTask(goal: String) {
         val hasPendingAttachment = _uiState.value.inputImageBase64 != null || _uiState.value.inputFileAttachment != null
         val trimmed = goal.trim().ifBlank {
-            if (hasPendingAttachment) "请查看这个附件。" else ""
+            if (hasPendingAttachment) "Please review this attachment." else ""
         }
         if (trimmed.isBlank()) return
         if (_uiState.value.codexDesktopMode) {
@@ -1788,7 +1788,7 @@ class MainViewModel : ViewModel() {
                     withContext(Dispatchers.Main) { runTaskInternal(roleSwitchIntent.remainingGoal, routeOverride = route) }
                 }
             } else {
-                appendConfirmationResolution("已切换到 ${roleSwitchIntent.role.name}。")
+                appendConfirmationResolution("Switched to ${roleSwitchIntent.role.name}.")
             }
             return
         }
@@ -1948,7 +1948,7 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    // 被打断的运行可能已有执行日志/流式输出；折叠成一条 agent 消息保留并落库，避免“打断即丢失”。
+    // Preserve interrupted logs or streamed output by folding them into one persisted agent message.
     private fun salvageInterruptedRunMessages(sessionId: String): List<ChatMessage> {
         val state = _uiState.value.sessionStates[sessionId] ?: return emptyList()
         val hasContent = state.activeLogLines.any { it.text.isNotBlank() || it.details.isNotEmpty() } ||
@@ -2100,7 +2100,7 @@ class MainViewModel : ViewModel() {
         }
         val route = resolveRunRoute(goal, prepared, routeOverride)
         val execution = prepareRunExecution(goal, visibleUserText, prepared, route, routeOverride)
-        val executionMode = determineChatExecutionMode(goal, prepared, route, execution)
+        val executionMode = determineChatExecutionMode(prepared, route, execution)
         val runtimePlan = createChatRuntimePlan(
             goal = goal,
             visibleUserText = visibleUserText,
@@ -2292,7 +2292,7 @@ class MainViewModel : ViewModel() {
                 .filter { it.key.startsWith("profile.") }
                 .entries
                 .joinToString("\n") { (k, v) -> "- ${k.removePrefix("profile.")}: $v" }
-                .let { if (it.isNotBlank()) "当前用户画像（请据此调整沟通风格和内容深度）：\n$it" else "" }
+                .let { if (it.isNotBlank()) "Current user profile (adapt communication style and depth accordingly):\n$it" else "" }
         }.getOrDefault("")
         val roleWorkspaceContext = runCatching {
             roleChatRuntimeBridge.buildPromptContext(execution.roleControlPlan)
@@ -2648,7 +2648,6 @@ class MainViewModel : ViewModel() {
                     priorContext = execution.agentPriorContext,
                     episodicContext = episodicContext,
                     executionContext = execution.executionContext,
-                    language = config.language,
                     imageBase64 = prepared.attachedImage,
                     role = execution.scheduledRole,
                     userProfileContext = userProfileContext,
@@ -2685,8 +2684,8 @@ class MainViewModel : ViewModel() {
             if (!shouldRetry) return@repeat
             appendRetryLogLine(
                 resolvedSessionId,
-                if (attemptIndex == 0) "模型这一步返回异常，我正在自动重试一次"
-                else "模型仍然不稳定，我正在再次整理请求",
+                if (attemptIndex == 0) "The model returned an invalid result for this step; retrying automatically"
+                else "The model remains unstable; restructuring the request and trying again",
             )
             delay(700L * (attemptIndex + 1))
         }
@@ -2826,9 +2825,9 @@ class MainViewModel : ViewModel() {
             ?: ""
         val effectiveGoal = when {
             attachedFile != null && attachedFile.isText ->
-                "[附件: ${attachedFile.name}]\n```\n${attachedFile.content.take(10_000)}\n```\n\n$goalForRouting"
+                "[Attachment: ${attachedFile.name}]\n```\n${attachedFile.content.take(10_000)}\n```\n\n$goalForRouting"
             attachedImageLocalPath.isNotBlank() ->
-                "[图片已保存到本地工作区]\npath: $attachedImageLocalPath\n后续需要引用这张图片时，直接把这个 path 传给相关工具，例如 generate_video.image。不要要求用户重新发送图片，也不要说只能使用 HTTP 链接；系统会自动上传本地图片。\n\n$goalForRouting"
+                "[Image saved to the local workspace]\npath: $attachedImageLocalPath\nPass this path directly to tools such as generate_video.image when the image is needed later. Do not ask the user to resend it or claim that only HTTP links are supported; the system uploads local images automatically.\n\n$goalForRouting"
             else -> goalForRouting
         }
         val userMessage = pendingTurn?.userMessage ?: ChatMessage(
@@ -3002,7 +3001,6 @@ class MainViewModel : ViewModel() {
             hasImage = prepared.attachedImage != null,
             hasFile = prepared.attachedFile != null,
             role = scheduledRole,
-            language = config.language,
         )
         val allowedToolIds = resolveAllowedToolIds(route, orchestration.channelDecision.toolHints, contextualGoal)
         return PreparedRunExecution(
@@ -3083,7 +3081,6 @@ class MainViewModel : ViewModel() {
     }
 
     private fun determineChatExecutionMode(
-        goal: String,
         prepared: PreparedRunInput,
         route: TaskRoute,
         execution: PreparedRunExecution,
@@ -3095,8 +3092,7 @@ class MainViewModel : ViewModel() {
         }
         if (prepared.attachedImage != null &&
             prepared.attachedFile == null &&
-            execution.executionTaskType == TaskType.GENERAL &&
-            shouldAnswerImageDirectly(goal)) {
+            route.isDirectAttachedImageChatRoute()) {
             return ChatExecutionMode.DIRECT_CHAT
         }
         if (prepared.attachedImage == null &&
@@ -3642,8 +3638,8 @@ For pure conversational replies, greetings, explanations, and simple factual ans
                 if (!shouldRetry) return@repeat
                 appendRetryLogLine(
                     resolvedSessionId,
-                    if (attemptIndex == 0) "这次回复生成异常，我正在重新生成"
-                    else "回复仍然异常，我再试一次更稳的生成",
+                    if (attemptIndex == 0) "The response was malformed; regenerating it"
+                    else "The response remains malformed; retrying with a more stable request",
                 )
                 delay(500L * (attemptIndex + 1))
             }
@@ -3673,7 +3669,7 @@ For pure conversational replies, greetings, explanations, and simple factual ans
             )
             val isCurrentRun = isRunGenerationCurrent(resolvedSessionId, runGeneration)
             updateSession(resolvedSessionId) { s ->
-                // 已被新一轮任务接管时只追加回复，不碰新任务的运行态字段。
+                // If a newer task has taken over, append the reply without touching its runtime state.
                 if (isCurrentRun) s.copy(
                     isRunning = false,
                     streamingToken = "",
@@ -3783,7 +3779,7 @@ For pure conversational replies, greetings, explanations, and simple factual ans
                 )
                 val isCurrentRun = isRunGenerationCurrent(resolvedSessionId, runGeneration)
                 updateSession(resolvedSessionId) { s ->
-                    // 已被新一轮任务接管时只追加回复，不碰新任务的运行态字段。
+                    // If a newer task has taken over, append the reply without touching its runtime state.
                     if (isCurrentRun) s.copy(
                         isRunning = false,
                         runStartedAt = 0L,
@@ -3824,7 +3820,7 @@ For pure conversational replies, greetings, explanations, and simple factual ans
                             streamingThought = "",
                             messages = s.messages + ChatMessage(
                                 role = MessageRole.AGENT,
-                                text = e.message ?: "能力目录读取失败。",
+                                text = e.message ?: "Unable to read the capability catalog.",
                                 senderRoleId = currentRole.id,
                                 senderRoleName = currentRole.name,
                                 senderRoleAvatar = currentRole.avatar,
@@ -3866,7 +3862,7 @@ For pure conversational replies, greetings, explanations, and simple factual ans
         }
     }
 
-    // 预览失败后，把自动修复挂到当前会话上；若当前没有任务在跑，则直接续跑。
+    // Attach preview auto-repair to the current session and continue immediately when no task is running.
     private fun enqueueMiniAppAutoRepair(sessionId: String, appId: String, previewStatus: String) {
         if (sessionId.isBlank() || appId.isBlank()) return
         val current = pendingMiniAppAutoRepairs[sessionId]
@@ -3915,9 +3911,9 @@ For pure conversational replies, greetings, explanations, and simple factual ans
                 classificationGoal = autoRepairGoal,
                 taskTypeOverride = TaskType.APP_BUILD,
                 userVisibleSteps = listOf(
-                    "我先定位聊天内预览为什么没有正常渲染",
-                    "然后只修出错的那一小段逻辑",
-                    "修完后重新校验并再次打开确认",
+                    "First identify why the in-chat preview did not render correctly",
+                    "Then repair only the failing logic",
+                    "Revalidate after the repair and reopen it for confirmation",
                 ),
                 executionHint = buildString {
                     appendLine("Automatic MiniAPP repair continuation triggered by chat preview feedback.")
@@ -3961,9 +3957,9 @@ For pure conversational replies, greetings, explanations, and simple factual ans
                 activeLogLines = listOf(
                     LogLine(
                         type = LogType.ACTION,
-                        text = "发送到电脑 Codex",
+                        text = "Send to desktop Codex",
                         skillId = "codex_desktop",
-                        details = listOf("目标：${userGoal.take(500)}"),
+                        details = listOf("Goal: ${userGoal.take(500)}"),
                     ).withLifecycle(running = true),
                 ),
                 activeAttachments = emptyList(),
@@ -4007,7 +4003,7 @@ For pure conversational replies, greetings, explanations, and simple factual ans
             )
             val isCurrentRun = isRunGenerationCurrent(sessionId, runGeneration)
             updateSession(sessionId) { state ->
-                // 已被新一轮任务接管时只追加回复，不碰新任务的运行态字段与任务句柄。
+                // If a newer task has taken over, append the reply without touching its runtime state or task handle.
                 if (isCurrentRun) state.copy(
                     isRunning = false,
                     runStartedAt = 0L,
@@ -4025,7 +4021,7 @@ For pure conversational replies, greetings, explanations, and simple factual ans
             consoleServer.broadcast("task_completed", result.output.take(500))
             withContext(Dispatchers.IO) {
                 persistMessages(sessionId, userMessage.takeIf { persistUserMessage }, listOf(agentMessage))
-                database.sessionDao().updateTitle(sessionId, userGoal.take(40).ifBlank { "Codex 会话" })
+                database.sessionDao().updateTitle(sessionId, userGoal.take(40).ifBlank { "Codex session" })
                 loadSessions()
             }
         }
@@ -4174,23 +4170,6 @@ For pure conversational replies, greetings, explanations, and simple factual ans
                 }
             })
         }
-    }
-
-    private fun shouldAnswerImageDirectly(goal: String): Boolean {
-        val text = goal.trim().lowercase()
-        if (text.isBlank()) return true
-        val explicitAgentIntent = listOf(
-            "网页搜索", "联网搜索", "搜索网页", "搜一下", "查一下资料", "找来源", "来源",
-            "打开", "启动", "点击", "滑动", "滚动", "输入", "长按", "返回", "操作手机", "控制手机",
-            "生成图片", "画图", "创建", "生成页面", "做个页面", "做一个页面", "保存", "下载",
-            "web search", "search web", "browse", "open ", "launch ", "click ", "tap ", "scroll ",
-        )
-        if (explicitAgentIntent.any { text.contains(it) }) return false
-        val visualQuestion = listOf(
-            "这是什么", "是什么", "图里", "图片", "照片", "截图", "看图", "识别", "描述", "分析这张",
-            "what is", "what's", "describe", "identify", "image", "picture", "photo", "screenshot",
-        )
-        return visualQuestion.any { text.contains(it) } || text.length <= 20 || text.contains("?") || text.contains("？")
     }
 
     fun stopTask() {
@@ -4430,7 +4409,7 @@ For pure conversational replies, greetings, explanations, and simple factual ans
         viewModelScope.launch(Dispatchers.IO) {
             ids.forEach { id -> runCatching { app.miniAppStore.delete(id) } }
             refreshMiniAppsSnapshot()
-            val message = localizedUiText("已删除 ${ids.size} 个 MiniAPP", "Deleted ${ids.size} MiniAPPs")
+            val message = "Deleted ${ids.size} MiniAPPs"
             withContext(Dispatchers.Main) {
                 Toast.makeText(app, message, Toast.LENGTH_SHORT).show()
             }
@@ -4445,12 +4424,12 @@ For pure conversational replies, greetings, explanations, and simple factual ans
             if (file != null) {
                 shareExportedPackage(
                     file = file,
-                    chooserTitle = localizedUiText("导出角色包", "Export role package"),
-                    successMessage = localizedUiText("角色包已生成", "Role package is ready"),
+                    chooserTitle = "Export role package",
+                    successMessage = "Role package is ready",
                 )
             } else {
                 val e = result.exceptionOrNull()
-                showPackageToast(localizedUiText("角色导出失败：", "Role export failed: ") + (e?.message ?: ""))
+                showPackageToast("Role export failed: " + (e?.message ?: ""))
             }
         }
     }
@@ -4462,9 +4441,9 @@ For pure conversational replies, greetings, explanations, and simple factual ans
                 rolePackageStore.importPackage(tempFile)
             }.onSuccess { result ->
                 townStore.ensureRooms(roleManager.all())
-                showPackageToast(localizedUiText("已导入角色：", "Imported role: ") + result.role.name.ifBlank { result.importedId })
+                showPackageToast("Imported role: " + result.role.name.ifBlank { result.importedId })
             }.onFailure { e ->
-                showPackageToast(localizedUiText("角色导入失败：", "Role import failed: ") + (e.message ?: ""))
+                showPackageToast("Role import failed: " + (e.message ?: ""))
             }
         }
     }
@@ -4477,12 +4456,12 @@ For pure conversational replies, greetings, explanations, and simple factual ans
             if (file != null) {
                 shareExportedPackage(
                     file = file,
-                    chooserTitle = localizedUiText("导出 MiniAPP 包", "Export MiniAPP package"),
-                    successMessage = localizedUiText("MiniAPP 包已生成", "MiniAPP package is ready"),
+                    chooserTitle = "Export MiniAPP package",
+                    successMessage = "MiniAPP package is ready",
                 )
             } else {
                 val e = result.exceptionOrNull()
-                showPackageToast(localizedUiText("MiniAPP 导出失败：", "MiniAPP export failed: ") + (e?.message ?: ""))
+                showPackageToast("MiniAPP export failed: " + (e?.message ?: ""))
             }
         }
     }
@@ -4494,9 +4473,9 @@ For pure conversational replies, greetings, explanations, and simple factual ans
                 app.miniAppStore.importPackage(tempFile)
             }.onSuccess { result ->
                 refreshMiniAppsSnapshot()
-                showPackageToast(localizedUiText("已导入 MiniAPP：", "Imported MiniAPP: ") + result.app.title.ifBlank { result.importedId })
+                showPackageToast("Imported MiniAPP: " + result.app.title.ifBlank { result.importedId })
             }.onFailure { e ->
-                showPackageToast(localizedUiText("MiniAPP 导入失败：", "MiniAPP import failed: ") + (e.message ?: ""))
+                showPackageToast("MiniAPP import failed: " + (e.message ?: ""))
             }
         }
     }
@@ -4505,7 +4484,7 @@ For pure conversational replies, greetings, explanations, and simple factual ans
         val importDir = File(app.cacheDir, "workspace_imports").also { it.mkdirs() }
         val outFile = File(importDir, "${prefix}_${System.currentTimeMillis()}.$extension")
         val input = app.contentResolver.openInputStream(uri)
-            ?: error(localizedUiText("无法读取选择的文件", "Unable to read the selected file"))
+            ?: error("Unable to read the selected file")
         input.use { source ->
             outFile.outputStream().use { target -> source.copyTo(target) }
         }
@@ -4531,7 +4510,7 @@ For pure conversational replies, greetings, explanations, and simple factual ans
             }.onFailure { e ->
                 Toast.makeText(
                     app,
-                    localizedUiText("打开分享失败：", "Unable to open share sheet: ") + (e.message ?: ""),
+                    "Unable to open share sheet: " + (e.message ?: ""),
                     Toast.LENGTH_LONG,
                 ).show()
             }
@@ -4542,10 +4521,6 @@ For pure conversational replies, greetings, explanations, and simple factual ans
         withContext(Dispatchers.Main) {
             Toast.makeText(app, message.take(180), Toast.LENGTH_LONG).show()
         }
-    }
-
-    private fun localizedUiText(zh: String, en: String): String {
-        return if (config.snapshot().language.startsWith("zh")) zh else en
     }
 
     fun checkPrivServer() {
@@ -5207,7 +5182,7 @@ For pure conversational replies, greetings, explanations, and simple factual ans
             refreshPromotableSkills()
             withContext(Dispatchers.Main) {
                 if (result.isSuccess) {
-                    Toast.makeText(app, str(R.string.installed_skill, def.meta.nameZh ?: def.meta.name), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(app, str(R.string.installed_skill, def.meta.name), Toast.LENGTH_SHORT).show()
                 } else {
                     val msg = result.exceptionOrNull()?.message ?: str(R.string.vm_not_)
                     Toast.makeText(app, str(R.string.install_failed, msg), Toast.LENGTH_LONG).show()
@@ -5784,7 +5759,7 @@ For example: "Create an expense-tracker MiniAPP", "Open Settings and change the 
             com.mobileclaw.skill.builtin.UserStorageSkill(app.userStorageManager),
             // Internal workspace management
             WorkspaceManagerSkill(app.workspaceStore),
-            // LAN console page editor (千人千面)
+            // LAN console page editor
             com.mobileclaw.skill.builtin.ConsoleEditorSkill(consoleServer),
         ).forEach { registry.register(it) }
     }

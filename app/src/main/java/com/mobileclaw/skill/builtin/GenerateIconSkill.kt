@@ -38,8 +38,8 @@ import java.util.concurrent.TimeUnit
  * Generates app icons using configurable Chinese domestic AI image APIs.
  *
  * Supported providers (configured via user_config key "icon_api_provider"):
- *   - dashscope  (通义万象 / Wanx) — default  endpoint: https://dashscope.aliyuncs.com
- *   - cogview    (智谱 CogView)               endpoint: https://open.bigmodel.cn
+ *   - dashscope  (Wanx) — default  endpoint: https://dashscope.aliyuncs.com
+ *   - cogview    (CogView)               endpoint: https://open.bigmodel.cn
  *   - openai     (OpenAI / compatible)        uses image_api_endpoint or main endpoint
  *
  * Required user_config keys:
@@ -67,13 +67,10 @@ class GenerateIconSkill(
     override val meta = SkillMeta(
         id = "generate_icon",
         name = "Generate Icon",
-        nameZh = "生成图标",
         description = "Generates a 512×512 app icon using configurable Chinese domestic AI APIs " +
             "(DashScope/Wanx, CogView, or any OpenAI-compatible image API). " +
             "Requires user_config key icon_api_key; optionally icon_api_provider (dashscope|cogview|openai) and icon_api_endpoint. " +
             "Use apply_to_app to set the icon on an existing mini-app, or apply_to_role to set it as a role avatar.",
-        descriptionZh = "使用可配置的国内 AI 图像接口生成 512×512 应用图标（支持通义万象、CogView、OpenAI 兼容接口）。" +
-            "需要在 user_config 中设置 icon_api_key。可用 apply_to_app 设置迷你应用图标，或 apply_to_role 设置角色头像。",
         parameters = listOf(
             SkillParam("prompt", "string", "Description of the icon to generate, e.g. 'a minimalist calendar icon with blue gradient'"),
             SkillParam("apply_to_app", "string", "App ID to apply the generated icon to (optional)", required = false),
@@ -84,7 +81,7 @@ class GenerateIconSkill(
         injectionLevel = 1,
         isBuiltin = true,
         categories = listOf(SkillToolCategory.MEDIA, SkillToolCategory.ARTIFACT),
-        tags = listOf("创作"),
+        tags = listOf("Creative"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult = withContext(Dispatchers.IO) {
@@ -159,13 +156,13 @@ class GenerateIconSkill(
         val dataUri = "data:image/png;base64,$b64"
 
         val appNote = when {
-            applyToRole != null -> " 已应用到角色 '$applyToRole'。"
-            applyToApp != null -> " 已应用到应用 '$applyToApp'。"
-            else -> " 使用 apply_to_app 或 apply_to_role 参数将其设置为应用图标或角色头像。"
+            applyToRole != null -> " Applied to role '$applyToRole'."
+            applyToApp != null -> " Applied to app '$applyToApp'."
+            else -> " Use apply_to_app or apply_to_role to set it as an app icon or role avatar."
         }
         SkillResult(
             success = true,
-            output = "图标已生成：${outFile.name}$appNote",
+            output = "Icon generated: ${outFile.name}$appNote",
             imageBase64 = dataUri,
             data = com.mobileclaw.skill.SkillAttachment.ImageData(dataUri, prompt),
         )
