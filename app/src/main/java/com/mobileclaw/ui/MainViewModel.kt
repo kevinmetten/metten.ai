@@ -2100,7 +2100,7 @@ class MainViewModel : ViewModel() {
         }
         val route = resolveRunRoute(goal, prepared, routeOverride)
         val execution = prepareRunExecution(goal, visibleUserText, prepared, route, routeOverride)
-        val executionMode = determineChatExecutionMode(goal, prepared, route, execution)
+        val executionMode = determineChatExecutionMode(prepared, route, execution)
         val runtimePlan = createChatRuntimePlan(
             goal = goal,
             visibleUserText = visibleUserText,
@@ -3081,7 +3081,6 @@ class MainViewModel : ViewModel() {
     }
 
     private fun determineChatExecutionMode(
-        goal: String,
         prepared: PreparedRunInput,
         route: TaskRoute,
         execution: PreparedRunExecution,
@@ -3093,8 +3092,7 @@ class MainViewModel : ViewModel() {
         }
         if (prepared.attachedImage != null &&
             prepared.attachedFile == null &&
-            execution.executionTaskType == TaskType.GENERAL &&
-            shouldAnswerImageDirectly(goal)) {
+            route.isDirectAttachedImageChatRoute()) {
             return ChatExecutionMode.DIRECT_CHAT
         }
         if (prepared.attachedImage == null &&
@@ -4172,23 +4170,6 @@ For pure conversational replies, greetings, explanations, and simple factual ans
                 }
             })
         }
-    }
-
-    private fun shouldAnswerImageDirectly(goal: String): Boolean {
-        val text = goal.trim().lowercase()
-        if (text.isBlank()) return true
-        val explicitAgentIntent = listOf(
-            "网页搜索", "联网搜索", "搜索网页", "搜一下", "查一下资料", "找来源", "来源",
-            "打开", "启动", "点击", "滑动", "滚动", "输入", "长按", "返回", "操作手机", "控制手机",
-            "生成图片", "画图", "创建", "生成页面", "做个页面", "做一个页面", "保存", "下载",
-            "web search", "search web", "browse", "open ", "launch ", "click ", "tap ", "scroll ",
-        )
-        if (explicitAgentIntent.any { text.contains(it) }) return false
-        val visualQuestion = listOf(
-            "这是什么", "是什么", "图里", "图片", "照片", "截图", "看图", "识别", "描述", "分析这张",
-            "what is", "what's", "describe", "identify", "image", "picture", "photo", "screenshot",
-        )
-        return visualQuestion.any { text.contains(it) } || text.length <= 20 || text.contains("?") || text.contains("？")
     }
 
     fun stopTask() {
