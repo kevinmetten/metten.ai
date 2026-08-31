@@ -609,9 +609,13 @@ class ConsoleServer(
                 file.writeText(DEFAULT_CONSOLE_HTML)
             } else {
                 val current = file.readText()
+                // Historical factory-console signature retained only to migrate persisted pre-English installations.
+                val legacyChineseFactoryConsole =
+                    "--accent:#c7f43a" in current && "输入任务，MobileClaw 会直接开始执行" in current
                 val looksLikeOldFactoryConsole =
                     "MobileClaw Console" in current &&
-                        ("--accent:#a78bfa" in current && "Enter a task below" in current)
+                        (("--accent:#a78bfa" in current && "Enter a task below" in current) ||
+                            legacyChineseFactoryConsole)
                 if (looksLikeOldFactoryConsole) file.writeText(DEFAULT_CONSOLE_HTML)
             }
         } catch (t: Throwable) {

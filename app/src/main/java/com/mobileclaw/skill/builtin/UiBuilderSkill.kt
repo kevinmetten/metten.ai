@@ -113,8 +113,8 @@ class UiBuilderSkill(
                     "known_bugs" to page.spec.knownBugs,
                     "non_goals" to page.spec.nonGoals,
                     "last_diff_summary" to page.spec.lastDiffSummary,
-                    "patch_focus" to inferPatchFocus(changeRequest),
-                    "change_type" to inferChangeType(changeRequest),
+                    "patch_focus" to ArtifactChangeClassifier.patchFocus(changeRequest),
+                    "change_type" to ArtifactChangeClassifier.changeType(changeRequest),
                     "patch_brief" to "update only the smallest affected part, preserve all unrelated behavior, and keep the page runnable after the edit",
                     "change_request" to changeRequest,
                     "recommended_mode" to "patch",
@@ -505,23 +505,6 @@ class UiBuilderSkill(
             if (added.isNotEmpty()) append(" | added=${added.take(8).joinToString(", ")}")
             if (removed.isNotEmpty()) append(" | removed=${removed.take(8).joinToString(", ")}")
         }.take(400)
-    }
-
-    private fun inferPatchFocus(changeRequest: String): String {
-        val text = changeRequest.lowercase()
-        return when {
-            text.contains("ui") -> "ui_surface"
-            text.contains("bug") -> "bug_fix"
-            else -> "targeted_patch"
-        }
-    }
-
-    private fun inferChangeType(changeRequest: String): String {
-        val text = changeRequest.lowercase()
-        return when {
-            text.contains("bug") -> "fix"
-            else -> "modify"
-        }
     }
 
     private fun validateNativePageRuntime(layoutJson: String, actionsJson: String): List<String> {

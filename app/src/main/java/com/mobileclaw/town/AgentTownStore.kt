@@ -299,7 +299,8 @@ class AgentTownStore(private val context: Context) {
 
     private fun migrateLegacyRoom(room: AgentRoom, role: Role): AgentRoom {
         val safe = room.normalized()
-        val legacyMotto = safe.motto == "I live in MobileClaw Town"
+        // Historical factory motto retained only to migrate persisted pre-English rooms.
+        val legacyMotto = safe.motto == "我住在 MobileClaw Town" || safe.motto == "I live in MobileClaw Town"
         return safe.copy(
             houseName = safe.houseName,
             motto = if (legacyMotto) defaultRoom(role, 0).motto else safe.motto,
