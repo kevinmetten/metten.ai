@@ -804,7 +804,7 @@ private fun buildStepDetailView(step: LogLine): StepDetailView {
 }
 
 private fun fallbackReadablePurpose(step: LogLine): String = when (step.type) {
-    LogType.ACTION -> chineseSkillLabel(step.skillId)
+    LogType.ACTION -> userFacingSkillLabel(step.skillId)
     LogType.OBSERVATION -> if (step.imageBase64 != null) {
         "Review the current screen and confirm the task is moving forward"
     } else {
@@ -1603,9 +1603,6 @@ private fun codexProgressLines(logLines: List<LogLine>): List<LogLine> =
         .filterNot { line ->
             val text = line.text.trim()
             text.isCodexBridgeNoise() ||
-                text == "\u53D1\u9001\u5230\u7535\u8111 Codex" ||
-                text == "\u7535\u8111 Codex \u5DF2\u8FD4\u56DE\u7ED3\u679C" ||
-                text == "\u7535\u8111 Codex \u6267\u884C\u5931\u8D25" ||
                 text == "Send to desktop Codex" ||
                 text == "Desktop Codex returned a result" ||
                 text == "Desktop Codex failed" ||
@@ -2195,7 +2192,7 @@ private fun ActiveTaskBubble(
         ?.take(120)
         .orEmpty()
     val currentLabel = when (lastAction?.type) {
-        LogType.ACTION   -> chineseSkillLabel(lastAction.skillId)
+        LogType.ACTION   -> userFacingSkillLabel(lastAction.skillId)
         LogType.THINKING -> str(R.string.chat_dc269a)
         else             -> if (logLines.isNotEmpty()) str(R.string.chat_46e386) else str(R.string.chat_f76540)
     }
@@ -2387,7 +2384,7 @@ private fun chatModelChipLabel(model: String): String {
 
 // ── Log Line ──────────────────────────────────────────────────────────────────
 
-private fun chineseSkillLabel(skillId: String?): String = when (skillId) {
+private fun userFacingSkillLabel(skillId: String?): String = when (skillId) {
     "screenshot", "bg_screenshot"           -> str(R.string.chat_369abf)
     "read_screen", "bg_read_screen", "see_screen" -> str(R.string.chat_167c7b)
     "tap"                                   -> str(R.string.chat_tap)
@@ -2627,7 +2624,7 @@ private fun LogLineItem(line: LogLine, onSelectStep: (LogLine) -> Unit = {}) {
 
         LogType.ACTION -> {
             var expanded by remember(line.entryId) { mutableStateOf(false) }
-            val skillLabel = chineseSkillLabel(line.skillId)
+            val skillLabel = userFacingSkillLabel(line.skillId)
             val accentLong = line.skillId?.let { SkillColors[it] }
             val labelColor = (if (accentLong != null) Color(accentLong) else c.blue).copy(alpha = 0.85f)
             // Use the user-facing summary helper for actions instead of truncated tool descriptions.

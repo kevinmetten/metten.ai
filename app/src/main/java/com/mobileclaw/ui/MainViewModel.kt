@@ -3961,9 +3961,9 @@ For pure conversational replies, greetings, explanations, and simple factual ans
                 activeLogLines = listOf(
                     LogLine(
                         type = LogType.ACTION,
-                        text = "发送到电脑 Codex",
+                        text = "Send to desktop Codex",
                         skillId = "codex_desktop",
-                        details = listOf("目标：${userGoal.take(500)}"),
+                        details = listOf("Goal: ${userGoal.take(500)}"),
                     ).withLifecycle(running = true),
                 ),
                 activeAttachments = emptyList(),
