@@ -221,14 +221,14 @@ class AgentTownStore(private val context: Context) {
     private fun inferHomeSprite(role: Role, index: Int): String {
         val text = listOf(role.id, role.name, role.description, role.systemPromptAddendum, role.keywords.joinToString(" ")).joinToString(" ").lowercase()
         return when {
-            listOf("code", "coder", "开发", "代码", "编程", "bug", "修复", "工程").any { it in text } -> "terminal"
-            listOf("image", "design", "paint", "art", "creative", "图像", "绘画", "设计", "创意").any { it in text } -> "workshop"
-            listOf("web", "search", "research", "browser", "网页", "搜索", "研究", "资料").any { it in text } -> "library"
-            listOf("phone", "android", "accessibility", "手机", "无障碍", "操作").any { it in text } -> "tower"
-            listOf("vpn", "proxy", "network", "线路", "代理", "网络").any { it in text } -> "bunker"
-            listOf("skill", "tool", "plugin", "工具", "技能", "插件").any { it in text } -> "warehouse"
-            listOf("market", "shop", "store", "商品", "商店", "市场").any { it in text } -> "shop"
-            listOf("write", "book", "story", "doc", "写作", "文档", "小说").any { it in text } -> "library"
+            listOf("code", "coder", "bug").any { it in text } -> "terminal"
+            listOf("image", "design", "paint", "art", "creative").any { it in text } -> "workshop"
+            listOf("web", "search", "research", "browser").any { it in text } -> "library"
+            listOf("phone", "android", "accessibility").any { it in text } -> "tower"
+            listOf("vpn", "proxy", "network").any { it in text } -> "bunker"
+            listOf("skill", "tool", "plugin").any { it in text } -> "warehouse"
+            listOf("market", "shop", "store").any { it in text } -> "shop"
+            listOf("write", "book", "story", "doc").any { it in text } -> "library"
             else -> listOf("studio", "cabin", "shop", "workshop", "library")[stableHash("${role.id}|${role.name}|$index") % 5]
         }
     }
@@ -299,10 +299,9 @@ class AgentTownStore(private val context: Context) {
 
     private fun migrateLegacyRoom(room: AgentRoom, role: Role): AgentRoom {
         val safe = room.normalized()
-        val legacyMotto = safe.motto == "我住在 MobileClaw Town" || safe.motto == "I live in MobileClaw Town"
-        val legacyHouseName = safe.houseName == "${role.name} 的家" && role.name.isBlank()
+        val legacyMotto = safe.motto == "I live in MobileClaw Town"
         return safe.copy(
-            houseName = if (legacyHouseName) "${role.id} Home" else safe.houseName,
+            houseName = safe.houseName,
             motto = if (legacyMotto) defaultRoom(role, 0).motto else safe.motto,
             furniture = safe.furniture.ifEmpty { defaultFurniture(role, safe.houseSprite) },
         ).normalized()

@@ -625,10 +625,8 @@ private fun buildFeatureDiffSummary(previous: List<String>, current: List<String
 private fun inferPatchFocus(changeRequest: String): String {
     val text = changeRequest.lowercase()
     return when {
-        text.contains("ui") || text.contains("样式") || text.contains("布局") || text.contains("美化") -> "ui_surface"
-        text.contains("bug") || text.contains("修复") || text.contains("错误") -> "bug_fix"
-        text.contains("功能") || text.contains("按钮") || text.contains("交互") || text.contains("逻辑") -> "behavior"
-        text.contains("文案") || text.contains("文字") || text.contains("翻译") -> "copywriting"
+        text.contains("ui") -> "ui_surface"
+        text.contains("bug") -> "bug_fix"
         else -> "targeted_patch"
     }
 }
@@ -636,10 +634,7 @@ private fun inferPatchFocus(changeRequest: String): String {
 private fun inferChangeType(changeRequest: String): String {
     val text = changeRequest.lowercase()
     return when {
-        text.contains("新增") || text.contains("添加") || text.contains("增加") -> "extend"
-        text.contains("删除") || text.contains("移除") -> "remove"
-        text.contains("修复") || text.contains("bug") || text.contains("错误") -> "fix"
-        text.contains("优化") || text.contains("调整") || text.contains("改") -> "refine"
+        text.contains("bug") -> "fix"
         else -> "modify"
     }
 }

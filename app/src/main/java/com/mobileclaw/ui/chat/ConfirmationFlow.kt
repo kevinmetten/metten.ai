@@ -61,17 +61,12 @@ internal object ConfirmationFlow {
             ),
         )
 
-    fun isAccessibilityResumeText(text: String): Boolean {
-        val normalized = text.trim().lowercase()
-        return normalized in setOf("已开启", "已经开了", "开了", "无障碍已开启", "无障碍开了", "enabled") ||
-            normalized.contains("已开") ||
-            normalized.contains("已经开启") ||
-            normalized.contains("无障碍开")
-    }
+    fun isAccessibilityResumeText(text: String): Boolean =
+        text.trim().equals("enabled", ignoreCase = true)
 
     fun inferExplicitRoleSwitch(goal: String, roles: List<Role>): ExplicitRoleSwitch? {
         val text = goal.lowercase()
-        if (!text.anyContainsLocal("切换角色", "换角色", "切到", "切换到", "switch role")) return null
+        if (!text.anyContainsLocal("switch role", "switch to")) return null
         val role = roles.distinctBy { it.id }.firstOrNull { candidate ->
             text.contains(candidate.id.lowercase()) ||
                 (candidate.name.isNotBlank() && text.contains(candidate.name.lowercase()))
@@ -86,12 +81,6 @@ internal object ConfirmationFlow {
         }
         return rest
             .replace(Regex("""(?i)switch\s+role\s+to|switch\s+to"""), " ")
-            .replace("切换角色", " ")
-            .replace("换角色", " ")
-            .replace("切换到", " ")
-            .replace("切到", " ")
-            .replace(Regex("""^[\s，。,.!！:：;；、]*(并|然后|再)?[\s，。,.!！:：;；、]*"""), "")
-            .replace(Regex("""^(帮我继续|继续帮我|帮我|来|去|一下)[\s，。,.!！:：;；、]*"""), "")
             .trim()
     }
 

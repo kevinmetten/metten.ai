@@ -30,7 +30,7 @@ class VpnControlSkill(
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
         return when ((params["action"] as? String)?.lowercase()) {
-            "start", "on", "enable", "开启" -> {
+            "start", "on", "enable" -> {
                 if (vpnManager.prepareIntent() != null) {
                     return SkillResult(
                         false,
@@ -46,11 +46,11 @@ class VpnControlSkill(
                 vpnManager.startVpn(sub, proxy)
                 SkillResult(true, "VPN starting — proxy: ${proxy.name} (${proxy.typeName} ${proxy.server}:${proxy.port})")
             }
-            "stop", "off", "disable", "关闭" -> {
+            "stop", "off", "disable" -> {
                 vpnManager.stopVpn()
                 SkillResult(true, "VPN stopped.")
             }
-            "status", "状态" -> {
+            "status" -> {
                 val running = ClawVpnService.isRunning
                 val proxy = getSelectedProxy()?.second
                 SkillResult(

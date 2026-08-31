@@ -938,34 +938,32 @@ This note is for your own next step, so be direct and operational.
 
     private fun extractRequestedAppName(goal: String): String? {
         val text = goal.lineSequence().firstOrNull().orEmpty().trim()
-        val match = Regex("""(?:帮我)?(?:打开|启动|开启|进入)\s*([^，。,.!?！？\n]+)""").find(text) ?: return null
+        val match = Regex("""(?i)^(?:please\s+)?(?:open|launch|start)\s+([^,.!?\n]+)""").find(text) ?: return null
         val rawName = match.groupValues.getOrNull(1)
             ?: return null
         val normalizedName = rawName
-            ?.replace(Regex("""\s*(app|APP|应用|软件)$"""), "")
+            ?.replace(Regex("""(?i)\s+app$"""), "")
             ?.trim()
             .orEmpty()
         val appName = normalizedName.substringBeforeAny(
-            "然后", "并且", "并", "之后", "以后", "后",
-            "搜索", "查找", "点击", "点", "选择", "输入", "下单", "购买", "发", "看",
+            " and ", " then ", " search ", " find ", " tap ", " click ", " select ", " type ",
         ).trim()
         if (appName.isBlank()) return null
-        if (appName.contains("网页") || appName.contains("链接") || appName.contains("文件")) return null
+        if (listOf("website", "web page", "link", "file").any { appName.equals(it, ignoreCase = true) }) return null
         return appName.take(40)
     }
 
     private fun isLaunchOnlyPhoneGoal(goal: String): Boolean {
         val text = goal.lineSequence().firstOrNull().orEmpty().trim()
-        val afterLaunchVerb = Regex("""(?:帮我)?(?:打开|启动|开启|进入)\s*([^，。,.!?！？\n]+)""")
+        val afterLaunchVerb = Regex("""(?i)^(?:please\s+)?(?:open|launch|start)\s+([^,.!?\n]+)""")
             .find(text)
             ?.groupValues
             ?.getOrNull(1)
             .orEmpty()
         if (afterLaunchVerb.isBlank()) return false
         val continuationSignals = listOf(
-            "然后", "并且", "并", "之后", "以后", "后",
-            "搜索", "查找", "点击", "点", "选择", "输入", "下单", "购买", "发", "看",
-            "帮我", "操作", "滑动", "进入", "筛选",
+            " and ", " then ", " search ", " find ", " tap ", " click ", " select ", " type ",
+            " scroll ", " filter ",
         )
         return continuationSignals.none { afterLaunchVerb.contains(it) }
     }
@@ -993,8 +991,6 @@ This note is for your own next step, so be direct and operational.
         lowercase()
             .replace(Regex("""[\s·._-]+"""), "")
             .removeSuffix("app")
-            .removeSuffix("应用")
-            .removeSuffix("软件")
 
     private fun String.substringBeforeAny(vararg delimiters: String): String {
         val firstIndex = delimiters

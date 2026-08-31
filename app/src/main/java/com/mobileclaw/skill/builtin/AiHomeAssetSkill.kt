@@ -144,11 +144,11 @@ class AiHomeAssetSkill(
     private fun recommendAssetsForRole(roleId: String, name: String, description: String, keywords: List<String>): List<RoomAsset> {
         val text = listOf(roleId, name, description, keywords.joinToString(" ")).joinToString(" ").lowercase()
         val preferredTypes = when {
-            text.containsAny("code", "coder", "bug", "terminal", "代码", "编程", "调试") -> listOf("terminal", "desk", "chair", "cable", "lamp")
-            text.containsAny("image", "design", "paint", "creative", "图像", "绘画", "设计", "创意") -> listOf("bench", "crate", "art", "plant", "lamp")
-            text.containsAny("web", "search", "research", "资料", "搜索", "研究") -> listOf("bookcase", "desk", "chair", "art", "lamp")
-            text.containsAny("phone", "android", "手机", "无障碍", "操作") -> listOf("terminal", "cable", "desk", "crate", "sign")
-            text.containsAny("skill", "tool", "工具", "技能") -> listOf("crate", "bench", "bookcase", "sign", "lamp")
+            text.containsAny("code", "coder", "bug", "terminal") -> listOf("terminal", "desk", "chair", "cable", "lamp")
+            text.containsAny("image", "design", "paint", "creative") -> listOf("bench", "crate", "art", "plant", "lamp")
+            text.containsAny("web", "search", "research") -> listOf("bookcase", "desk", "chair", "art", "lamp")
+            text.containsAny("phone", "android") -> listOf("terminal", "cable", "desk", "crate", "sign")
+            text.containsAny("skill", "tool") -> listOf("crate", "bench", "bookcase", "sign", "lamp")
             else -> listOf("bed", "desk", "chair", "plant", "lamp", "art")
         }
         val base = townStore.roomAssets()

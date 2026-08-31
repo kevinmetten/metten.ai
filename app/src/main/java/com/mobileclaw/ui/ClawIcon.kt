@@ -97,36 +97,36 @@ fun clawIconForSymbol(symbol: String?): ImageVector {
         value in setOf("role:creator") -> Icons.Outlined.Brush
         value in setOf("role:skill") -> Icons.Outlined.Extension
         value in setOf("role:vpn") -> Icons.Outlined.Lock
-        value in setOf("💬", "chat", "message", "聊天") -> Icons.Outlined.ChatBubbleOutline
-        value in setOf("🧬", "profile", "memory", "画像") -> Icons.Outlined.Psychology
+        value in setOf("💬", "chat", "message") -> Icons.Outlined.ChatBubbleOutline
+        value in setOf("🧬", "profile", "memory") -> Icons.Outlined.Psychology
         value in setOf("physio", "cognitive") -> Icons.Outlined.Psychology
         value in setOf("emotional") -> Icons.Outlined.Palette
         value in setOf("social") -> Icons.Outlined.Language
         value in setOf("values") -> Icons.Outlined.Security
         value in setOf("capability") -> Icons.Outlined.BatterySaver
         value in setOf("spiritual") -> Icons.Outlined.AutoFixHigh
-        value in setOf("🎭", "role", "roles", "角色") -> Icons.Outlined.TheaterComedy
-        value in setOf("📱", "📲", "phone", "mobile", "app", "apps", "手机", "应用") -> Icons.Outlined.PhoneAndroid
-        value in setOf("🛠", "🛠️", "tool", "tools", "skill", "skills", "技能") -> Icons.Outlined.Build
-        value in setOf("🏪", "market", "store", "市场") -> Icons.Outlined.Storefront
-        value in setOf("📄", "page", "document", "file", "native_page", "页面", "文件") -> Icons.Outlined.Description
-        value in setOf("⚙", "⚙️", "settings", "config", "设置") -> Icons.Outlined.Settings
-        value in setOf("🖥", "🖥️", "desktop", "console", "screen", "桌面", "控制台") -> Icons.Outlined.DesktopWindows
-        value in setOf("👤", "user", "person", "mine", "我的") -> Icons.Outlined.Person
-        value in setOf("🔒", "lock", "vpn", "security", "安全") -> Icons.Outlined.Lock
-        value in setOf("🔌", "gateway", "plug", "model", "模型") -> Icons.Outlined.PowerSettingsNew
-        value in setOf("🎨", "palette", "appearance", "theme", "主题", "外观") -> Icons.Outlined.Palette
-        value in setOf("🔐", "permission", "permissions", "权限") -> Icons.Outlined.Security
-        value in setOf("🧹", "cache", "clean", "缓存") -> Icons.Outlined.CleaningServices
-        value in setOf("❔", "?", "help", "帮助") -> Icons.Outlined.HelpOutline
+        value in setOf("🎭", "role", "roles") -> Icons.Outlined.TheaterComedy
+        value in setOf("📱", "📲", "phone", "mobile", "app", "apps") -> Icons.Outlined.PhoneAndroid
+        value in setOf("🛠", "🛠️", "tool", "tools", "skill", "skills") -> Icons.Outlined.Build
+        value in setOf("🏪", "market", "store") -> Icons.Outlined.Storefront
+        value in setOf("📄", "page", "document", "file", "native_page") -> Icons.Outlined.Description
+        value in setOf("⚙", "⚙️", "settings", "config") -> Icons.Outlined.Settings
+        value in setOf("🖥", "🖥️", "desktop", "console", "screen") -> Icons.Outlined.DesktopWindows
+        value in setOf("👤", "user", "person", "mine") -> Icons.Outlined.Person
+        value in setOf("🔒", "lock", "vpn", "security") -> Icons.Outlined.Lock
+        value in setOf("🔌", "gateway", "plug", "model") -> Icons.Outlined.PowerSettingsNew
+        value in setOf("🎨", "palette", "appearance", "theme") -> Icons.Outlined.Palette
+        value in setOf("🔐", "permission", "permissions") -> Icons.Outlined.Security
+        value in setOf("🧹", "cache", "clean") -> Icons.Outlined.CleaningServices
+        value in setOf("❔", "?", "help") -> Icons.Outlined.HelpOutline
         value in setOf("♿", "accessibility") -> Icons.Outlined.Accessibility
-        value in setOf("🪟", "overlay", "window", "悬浮窗") -> Icons.Outlined.ScreenSearchDesktop
+        value in setOf("🪟", "overlay", "window") -> Icons.Outlined.ScreenSearchDesktop
         value in setOf("⚡", "battery", "background", "power") -> Icons.Outlined.BatterySaver
-        value in setOf("🔔", "notification", "通知") -> Icons.Outlined.Notifications
-        value in setOf("🚀", "launch", "autostart", "启动") -> Icons.Outlined.RocketLaunch
+        value in setOf("🔔", "notification") -> Icons.Outlined.Notifications
+        value in setOf("🚀", "launch", "autostart") -> Icons.Outlined.RocketLaunch
         value in setOf("📥", "download", "downloads") -> Icons.Outlined.Download
         value in setOf("📁", "folder", "directory") -> Icons.Outlined.Folder
-        value in setOf("workspace", "workspaces", "工作空间") -> Icons.Outlined.Folder
+        value in setOf("workspace", "workspaces") -> Icons.Outlined.Folder
         value in setOf("🖼", "🖼️", "image", "picture", "pictures") -> Icons.Outlined.Image
         value in setOf("📸", "📷", "camera", "screenshot") -> Icons.Outlined.CameraAlt
         value in setOf("🎵", "music", "audio") -> Icons.Outlined.MusicNote
@@ -135,12 +135,12 @@ fun clawIconForSymbol(symbol: String?): ImageVector {
         value in setOf("🕐", "time", "clock") -> Icons.Outlined.AutoFixHigh
         value in setOf("🔍", "search") -> Icons.Outlined.Search
         value in setOf("🌐", "web", "browser", "url") -> Icons.Outlined.Language
-        value in setOf("weather", "天气") -> Icons.Outlined.Web
+        value in setOf("weather") -> Icons.Outlined.Web
         value in setOf("🔗", "link") -> Icons.Outlined.Link
         value in setOf("👁", "eye", "visible") -> Icons.Outlined.Visibility
         value in setOf("✅", "check", "done") -> Icons.Outlined.CheckCircle
         value in setOf("🎮", "game") -> Icons.Outlined.SportsEsports
-        value in setOf("town", "ai_town", "house", "home", "room", "小镇", "房间") -> Icons.Outlined.Home
+        value in setOf("town", "ai_town", "house", "home", "room") -> Icons.Outlined.Home
         value in setOf("📦", "package") -> Icons.Outlined.ShoppingBag
         else -> Icons.Outlined.InsertDriveFile
     }

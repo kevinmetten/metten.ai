@@ -611,8 +611,7 @@ class ConsoleServer(
                 val current = file.readText()
                 val looksLikeOldFactoryConsole =
                     "MobileClaw Console" in current &&
-                        (("--accent:#a78bfa" in current && "Enter a task below" in current) ||
-                            ("--accent:#c7f43a" in current && "输入任务，MobileClaw 会直接开始执行" in current))
+                        ("--accent:#a78bfa" in current && "Enter a task below" in current)
                 if (looksLikeOldFactoryConsole) file.writeText(DEFAULT_CONSOLE_HTML)
             }
         } catch (t: Throwable) {

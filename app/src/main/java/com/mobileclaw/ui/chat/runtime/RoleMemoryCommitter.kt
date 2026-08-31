@@ -73,12 +73,10 @@ class RoleMemoryCommitDecider {
         "$goal\n$summary".lowercase(Locale.getDefault())
 
     private val durableSignalNeedles = listOf(
-        "记住", "以后", "下次", "长期", "偏好", "习惯", "不要", "总是", "固定", "可复用", "经验",
         "remember", "from now on", "next time", "preference", "prefer", "habit", "always", "never", "reusable",
     )
 
     private val userMemoryNeedles = listOf(
-        "我的", "我喜欢", "我不喜欢", "我希望", "我的习惯", "用户偏好",
         "my ", "i prefer", "i like", "i don't like", "my preference", "my habit",
     )
 }

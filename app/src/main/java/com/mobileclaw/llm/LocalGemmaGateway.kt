@@ -230,27 +230,27 @@ class HybridLlmGateway(
     private val localToolCallingEnabled: () -> Boolean,
 ) : LlmGateway {
     override suspend fun chat(request: ChatRequest): ChatResponse {
-        val localizedRequest = request.withResponseLanguage()
-        if (localizedRequest.callOptions.hasLocalOverride) {
-            return runCatching { local.chat(localizedRequest) }.getOrElse { e ->
+        val preparedRequest = request.withResponseLanguage()
+        if (preparedRequest.callOptions.hasLocalOverride) {
+            return runCatching { local.chat(preparedRequest) }.getOrElse { e ->
                 ChatResponse(content = "The role-selected local model call failed: ${e.message}\nPlease confirm that the selected local model is installed and runnable.")
             }
         }
-        if (localizedRequest.callOptions.hasCloudOverride) {
-            return cloud.chat(localizedRequest)
+        if (preparedRequest.callOptions.hasCloudOverride) {
+            return cloud.chat(preparedRequest)
         }
         if (nativeOnly()) {
-            return runCatching { local.chat(localizedRequest) }.getOrElse { e ->
+            return runCatching { local.chat(preparedRequest) }.getOrElse { e ->
                 ChatResponse(content = "Only native mode is enabled, so cloud fallback is disabled.\nLocal model call failed: ${e.message}\nPlease confirm that a runnable local model is installed and selected. For image/VLM tasks, make sure the main .litertlm model is usable and its matching vision resource is installed.")
             }
         }
-        val canAttemptLocal = localizedRequest.tools.isEmpty() ||
-            localizedRequest.imageBase64Present() ||
+        val canAttemptLocal = preparedRequest.tools.isEmpty() ||
+            preparedRequest.imageBase64Present() ||
             localToolCallingEnabled()
         if (useLocal() && canAttemptLocal) {
             var localTokenEmitted = false
-            val localRequest = localizedRequest.copy(
-                onToken = localizedRequest.onToken?.let { downstream ->
+            val localRequest = preparedRequest.copy(
+                onToken = preparedRequest.onToken?.let { downstream ->
                     { token: String ->
                         localTokenEmitted = true
                         downstream(token)
@@ -260,25 +260,25 @@ class HybridLlmGateway(
             return runCatching {
                 val localResponse = local.chat(localRequest)
                 if (
-                    localizedRequest.tools.isNotEmpty() &&
-                    !localizedRequest.imageBase64Present() &&
+                    preparedRequest.tools.isNotEmpty() &&
+                    !preparedRequest.imageBase64Present() &&
                     localToolCallingEnabled() &&
                     localResponse.toolCall == null &&
                     canUseCloud()
                 ) {
-                    cloud.chat(localizedRequest)
+                    cloud.chat(preparedRequest)
                 } else {
                     localResponse
                 }
             }.getOrElse { e ->
                 if (canUseCloud() && !localTokenEmitted) {
-                    cloud.chat(localizedRequest)
+                    cloud.chat(preparedRequest)
                 } else {
                     ChatResponse(content = "Local model call failed: ${e.message}\nPlease confirm the local model files are complete, or switch back to a cloud model.")
                 }
             }
         }
-        return cloud.chat(localizedRequest)
+        return cloud.chat(preparedRequest)
     }
 
     override suspend fun embed(text: String): FloatArray =

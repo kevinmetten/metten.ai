@@ -712,8 +712,6 @@ class GenerateVideoSkill(
         val normalized = trim().lowercase()
         if (normalized.isBlank()) return false
         return listOf(
-            "图生视频", "图转视频", "图片生成视频", "按图生成视频", "用图生成视频",
-            "用这张图", "根据这张图", "基于这张图", "这张图片", "这个图片", "刚才的图",
             "image to video", "image-to-video", "use this image", "from this image",
         ).any { normalized.contains(it) }
     }
