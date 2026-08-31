@@ -17,7 +17,6 @@ enum class SkillToolCategory {
 object SkillToolTaxonomy {
     private val categoryIds: Map<SkillToolCategory, Set<String>> = mapOf(
         SkillToolCategory.CHAT to setOf(
-            "sticker_bqb",
             "show_toast",
             "clipboard",
         ),
@@ -185,7 +184,7 @@ object SkillToolTaxonomy {
         if (text.containsAny("web", "search", "fetch", "browse", "browser", "http", "url", "news", "hot", "weather", "exchange", "calendar", "ip_lookup", "joke", "poem", "hitokoto", "weibo", "zhihu", "douyin", "bilibili", "toutiao", "baidu")) {
             categories += SkillToolCategory.WEB
         }
-        if (text.containsAny("image", "video", "icon", "sticker", "bqb", "emoji", "avatar", "photo", "generate")) {
+        if (text.containsAny("image", "video", "icon", "sticker", "emoji", "avatar", "photo", "generate")) {
             categories += SkillToolCategory.MEDIA
         }
         if (text.containsAny("vpn", "proxy", "mihomo")) {

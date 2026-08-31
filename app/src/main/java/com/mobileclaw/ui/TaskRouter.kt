@@ -251,7 +251,7 @@ class TaskRouter(
         val latest = recent.lastOrNull() ?: return null
         val latestAttachment = latest.attachments.asReversed()
             .firstOrNull { it is SkillAttachment.FileData || it is SkillAttachment.HtmlData }
-            ?.takeIf { !isLikelyStickerOrMediaAsset(it) }
+            ?.takeIf { !isLikelyMediaAsset(it) }
         if (latestAttachment != null) {
             val intent = recentFileContextIntent(goal, latestAttachment)
             return TaskRoute(
@@ -805,7 +805,7 @@ class TaskRouter(
             .orEmpty()
 
     private fun shouldUseRecentFileContext(text: String, attachment: SkillAttachment): Boolean {
-        if (isLikelyStickerOrMediaAsset(attachment)) return false
+        if (isLikelyMediaAsset(attachment)) return false
         val followUpSignals = text.containsAnyTerm(
             "this", "this file", "this document", "this spreadsheet", "this ppt", "this pdf",
             "this html", "this page", "it", "above", "previous", "continue", "keep going",
@@ -822,17 +822,11 @@ class TaskRouter(
         return !newCreationIntent
     }
 
-    private fun isLikelyStickerOrMediaAsset(attachment: SkillAttachment): Boolean = when (attachment) {
+    private fun isLikelyMediaAsset(attachment: SkillAttachment): Boolean = when (attachment) {
         is SkillAttachment.FileData -> {
-            val path = attachment.path.lowercase()
             val name = attachment.name.lowercase()
             val mime = attachment.mimeType.lowercase()
-            mime.startsWith("image/") ||
-                path.contains("/stickers/") ||
-                path.contains("bqb") ||
-                name.contains("sticker") ||
-                name.contains("bqb") ||
-                name.contains("emoji")
+            mime.startsWith("image/") || name.contains("emoji")
         }
         is SkillAttachment.HtmlData -> false
         else -> false
@@ -997,7 +991,7 @@ class TaskRouter(
             .asReversed()
             .flatMap { it.attachments.asReversed() }
             .firstOrNull { it is SkillAttachment.FileData || it is SkillAttachment.HtmlData }
-            ?.takeIf { !isLikelyStickerOrMediaAsset(it) }
+            ?.takeIf { !isLikelyMediaAsset(it) }
     }
 
     private fun currentConversationMentionsAiPage(pages: List<AiPageDef>): AiPageDef? {

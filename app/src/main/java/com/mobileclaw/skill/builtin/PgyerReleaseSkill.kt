@@ -59,9 +59,7 @@ class PgyerReleaseSkill(
     override val meta = SkillMeta(
         id = "pgyer_release",
         name = "App Update",
-        nameZh = "应用更新",
         description = "Checks MobileClaw updates, downloads the latest APK, or uploads an APK to the configured release channel.",
-        descriptionZh = "检查 MobileClaw 更新、下载最新 APK，或上传 APK 到已配置的发布通道。",
         parameters = listOf(
             SkillParam("action", "string", "status | check_update | download | upload", required = false),
             SkillParam("api_key", "string", "Optional release channel API key override.", required = false),

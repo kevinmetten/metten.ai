@@ -484,11 +484,8 @@ object TaskToolPolicy {
 - Answer directly when no tool is needed, but do not claim you lack tools if a helper can solve the task better.
 - Use helper tools when the user's request benefits from memory, skills, roles, files, pages, web lookup, model switching, or self-improvement.
 - If the user is asking you to create, update, inspect, repair, or extend your own skills/tools/roles/pages/files, treat that as a valid task and use the matching tools.
-- For casual conversation, humor, teasing, celebration, awkwardness, comfort, thanks, surprise, speechless moments, or meme-like replies, actively consider `sticker_bqb`.
 - When the user gives durable personal preferences or asks you to remember/configure something, store it with `user_config` for explicit user settings or `user_profile`/`memory` for inferred facts.
 - Before personalized advice, prefer the injected User Memory and Configuration context; call `user_config` or `user_profile` only if you need fresher or complete details.
-- Only call `sticker_bqb` when the sticker's query matches your intended reaction or emotion. Send at most one sticker per turn, and do not use it for serious, professional, or safety-critical answers.
-- If you send a sticker, keep accompanying text short and natural; do not explain the sticker as an attachment.
 """.trimIndent()
     }
 
@@ -782,7 +779,7 @@ object TaskToolPolicy {
                 text.anyContains("page", "ui", "native", "native page", "app center") ->
                     listOf("ui_builder", "app_manager", "create_html", "read_file", "create_file")
                 text.anyContains("image", "picture", "icon", "avatar", "video", "sticker", "meme", "reaction") ->
-                    listOf("generate_image", "generate_icon", "generate_video", "sticker_bqb")
+                    listOf("generate_image", "generate_icon", "generate_video")
                 text.anyContains("web", "website", "search", "research", "source", "find", "online", "browse") ->
                     listOf("web_search", "fetch_url", "web_browse", "web_content", "web_js")
                 else -> allowed

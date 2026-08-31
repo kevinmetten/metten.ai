@@ -211,7 +211,7 @@ fun WorkspacePage(
                                 fontSize = 14.sp,
                             )
                             WorkspaceMetaLine(
-                                listOf(eventCategoryLabel(event.category), event.source, formatTime(event.timestamp)).joinToString("  ")
+                                listOf(WorkspacePresentationSemantics.eventCategory(event.category), event.source, formatTime(event.timestamp)).joinToString("  ")
                             )
                             Text(
                                 text = event.summary,
@@ -296,9 +296,9 @@ private fun WorkspaceOverview(
     onOpenArea: (String) -> Unit,
 ) {
     val c = LocalClawColors.current
-    WorkspaceSectionCard(title = "总工作空间") {
+    WorkspaceSectionCard(title = str(R.string.workspace_areas)) {
         if (areas.isEmpty()) {
-            WorkspaceEmptyLine("暂无区域数据")
+            WorkspaceEmptyLine(str(R.string.workspace_no_areas))
         } else {
             areas.forEachIndexed { index, area ->
                 if (index > 0) HorizontalDivider(color = c.border, thickness = 0.5.dp)
@@ -381,7 +381,7 @@ private fun WorkspaceAreaDetail(
 ) {
     val c = LocalClawColors.current
     val context = LocalContext.current
-    val locationLabel = currentPath.ifBlank { "区域根目录" }
+    val locationLabel = currentPath.ifBlank { str(R.string.workspace_area_root) }
 
     Column(
         modifier = Modifier
@@ -429,7 +429,7 @@ private fun WorkspaceAreaDetail(
                 .padding(horizontal = 12.dp, vertical = 9.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text("当前位置", color = c.subtext, fontSize = 11.sp, maxLines = 1)
+            Text(str(R.string.workspace_current_location), color = c.subtext, fontSize = 11.sp, maxLines = 1)
             Text(
                 text = locationLabel,
                 color = c.text,
@@ -447,7 +447,7 @@ private fun WorkspaceAreaDetail(
     }
 
     WorkspaceFileList(
-        title = if (currentPath.isBlank()) "根目录" else "文件",
+        title = if (currentPath.isBlank()) str(R.string.workspace_root) else str(R.string.workspace_files),
         entries = entries,
         showUp = currentPath.isNotBlank(),
         onNavigateUp = onNavigateUp,
@@ -482,12 +482,12 @@ private fun WorkspaceFileList(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(title, color = c.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            Text("${entries.size} 项", color = c.subtext, fontSize = 11.sp)
+            Text(WorkspacePresentationSemantics.itemCount(entries.size), color = c.subtext, fontSize = 11.sp)
         }
         if (showUp) {
             WorkspaceFileRow(
                 name = "..",
-                meta = "上一级目录",
+                meta = str(R.string.workspace_parent_directory),
                 isDirectory = true,
                 onClick = onNavigateUp,
             )
@@ -495,7 +495,7 @@ private fun WorkspaceFileList(
         }
         if (entries.isEmpty()) {
             Text(
-                text = "这个目录目前没有可展示的文件。",
+                text = str(R.string.workspace_empty_directory),
                 color = c.subtext,
                 fontSize = 12.sp,
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 16.dp),
@@ -507,7 +507,7 @@ private fun WorkspaceFileList(
                     meta = if (entry.isDirectory) {
                         "${entry.sizeLabel} · ${entry.updatedLabel}"
                     } else {
-                        "${entry.sizeLabel} · ${entry.updatedLabel} · 外部打开"
+                        "${entry.sizeLabel} · ${entry.updatedLabel} · ${str(R.string.workspace_open_externally)}"
                     },
                     isDirectory = entry.isDirectory,
                     onClick = {
@@ -681,35 +681,3 @@ private fun IconTextAction(
 
 private fun formatTime(timestamp: Long): String =
     SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(timestamp))
-
-private fun eventCategoryLabel(category: String): String = when (category) {
-    "progress",
-    "task_plan",
-    "task_started",
-    "direct_chat_started",
-    "plan_created",
-    "tool_call",
-    "skill_observation",
-    "reflection",
-    "review_completed",
-    "continuation_checkpoint",
-    "deterministic_phone_launch",
-    "deterministic_artifact_patch",
-    "artifact_observation",
-    "file_observation",
-    "code_observation" -> "推进"
-    "reminder",
-    "phone_control_guard",
-    "repeated_perception_guard" -> "提醒"
-    "repair",
-    "draft_repair",
-    "validation_repair",
-    "runtime_log_repair" -> "修复"
-    "completed",
-    "task_complete",
-    "task_completed",
-    "direct_chat_completed" -> "完成"
-    "blocked",
-    "task_error" -> "阻塞"
-    else -> category
-}

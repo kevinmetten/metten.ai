@@ -61,9 +61,7 @@ import com.mobileclaw.config.GatewayConfig
 import com.mobileclaw.config.capabilityModel
 import com.mobileclaw.config.hasCapability
 import com.mobileclaw.memory.db.VideoGenerationTaskEntity
-import com.mobileclaw.skill.builtin.VideoTaskStatuses
 import com.mobileclaw.skill.builtin.isVideoDownloadUrlPending
-import com.mobileclaw.ui.LocalAppLanguage
 import com.mobileclaw.ui.LocalClawColors
 
 @Composable
@@ -83,7 +81,6 @@ fun VideoGeneratorPage(
     onDeleteTask: (String) -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val gateways = remember(configSnapshot) {
         configSnapshot.gateways.filter { it.hasCapability("video") }.ifEmpty { configSnapshot.gateways }
     }
@@ -163,9 +160,9 @@ fun VideoGeneratorPage(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Hero()
-            PickerBlock(if (isZh) "网关" else "Gateway") {
+            PickerBlock("Gateway") {
                 if (gateways.isEmpty()) {
-                    Text(if (isZh) "还没有配置网关" else "No gateway configured", color = c.subtext, fontSize = 12.sp)
+                    Text("No gateway configured", color = c.subtext, fontSize = 12.sp)
                 } else {
                     ChipRow(
                         options = gateways.map { it.id to it.name },
@@ -174,9 +171,9 @@ fun VideoGeneratorPage(
                     )
                 }
             }
-            PickerBlock(if (isZh) "模型" else "Model") {
+            PickerBlock("Model") {
                 if (modelOptions.isEmpty()) {
-                    Text(if (isZh) "使用网关默认视频模型" else "Using the gateway default video model", color = c.subtext, fontSize = 12.sp)
+                    Text("Using the gateway default video model", color = c.subtext, fontSize = 12.sp)
                 } else {
                     ChipRow(
                         options = modelOptions.map { it to it },
@@ -188,15 +185,15 @@ fun VideoGeneratorPage(
             VideoTextField(
                 value = prompt,
                 onValueChange = { prompt = it },
-                label = if (isZh) "想生成什么" else "What do you want to generate?",
+                label = "What do you want to generate?",
                 minLines = 4,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 SecondaryButton(
                     text = if (promptAiRunning) {
-                        if (isZh) "AI 处理中" else "AI working"
+                        "AI working"
                     } else {
-                        if (isZh) "AI 丰富" else "Enhance"
+                        "Enhance"
                     },
                     enabled = prompt.isNotBlank() && !promptAiRunning && !isRunning,
                     modifier = Modifier.weight(1f),
@@ -208,9 +205,9 @@ fun VideoGeneratorPage(
                 )
                 SecondaryButton(
                     text = if (promptAiRunning) {
-                        if (isZh) "AI 处理中" else "AI working"
+                        "AI working"
                     } else {
-                        if (isZh) "AI 翻译" else "Translate"
+                        "Translate"
                     },
                     enabled = prompt.isNotBlank() && !promptAiRunning && !isRunning,
                     modifier = Modifier.weight(1f),
@@ -221,76 +218,76 @@ fun VideoGeneratorPage(
                     },
                 )
             }
-            PickerBlock(if (isZh) "模式" else "Mode") {
+            PickerBlock("Mode") {
                 ChipRow(
                     options = listOf(
-                        "text" to if (isZh) "文生视频" else "Text to video",
-                        "ti2vid" to if (isZh) "图生视频" else "Image to video",
-                        "keyframes" to if (isZh) "首尾帧" else "Keyframes",
+                        "text" to "Text to video",
+                        "ti2vid" to "Image to video",
+                        "keyframes" to "Keyframes",
                     ),
                     selected = mode,
                     onSelect = { mode = it },
                 )
             }
             when (mode) {
-                "ti2vid" -> PickerBlock(if (isZh) "图片" else "Image") {
+                "ti2vid" -> PickerBlock("Image") {
                     FrameButton(
-                        label = if (isZh) "参考图" else "Reference image",
+                        label = "Reference image",
                         value = firstFrame,
                         onPick = { pickImage(VideoImageTarget.FIRST) },
                         onClear = { firstFrame = VideoFrameUploadState() },
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        if (isZh) "图生视频只上传一张参考图，提交前会先变成公网 URL。" else "Image-to-video uploads one reference image and converts it to a public URL before submit.",
+                        "Image-to-video uploads one reference image and converts it to a public URL before submit.",
                         color = c.subtext,
                         fontSize = 11.sp,
                     )
                 }
-                "keyframes" -> PickerBlock(if (isZh) "图片" else "Images") {
+                "keyframes" -> PickerBlock("Images") {
                     FrameButton(
-                        label = if (isZh) "首帧" else "First frame",
+                        label = "First frame",
                         value = firstFrame,
                         onPick = { pickImage(VideoImageTarget.FIRST) },
                         onClear = { firstFrame = VideoFrameUploadState() },
                     )
                     Spacer(Modifier.height(10.dp))
                     FrameButton(
-                        label = if (isZh) "尾帧" else "Last frame",
+                        label = "Last frame",
                         value = lastFrame,
                         onPick = { pickImage(VideoImageTarget.LAST) },
                         onClear = { lastFrame = VideoFrameUploadState() },
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        if (isZh) "首尾帧模式会上传两张图，视频接口只接收 URL。" else "Keyframe mode uploads two images because the video API accepts URLs only.",
+                        "Keyframe mode uploads two images because the video API accepts URLs only.",
                         color = c.subtext,
                         fontSize = 11.sp,
                     )
                 }
             }
-            PickerBlock(if (isZh) "画幅与时长" else "Aspect and Duration") {
+            PickerBlock("Aspect and Duration") {
                 ChipRow(
                     options = listOf(
-                        "9:16" to if (isZh) "竖屏" else "Portrait",
-                        "16:9" to if (isZh) "横屏" else "Landscape",
-                        "1:1" to if (isZh) "方形" else "Square",
+                        "9:16" to "Portrait",
+                        "16:9" to "Landscape",
+                        "1:1" to "Square",
                     ),
                     selected = aspectRatio,
                     onSelect = { aspectRatio = it },
                 )
                 Spacer(Modifier.height(10.dp))
                 ChipRow(
-                    options = listOf("5", "8", "10", "15", "18").map { it to if (isZh) "$it 秒" else "${it}s" },
+                    options = listOf("5", "8", "10", "15", "18").map { it to "${it}s" },
                     selected = duration,
                     onSelect = { duration = it },
                 )
             }
             Text(
                 text = if (showAdvanced) {
-                    if (isZh) "收起高级参数" else "Hide advanced"
+                    "Hide advanced"
                 } else {
-                    if (isZh) "高级参数" else "Advanced"
+                    "Advanced"
                 },
                 color = c.text,
                 fontSize = 13.sp,
@@ -302,15 +299,15 @@ fun VideoGeneratorPage(
                     .padding(horizontal = 14.dp, vertical = 9.dp),
             )
             if (showAdvanced) {
-                PickerBlock(if (isZh) "高级" else "Advanced") {
-                    VideoTextField(value = negativePrompt, onValueChange = { negativePrompt = it }, label = if (isZh) "反向提示词" else "Negative prompt", minLines = 2)
+                PickerBlock("Advanced") {
+                    VideoTextField(value = negativePrompt, onValueChange = { negativePrompt = it }, label = "Negative prompt", minLines = 2)
                     Spacer(Modifier.height(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         VideoTextField(value = seed, onValueChange = { seed = it }, label = "Seed", keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
                         VideoTextField(value = frameRate, onValueChange = { frameRate = it }, label = "FPS", keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
                     }
                     Spacer(Modifier.height(10.dp))
-                    VideoTextField(value = extraBody, onValueChange = { extraBody = it }, label = if (isZh) "额外 JSON" else "Extra JSON", minLines = 2)
+                    VideoTextField(value = extraBody, onValueChange = { extraBody = it }, label = "Extra JSON", minLines = 2)
                 }
             }
             val framesReady = firstFrame.isReady && lastFrame.isReady
@@ -322,11 +319,11 @@ fun VideoGeneratorPage(
             }
             PrimaryButton(
                 text = when {
-                    isRunning -> if (isZh) "生成中" else "Generating"
-                    frameUploadFailed -> if (isZh) "图片上传失败" else "Image upload failed"
-                    !framesReady -> if (isZh) "图片上传中" else "Uploading image"
-                    !frameRequirementMet -> if (isZh) "请先选择图片" else "Choose an image first"
-                    else -> if (isZh) "直接生成" else "Generate"
+                    isRunning -> "Generating"
+                    frameUploadFailed -> "Image upload failed"
+                    !framesReady -> "Uploading image"
+                    !frameRequirementMet -> "Choose an image first"
+                    else -> "Generate"
                 },
                 enabled = prompt.isNotBlank() && !isRunning && selectedGateway != null && framesReady && frameRequirementMet,
                 onClick = {
@@ -371,7 +368,7 @@ private fun VideoFrameUploadState.withUploadResult(source: String, result: Resul
     if (this.source != source) return this
     return result.fold(
         onSuccess = { copy(remoteUrl = it, isUploading = false, error = "") },
-        onFailure = { copy(remoteUrl = "", isUploading = false, error = it.message ?: "上传失败") },
+        onFailure = { copy(remoteUrl = "", isUploading = false, error = it.message ?: "Upload failed") },
     )
 }
 
@@ -391,7 +388,6 @@ private fun Header(
     onRefreshAll: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -400,7 +396,7 @@ private fun Header(
             Icon(Icons.Filled.ArrowBack, contentDescription = null, tint = c.text)
         }
         Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(if (isZh) "视频生成" else "Video Generation", color = c.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+            Text("Video Generation", color = c.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier.size(6.dp).clip(CircleShape)
@@ -409,9 +405,9 @@ private fun Header(
                 Spacer(Modifier.width(6.dp))
                 Text(
                     if (isRunning) {
-                        if (isZh) "生成链路运行中" else "Generation pipeline running"
+                        "Generation pipeline running"
                     } else {
-                        if (isZh) "AI 翻译提示词后调用视频模型" else "AI translates the prompt, then calls the video model"
+                        "Configure the request and call the video model"
                     },
                     color = c.subtext,
                     fontSize = 11.sp,
@@ -430,7 +426,6 @@ private fun Header(
 
 @Composable
 private fun Hero() {
-    val isZh = LocalAppLanguage.current == "zh"
     Row(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
             .background(Color(0xFF0B0B0B)).padding(18.dp),
@@ -446,7 +441,7 @@ private fun Hero() {
         Column(modifier = Modifier.weight(1f)) {
             Text("Motion studio", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Text(
-                if (isZh) "选参数，传图片，AI 翻译成英文后生成。" else "Choose settings, upload images, and generate video.",
+                "Choose settings, optionally upload images, and generate video.",
                 color = Color(0xFFA0A0A0),
                 fontSize = 12.sp,
             )
@@ -522,7 +517,6 @@ private fun FrameButton(
     onClear: () -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
             modifier = Modifier.size(46.dp).clip(RoundedCornerShape(15.dp))
@@ -542,11 +536,11 @@ private fun FrameButton(
             Text(label, color = c.text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
             Text(
                 text = when {
-                    !value.hasSelection -> if (isZh) "未选择" else "Not selected"
-                    value.isUploading -> if (isZh) "正在上传成 URL" else "Uploading as URL"
+                    !value.hasSelection -> "Not selected"
+                    value.isUploading -> "Uploading as URL"
                     value.remoteUrl.isNotBlank() -> value.remoteUrl
-                    value.error.isNotBlank() -> if (isZh) "上传失败：${value.error}" else "Upload failed: ${value.error}"
-                    else -> if (isZh) "等待上传" else "Waiting to upload"
+                    value.error.isNotBlank() -> "Upload failed: ${value.error}"
+                    else -> "Waiting to upload"
                 },
                 color = if (value.error.isNotBlank()) Color(0xFFB3261E) else c.subtext,
                 fontSize = 11.sp,
@@ -555,7 +549,7 @@ private fun FrameButton(
             )
         }
         if (value.hasSelection) {
-            Text(if (isZh) "清除" else "Clear", color = c.subtext, fontSize = 12.sp, modifier = Modifier.clickable(onClick = onClear).padding(8.dp))
+            Text("Clear", color = c.subtext, fontSize = 12.sp, modifier = Modifier.clickable(onClick = onClear).padding(8.dp))
         }
     }
 }
@@ -615,11 +609,10 @@ private fun RecentTasks(
     onDeleteTask: (String) -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     Column {
-        Text(if (isZh) "最近任务" else "Recent Tasks", color = c.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp))
+        Text("Recent Tasks", color = c.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp))
         if (tasks.isEmpty()) {
-            Text(if (isZh) "暂无视频任务" else "No video tasks yet", color = c.subtext, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
+            Text("No video tasks yet", color = c.subtext, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
             return
         }
         tasks.take(5).forEachIndexed { index, task ->
@@ -627,7 +620,7 @@ private fun RecentTasks(
             Row(modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(task.prompt, color = c.text, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(videoTaskStatusLabel(task, isZh), color = c.subtext, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(videoTaskStatusLabel(task), color = c.subtext, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 IconButton(onClick = { onRefreshTask(task.taskId) }, enabled = task.taskId !in refreshingIds) {
                     if (task.taskId in refreshingIds) {
@@ -644,16 +637,12 @@ private fun RecentTasks(
     }
 }
 
-private fun videoTaskStatusLabel(task: VideoGenerationTaskEntity, isZh: Boolean): String = when {
-    task.status == VideoTaskStatuses.RUNNING && isVideoDownloadUrlPending(task.errorMessage) -> if (isZh) "等待下载地址" else "Waiting for download URL"
-    task.status == VideoTaskStatuses.SUBMITTED -> if (isZh) "生成中" else "Generating"
-    task.status == VideoTaskStatuses.RUNNING -> if (isZh) "生成中" else "Generating"
-    task.status == VideoTaskStatuses.TIMED_OUT -> if (isZh) "后台追踪中" else "Tracking in background"
-    task.status == VideoTaskStatuses.COMPLETED -> if (isZh) "已生成" else "Generated"
-    task.status == VideoTaskStatuses.DOWNLOADED -> if (isZh) "已下载" else "Downloaded"
-    task.status == VideoTaskStatuses.FAILED -> if (isZh) "失败：${task.errorMessage.take(80)}" else "Failed: ${task.errorMessage.take(80)}"
-    else -> task.status
-}
+private fun videoTaskStatusLabel(task: VideoGenerationTaskEntity): String =
+    VideoGenerationPresentation.taskStatus(
+        status = task.status,
+        error = task.errorMessage,
+        downloadUrlPending = isVideoDownloadUrlPending(task.errorMessage),
+    )
 
 @Composable
 private fun SecondaryButton(

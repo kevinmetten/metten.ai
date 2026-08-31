@@ -57,7 +57,6 @@ import com.mobileclaw.config.ConfigSnapshot
 import com.mobileclaw.config.GatewayConfig
 import com.mobileclaw.config.capabilityModel
 import com.mobileclaw.config.hasCapability
-import com.mobileclaw.ui.LocalAppLanguage
 import com.mobileclaw.ui.LocalClawColors
 
 @Composable
@@ -72,7 +71,6 @@ fun ImageGeneratorPage(
     onRewritePrompt: (String, ImagePromptAiAction, (String) -> Unit) -> Unit,
 ) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val gateways = remember(configSnapshot) {
         configSnapshot.gateways.filter { it.hasCapability("image") }.ifEmpty { configSnapshot.gateways }
     }
@@ -109,21 +107,21 @@ fun ImageGeneratorPage(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Hero()
-            PickerBlock(if (isZh) "网关" else "Gateway") {
-                if (gateways.isEmpty()) Text(if (isZh) "还没有配置网关" else "No gateway configured", color = c.subtext, fontSize = 12.sp)
+            PickerBlock("Gateway") {
+                if (gateways.isEmpty()) Text("No gateway configured", color = c.subtext, fontSize = 12.sp)
                 else ChipRow(gateways.map { it.id to it.name }, selectedGatewayId) { selectedGatewayId = it }
             }
-            PickerBlock(if (isZh) "模型" else "Model") {
-                if (modelOptions.isEmpty()) Text(if (isZh) "使用网关默认图片模型" else "Using the gateway default image model", color = c.subtext, fontSize = 12.sp)
+            PickerBlock("Model") {
+                if (modelOptions.isEmpty()) Text("Using the gateway default image model", color = c.subtext, fontSize = 12.sp)
                 else ChipRow(modelOptions.map { it to it }, selectedModel) { selectedModel = it }
             }
-            TextField(value = prompt, onValueChange = { prompt = it }, label = if (isZh) "想生成什么" else "What do you want to generate?", minLines = 4)
+            TextField(value = prompt, onValueChange = { prompt = it }, label = "What do you want to generate?", minLines = 4)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 SecondaryButton(
                     text = if (promptAiRunning) {
-                        if (isZh) "AI 处理中" else "AI working"
+                        "AI working"
                     } else {
-                        if (isZh) "AI 丰富" else "Enhance"
+                        "Enhance"
                     },
                     enabled = prompt.isNotBlank() && !promptAiRunning && !isRunning,
                     modifier = Modifier.weight(1f),
@@ -131,45 +129,42 @@ fun ImageGeneratorPage(
                 )
                 SecondaryButton(
                     text = if (promptAiRunning) {
-                        if (isZh) "AI 处理中" else "AI working"
+                        "AI working"
                     } else {
-                        if (isZh) "AI 翻译" else "Translate"
+                        "Translate"
                     },
                     enabled = prompt.isNotBlank() && !promptAiRunning && !isRunning,
                     modifier = Modifier.weight(1f),
                     onClick = { onRewritePrompt(prompt, ImagePromptAiAction.TRANSLATE) { prompt = it } },
                 )
             }
-            PickerBlock(if (isZh) "尺寸" else "Size") {
+            PickerBlock("Size") {
                 ChipRow(
                     options = listOf(
-                        "1024x1024" to if (isZh) "方图" else "Square",
-                        "1024x1536" to if (isZh) "竖图" else "Portrait",
-                        "1536x1024" to if (isZh) "横图" else "Landscape",
-                        "auto" to if (isZh) "自动" else "Auto",
+                        "1024x1024" to "Square",
+                        "1024x1536" to "Portrait",
+                        "1536x1024" to "Landscape",
+                        "auto" to "Auto",
                     ),
                     selected = size,
                     onSelect = { size = it },
                 )
             }
-            PickerBlock(if (isZh) "质量" else "Quality") {
+            PickerBlock("Quality") {
                 ChipRow(
                     options = listOf(
-                        "auto" to if (isZh) "自动" else "Auto",
-                        "low" to if (isZh) "低" else "Low",
-                        "medium" to if (isZh) "中" else "Medium",
-                        "high" to if (isZh) "高" else "High",
+                        "auto" to "Auto",
+                        "low" to "Low",
+                        "medium" to "Medium",
+                        "high" to "High",
                     ),
                     selected = quality,
                     onSelect = { quality = it },
                 )
             }
             PrimaryButton(
-                text = if (isRunning) {
-                    if (isZh) "生成中" else "Generating"
-                } else {
-                    if (isZh) "直接生成" else "Generate"
-                },
+                text = if (isRunning) "Generating" else "Generate",
+                showProgress = isRunning,
                 enabled = prompt.isNotBlank() && !isRunning && selectedGateway != null,
                 onClick = {
                     onGenerate(
@@ -197,19 +192,18 @@ private fun GatewayConfig?.imageModelOptions(): List<String> {
 @Composable
 private fun Header(isRunning: Boolean, onBack: () -> Unit) {
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = null, tint = c.text) }
         Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(if (isZh) "图片生成" else "Image Generation", color = c.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+            Text("Image Generation", color = c.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(6.dp).clip(CircleShape).background(if (isRunning) c.accent else c.subtext.copy(alpha = 0.45f)))
                 Spacer(Modifier.width(6.dp))
                 Text(
                     if (isRunning) {
-                        if (isZh) "图片接口运行中" else "Image request running"
+                        "Image request running"
                     } else {
-                        if (isZh) "选择参数后直接调用图片模型" else "Choose parameters and call the image model"
+                        "Choose parameters and call the image model"
                     },
                     color = c.subtext,
                     fontSize = 11.sp,
@@ -222,7 +216,6 @@ private fun Header(isRunning: Boolean, onBack: () -> Unit) {
 
 @Composable
 private fun Hero() {
-    val isZh = LocalAppLanguage.current == "zh"
     Row(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Color(0xFF0B0B0B)).padding(18.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -234,7 +227,7 @@ private fun Hero() {
         Column(Modifier.weight(1f)) {
             Text("Image studio", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Text(
-                if (isZh) "选网关、模型、尺寸和质量，直接生成图片。" else "Pick a gateway, model, size, and quality.",
+                "Pick a gateway, model, size, and quality.",
                 color = Color(0xFFA0A0A0),
                 fontSize = 12.sp,
             )
@@ -315,16 +308,15 @@ private fun TextField(value: String, onValueChange: (String) -> Unit, label: Str
 }
 
 @Composable
-private fun PrimaryButton(text: String, enabled: Boolean, onClick: () -> Unit) {
+private fun PrimaryButton(text: String, enabled: Boolean, showProgress: Boolean, onClick: () -> Unit) {
     val c = LocalClawColors.current
-    val isGenerating = text == "生成中" || text == "Generating"
     Box(
         modifier = Modifier.fillMaxWidth().height(54.dp).clip(RoundedCornerShape(27.dp))
             .background(if (enabled) c.text else c.subtext.copy(alpha = 0.28f))
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        if (isGenerating) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = if (c.isDark) Color.Black else Color.White)
+        if (showProgress) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = if (c.isDark) Color.Black else Color.White)
         else Text(text, color = if (c.isDark) Color.Black else Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
     }
 }
@@ -353,9 +345,8 @@ private fun ImagePreview(previewBase64: String, previewPrompt: String) {
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
         }.getOrNull()
     } ?: return
-    val isZh = LocalAppLanguage.current == "zh"
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(if (isZh) "最新结果" else "Latest Result", color = c.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+        Text("Latest Result", color = c.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
         Image(
             bitmap = bitmap.asImageBitmap(),
             contentDescription = null,

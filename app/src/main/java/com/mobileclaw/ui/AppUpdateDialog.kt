@@ -40,21 +40,20 @@ fun AppUpdateDialog(
 ) {
     if (!state.showDialog) return
     val c = LocalClawColors.current
-    val isZh = LocalAppLanguage.current == "zh"
     val busy = state.checking || state.installing
     val hasError = state.errorMessage.isNotBlank()
     val title = when {
-        state.checking -> if (isZh) "正在检测更新" else "Checking Update"
-        state.installing -> if (isZh) "正在准备更新" else "Preparing Update"
-        hasError -> if (isZh) "检测更新失败" else "Update Check Failed"
-        state.hasNewVersion -> if (isZh) "发现新版本" else "Update Available"
-        else -> if (isZh) "已经是最新版本" else "Already Up To Date"
+        state.checking -> "Checking Update"
+        state.installing -> "Preparing Update"
+        hasError -> "Update Check Failed"
+        state.hasNewVersion -> "Update Available"
+        else -> "Already Up To Date"
     }
     val subtitle = when {
-        state.installing -> if (isZh) "正在下载 APK，完成后会打开系统安装器" else "Downloading APK and opening the installer"
+        state.installing -> "Downloading APK and opening the installer"
         hasError -> state.errorMessage
-        state.hasNewVersion -> if (isZh) "MobileClaw 可以升级到 ${state.remoteVersion.ifBlank { "latest" }}" else "MobileClaw can update to ${state.remoteVersion.ifBlank { "latest" }}"
-        else -> if (isZh) "当前安装版本已经和发布通道一致" else "Installed build matches the release channel"
+        state.hasNewVersion -> "MobileClaw can update to ${state.remoteVersion.ifBlank { "latest" }}"
+        else -> "Installed build matches the release channel"
     }
 
     Dialog(
@@ -135,11 +134,11 @@ fun AppUpdateDialog(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     UpdateMetaLine(
-                        label = if (isZh) "当前版本" else "Current",
+                        label = "Current",
                         value = "${state.currentVersion.ifBlank { "-" }} (${state.currentVersionCode})",
                     )
                     UpdateMetaLine(
-                        label = if (isZh) "发布版本" else "Release",
+                        label = "Release",
                         value = buildString {
                             append(state.remoteVersion.ifBlank { "-" })
                             state.remoteVersionCode?.let { append(" ($it)") }
@@ -147,7 +146,7 @@ fun AppUpdateDialog(
                     )
                     val notes = state.releaseNotes.ifBlank {
                         if (state.hasNewVersion) {
-                            if (isZh) "这个版本没有填写更新说明。" else "No release notes were provided."
+                            "No release notes were provided."
                         } else {
                             ""
                         }
@@ -171,16 +170,16 @@ fun AppUpdateDialog(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     ClawSecondaryButton(
-                        text = if (isZh) "关闭" else "Close",
+                        text = "Close",
                         onClick = onDismiss,
                         enabled = !busy,
                         modifier = Modifier.weight(1f),
                     )
                     ClawPrimaryButton(
                         text = when {
-                            state.hasNewVersion -> if (isZh) "更新" else "Update"
-                            hasError -> if (isZh) "重试" else "Retry"
-                            else -> if (isZh) "重新检测" else "Check Again"
+                            state.hasNewVersion -> "Update"
+                            hasError -> "Retry"
+                            else -> "Check Again"
                         },
                         onClick = {
                             if (state.hasNewVersion && !hasError) onInstall() else onCheckAgain()
