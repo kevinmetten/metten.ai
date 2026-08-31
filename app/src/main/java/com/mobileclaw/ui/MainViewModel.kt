@@ -4180,7 +4180,7 @@ For pure conversational replies, greetings, explanations, and simple factual ans
         val explicitAgentIntent = listOf(
             "网页搜索", "联网搜索", "搜索网页", "搜一下", "查一下资料", "找来源", "来源",
             "打开", "启动", "点击", "滑动", "滚动", "输入", "长按", "返回", "操作手机", "控制手机",
-            "Generated image", "画图", "创建", "生成页面", "做个页面", "做一个页面", "保存", "下载",
+            "生成图片", "画图", "创建", "生成页面", "做个页面", "做一个页面", "保存", "下载",
             "web search", "search web", "browse", "open ", "launch ", "click ", "tap ", "scroll ",
         )
         if (explicitAgentIntent.any { text.contains(it) }) return false
