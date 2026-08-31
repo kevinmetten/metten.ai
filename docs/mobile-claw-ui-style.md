@@ -48,7 +48,7 @@ Do not reintroduce Tech Blue, Violet, Cyan, purple gradients, or accent-tinted p
 
 ## Role Pages
 
-- Role avatar and generated portrait are one concept: `角色形象` / role identity.
+- Role avatar and generated portrait are one concept: role identity.
 - Role list uses the avatar as the identity mark.
 - Role detail uses a workspace-style `card` section for role identity; generated portrait and avatar share the same preview tile.
 - Role edit groups avatar/image, name, and description in one `card` section, with black/white pill actions.
