@@ -196,25 +196,25 @@ class AgentTownStore(private val context: Context) {
         }
         return AgentRoom(
             roleId = role.id,
-            houseName = "${role.name} 的家",
+            houseName = "${role.name} Home",
             style = style,
             houseSprite = sprite,
             accent = accent,
             doorSign = role.description.take(42),
             motto = when (role.id) {
-                "creator" -> "把想法做成能玩的东西"
-                "phone_operator" -> "我负责去手机里跑一趟"
-                "coder" -> "问题先复现，再修掉"
-                "web_agent" -> "先查证，再回答"
-                "skill_admin" -> "把能力整理成工具"
-                "vpn_operator" -> "线路通了，世界就近了"
+                "creator" -> "Turn ideas into things people can use"
+                "phone_operator" -> "I handle tasks on the phone"
+                "coder" -> "Reproduce the problem, then fix it"
+                "web_agent" -> "Verify first, then answer"
+                "skill_admin" -> "Organize capabilities into tools"
+                "vpn_operator" -> "A reliable connection brings the world closer"
                 else -> inferHomeMotto(role, sprite)
             },
-            idleLine = "我在房间里整理今天的工具。",
-            workingLine = "我正在处理一个任务，房间灯亮着。",
+            idleLine = "I am organizing today’s tools in my room.",
+            workingLine = "I am working on a task with the room lights on.",
             toolbox = role.forcedSkillIds.take(6).map { RoomTool(it, it, "forced") },
             furniture = defaultFurniture(role, sprite),
-            notes = listOf("这个房间会随着我的记忆、作品和技能继续生长。"),
+            notes = listOf("This room grows with my memories, creations, and skills."),
         ).normalized()
     }
 
@@ -235,15 +235,15 @@ class AgentTownStore(private val context: Context) {
 
     private fun inferHomeMotto(role: Role, sprite: String): String =
         when (sprite) {
-            "terminal" -> "我把问题拆开，再把答案跑通"
-            "workshop" -> "灵感先进工坊，再变成作品"
-            "library" -> "把线索整理成可靠结论"
-            "tower" -> "需要动手机时，我替你跑一趟"
-            "warehouse" -> "能力都归位，调用才顺手"
-            "bunker" -> "先把通路稳住，再谈速度"
-            "shop" -> "把好东西摆出来，让它有用"
-            "cabin" -> "我在安静处整理思路"
-            else -> "${role.name.ifBlank { role.id }} 的房间会随使用生长"
+            "terminal" -> "Break down the problem and validate the answer"
+            "workshop" -> "Bring ideas into the workshop and turn them into creations"
+            "library" -> "Organize clues into reliable conclusions"
+            "tower" -> "I can handle tasks that require phone interaction"
+            "warehouse" -> "Keep capabilities organized and ready to use"
+            "bunker" -> "Stabilize the connection before optimizing speed"
+            "shop" -> "Put useful things where they can help"
+            "cabin" -> "I organize my thoughts in a quiet place"
+            else -> "${role.name.ifBlank { role.id }}’s room grows through use"
         }
 
     private fun defaultFurniture(role: Role, sprite: String): List<RoomFurniture> {

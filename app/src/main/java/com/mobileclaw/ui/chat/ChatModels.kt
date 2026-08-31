@@ -4,7 +4,7 @@ import com.mobileclaw.skill.SkillAttachment
 import com.mobileclaw.ui.MainUiState
 import java.util.UUID
 
-// 单聊会话运行态独立出来，避免 UiState 文件继续承载聊天 feature 的细节模型。
+// Keep direct-chat runtime state separate so UiState does not absorb chat-specific models.
 data class SessionRunState(
     val isRunning: Boolean = false,
     val runStartedAt: Long = 0L,

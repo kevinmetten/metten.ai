@@ -185,7 +185,7 @@ class GenerateImageSkill(
                         val dataUri = "data:image/png;base64,$b64"
                         SkillResult(
                             success = true,
-                            output = "图片已生成。模型: $model，提示词: $prompt",
+                            output = "Image generated. Model: $model, prompt: $prompt",
                             imageBase64 = dataUri,
                             data = SkillAttachment.ImageData(dataUri, prompt),
                         )
@@ -194,15 +194,15 @@ class GenerateImageSkill(
                         fetchImageAsBase64(imgUrl)?.let { dataUri ->
                             SkillResult(
                                 success = true,
-                                output = "图片已生成。模型: $model，提示词: $prompt",
+                                output = "Image generated. Model: $model, prompt: $prompt",
                                 imageBase64 = dataUri,
                                 data = SkillAttachment.ImageData(dataUri, prompt),
                             )
-                        } ?: SkillResult(true, "图片已生成: $imgUrl (无法内联展示，请点击链接查看)")
+                        } ?: SkillResult(true, "Image generated: $imgUrl (Unable to display inline; open the link to view it)")
                     }
                     else -> SkillResult(
                         false,
-                        "API 响应中无图片数据，请确认模型 '$model' 支持图片生成。\nResponse: ${body.take(300)}",
+                        "The API response contained no image data. Confirm that model '$model' supports image generation.\nResponse: ${body.take(300)}",
                     )
                 }
             }
@@ -212,9 +212,9 @@ class GenerateImageSkill(
             SkillResult(
                 false,
                 if (isTimeout)
-                    "图片生成超时 (${timeoutLimit})。请检查网络或考虑使用免费的 Pollinations 方案 (model=pollinations)。"
+                    "Image generation timed out (${timeoutLimit}). Check the network or consider the free Pollinations option (model=pollinations)."
                 else
-                    "图片生成失败: ${e.message}\n💡 如果你的 LLM 端点不支持图片生成，请在 user_config 中设置 image_api_endpoint。",
+                    "Image generation failed: ${e.message}\n💡 If the LLM endpoint does not support image generation, set image_api_endpoint in user_config.",
             )
         }
     }
@@ -230,18 +230,18 @@ class GenerateImageSkill(
                     return SkillResult(false, "Pollinations.ai error ${resp.code}")
                 }
                 val bytes = resp.body?.bytes()
-                    ?: return SkillResult(false, "Pollinations.ai 返回空响应")
+                    ?: return SkillResult(false, "Pollinations.ai returned an empty response")
                 val mime = resp.body?.contentType()?.toString()?.substringBefore(";") ?: "image/jpeg"
                 val dataUri = "data:$mime;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
                 SkillResult(
                     success = true,
-                    output = "图片已生成 (Pollinations.ai FLUX)。提示词: $prompt",
+                    output = "Image generated (Pollinations.ai FLUX).Prompt: $prompt",
                     imageBase64 = dataUri,
                     data = SkillAttachment.ImageData(dataUri, prompt),
                 )
             }
         }.getOrElse { e ->
-            SkillResult(false, "Pollinations.ai 失败: ${e.message}")
+            SkillResult(false, "Pollinations.ai failed: ${e.message}")
         }
     }
 
@@ -291,13 +291,13 @@ class GenerateImageSkill(
                 val dataUri = "data:$mime;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
                 SkillResult(
                     success = true,
-                    output = "图片已生成 (Hugging Face $modelId)。提示词: $prompt",
+                    output = "Image generated (Hugging Face $modelId).Prompt: $prompt",
                     imageBase64 = dataUri,
                     data = SkillAttachment.ImageData(dataUri, prompt),
                 )
             }
         }.getOrElse { e ->
-            SkillResult(false, "Hugging Face 图片生成失败: ${e.message}")
+            SkillResult(false, "Hugging Face Image generation failed: ${e.message}")
         }
     }
 
@@ -374,18 +374,18 @@ class GenerateImageSkill(
 
         return when {
             noImageSupport ->
-                "\n\n💡 ${if (isLikelyClaude) "Claude" else "Gemini"} 端点不支持图片生成。请选择以下任一方案：\n" +
-                    "1. 免费无需配置：让 AI 使用 model=pollinations\n" +
-                    "2. OpenAI gpt-image-2 (高质量)：image_api_endpoint=https://api.openai.com，model=gpt-image-2\n" +
-                    "3. SiliconFlow (免费FLUX)：user_config 设置 image_api_endpoint=https://api.siliconflow.cn，image_api_key=你的Key\n" +
-                    "4. Together.ai (免费FLUX)：image_api_endpoint=https://api.together.xyz，model=black-forest-labs/FLUX.1-schnell-Free\n" +
-                    "5. OpenAI DALL-E：image_api_endpoint=https://api.openai.com，model=dall-e-3"
+                "\n\n💡 ${if (isLikelyClaude) "Claude" else "Gemini"}  endpoint does not support image generation. Choose one of these options:\n" +
+                    "1. Free with no configuration: use model=pollinations\n" +
+                    "2. OpenAI gpt-image-2 (high quality): image_api_endpoint=https://api.openai.com, model=gpt-image-2\n" +
+                    "3. SiliconFlow (free FLUX): set image_api_endpoint=https://api.siliconflow.cn and image_api_key=your key in user_config\n" +
+                    "4. Together.ai (free FLUX): image_api_endpoint=https://api.together.xyz, model=black-forest-labs/FLUX.1-schnell-Free\n" +
+                    "5. OpenAI DALL-E: image_api_endpoint=https://api.openai.com, model=dall-e-3"
             code == 503 ->
-                "\n\n💡 503 通常表示该端点不支持图片生成，请配置 image_api_endpoint。"
+                "\n\n💡 503 usually means the endpoint does not support image generation. Configure image_api_endpoint."
             code == 401 || code == 403 ->
-                "\n\n💡 认证失败。如果图片 API 使用独立的 Key，请在 user_config 设置 image_api_key。"
+                "\n\n💡 Authentication failed. If the image API uses a separate key, set image_api_key in user_config."
             code == 404 ->
-                "\n\n💡 端点不存在，请确认 image_api_endpoint 和模型名称正确。"
+                "\n\n💡 Endpoint not found. Confirm image_api_endpoint and the model name."
             else -> ""
         }
     }

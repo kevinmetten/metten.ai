@@ -697,7 +697,7 @@ Body stored in state[result_key]; use ${'$'}{state.response} in layout.
 
 ### AI / Default LLM Gateway
 Request AI through MobileClaw's default gateway config. Never put API keys or OpenAI-compatible endpoints into page JSON.
-{"type":"ai_chat","prompt":"请总结：${'$'}{input.text}","system":"你是简洁可靠的助手","result_key":"summary"}
+{"type":"ai_chat","prompt":"Summarize: ${'$'}{input.text}","system":"You are a concise and reliable assistant","result_key":"summary"}
 Result text is stored in state[result_key]; full fields are available via ${'$'}{result.text}, ${'$'}{result.ok}, ${'$'}{result.error}.
 
 ### Background / Parallel Execution
@@ -706,7 +706,7 @@ Start another named action without blocking the current action:
 Run independent steps concurrently and wait for all to finish:
 {"type":"parallel","steps":[
   {"type":"http","url":"https://api.example.com/a","method":"GET","result_key":"a"},
-  {"type":"ai_chat","prompt":"生成一句欢迎语","result_key":"welcome"}
+  {"type":"ai_chat","prompt":"Generate a welcome message","result_key":"welcome"}
 ]}
 
 ### Shell
@@ -728,18 +728,18 @@ Use app_context(domain="skills") first if you need the current skill inventory.
 {"type":"skill_call","skill":"web_search","params":{"query":"${'$'}{input.query}"},"result_key":"search_out"}
 
 ### Android System
-{"type":"notify","title":"完成","body":"${'$'}{state.result}"}
+{"type":"notify","title":"Done","body":"${'$'}{state.result}"}
 {"type":"vibrate","ms":100}
 {"type":"toast","text":"${'$'}{state.msg}"}
 {"type":"launch_app","package":"com.tencent.wechat"}
 {"type":"open_url","url":"https://example.com"}
-{"type":"share","text":"${'$'}{state.result}","title":"分享"}
+{"type":"share","text":"${'$'}{state.result}","title":"Share"}
 {"type":"clipboard_set","text":"${'$'}{state.result}"}
 {"type":"clipboard_get","result_key":"pasted"}
 {"type":"call_phone","number":"10086"}
-{"type":"send_sms","number":"10086","body":"查询余额"}
-{"type":"set_alarm","hour":9,"minute":0,"message":"早会"}
-{"type":"open_map","query":"北京故宫"}
+{"type":"send_sms","number":"10086","body":"Check account balance"}
+{"type":"set_alarm","hour":9,"minute":0,"message":"Morning meeting"}
+{"type":"open_map","query":"Forbidden City, Beijing"}
 {"type":"send_intent","action":"android.intent.action.VIEW","data":"geo:39.9,116.4"}
 {"type":"navigate_page","id":"other_page_id"}
 
@@ -759,20 +759,20 @@ ${'$'}{state.x == "done"}   — equality
 
 ## Full Example — Weather Dashboard
 
-ui_builder(action=create, title="天气查询", icon="weather",
-  state={"city":"北京","weather":"点击查询"},
+ui_builder(action=create, title="Weather lookup", icon="weather",
+  state={"city":"Beijing","weather":"Tap to search"},
   layout={"type":"column","gap":12,"padding":16,"children":[
-    {"type":"text","content":"天气查询","bold":true,"size":18},
-    {"type":"input","key":"city","placeholder":"输入城市名","label":"城市"},
-    {"type":"button","label":"查询天气","action":"fetch","style":"filled"},
-    {"type":"card","title":"结果","children":[
+    {"type":"text","content":"Weather lookup","bold":true,"size":18},
+    {"type":"input","key":"city","placeholder":"Enter a city name","label":"City"},
+    {"type":"button","label":"Check weather","action":"fetch","style":"filled"},
+    {"type":"card","title":"Result","children":[
       {"type":"text","content":"${'$'}{state.weather}","size":16}
     ]}
   ]},
   actions={"fetch":[
-    {"type":"set_state","key":"weather","value":"查询中..."},
+    {"type":"set_state","key":"weather","value":"Searching..."},
     {"type":"http","url":"https://wttr.in/${'$'}{input.city}?format=3&lang=zh","method":"GET","result_key":"weather"},
-    {"type":"toast","text":"查询完成"}
+    {"type":"toast","text":"Search complete"}
   ]}
 )
 

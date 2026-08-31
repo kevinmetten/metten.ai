@@ -76,7 +76,7 @@ class GenerateDocumentSkill(private val context: Context) : Skill {
                         "md"  -> "text/markdown"
                         else  -> "text/plain"
                     }
-                    SkillResult(true, "${type.uppercase()} 文件已生成：${outputFile.name}",
+                    SkillResult(true, "${type.uppercase()} file generated: ${outputFile.name}",
                         data = SkillAttachment.FileData(outputFile.absolutePath, outputFile.name, mime, outputFile.length()))
                 }
                 "pptx", "docx", "xlsx", "pdf" -> {
@@ -141,11 +141,11 @@ class GenerateDocumentSkill(private val context: Context) : Skill {
                 "pdf"  -> "application/pdf"
                 else   -> "application/octet-stream"
             }
-            val extra = if (buildResult.contains("\"asset_count\": 0")) "" else "（已处理图片/图表资源）"
-            SkillResult(true, "${type.uppercase()} 已生成：${outputFile.name}$extra",
+            val extra = if (buildResult.contains("\"asset_count\": 0")) "" else "(image/chart assets processed)"
+            SkillResult(true, "${type.uppercase()} generated: ${outputFile.name}$extra",
                 data = SkillAttachment.FileData(outputFile.absolutePath, outputFile.name, mime, outputFile.length()))
         }.getOrElse { e ->
-            SkillResult(false, "生成 $type 失败：${e.message?.take(600)}")
+            SkillResult(false, "Failed to generate $type: ${e.message?.take(600)}")
         }
     }
 

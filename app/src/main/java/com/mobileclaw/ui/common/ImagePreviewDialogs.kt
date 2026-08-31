@@ -35,7 +35,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.mobileclaw.R
 import com.mobileclaw.str
 
-// 图片全屏查看是 chat/group/附件共用能力，抽到 common 后可以统一行为和样式。
+// Centralize full-screen image viewing in common code so chat and attachments share behavior and styling.
 @Composable
 fun FullscreenImageDialog(bitmap: Bitmap, onDismiss: () -> Unit) {
     val context = LocalContext.current

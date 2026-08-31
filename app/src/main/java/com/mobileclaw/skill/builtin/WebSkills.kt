@@ -88,7 +88,7 @@ class WebSearchSkill(private val webView: InAppWebViewManager? = null) : Skill {
             }.getOrNull()?.takeIf { it.isNotEmpty() } ?: continue
 
             val label = when (eng) {
-                "baidu" -> "百度"; "sogou" -> "搜狗"; "bing" -> "Bing"; else -> "DuckDuckGo"
+                "baidu" -> "Baidu"; "sogou" -> "Sogou"; "bing" -> "Bing"; else -> "DuckDuckGo"
             }
             return buildResult(label, entries, query)
         }
@@ -211,13 +211,13 @@ class WebSearchSkill(private val webView: InAppWebViewManager? = null) : Skill {
         val (engineName, entries) = when (engine) {
             "duckduckgo" -> "DuckDuckGo" to searchDuckDuckGo(query, maxResults)
             "bing"       -> "Bing"       to searchBing(query, maxResults)
-            "baidu"      -> "百度"        to searchBaidu(query, maxResults)
-            "sogou"      -> "搜狗"        to searchSogou(query, maxResults)
+            "baidu"      -> "Baidu"        to searchBaidu(query, maxResults)
+            "sogou"      -> "Sogou"        to searchSogou(query, maxResults)
             else -> {
                 val baidu = runCatching { searchBaidu(query, maxResults) }.getOrNull()
-                if (!baidu.isNullOrEmpty()) return buildResult("百度", baidu, query)
+                if (!baidu.isNullOrEmpty()) return buildResult("Baidu", baidu, query)
                 val sogou = runCatching { searchSogou(query, maxResults) }.getOrNull()
-                if (!sogou.isNullOrEmpty()) return buildResult("搜狗", sogou, query)
+                if (!sogou.isNullOrEmpty()) return buildResult("Sogou", sogou, query)
                 val bing = runCatching { searchBing(query, maxResults) }.getOrNull()
                 if (!bing.isNullOrEmpty()) return buildResult("Bing", bing, query)
                 "DuckDuckGo" to (runCatching { searchDuckDuckGo(query, maxResults) }.getOrElse { emptyList() })

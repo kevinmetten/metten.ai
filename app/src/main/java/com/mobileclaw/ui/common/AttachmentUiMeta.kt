@@ -5,7 +5,7 @@ import android.graphics.BitmapFactory
 import android.util.Base64
 import com.mobileclaw.skill.SkillAttachment
 
-// 附件展示层的元信息工具统一放在这里，避免 chat/group 各自维护一套格式化与签名规则。
+// Centralize attachment presentation metadata to avoid duplicated formatting and signature rules.
 fun decodeDataUriBitmap(data: String): Bitmap? = runCatching {
     val clean = stripDataUriPrefix(data)
     val bytes = Base64.decode(clean, Base64.NO_WRAP)

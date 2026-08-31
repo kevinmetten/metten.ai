@@ -45,7 +45,7 @@ private const val VIDEO_LOG_TAG = "GenerateVideoSkill"
  * Fallback config source: legacy user_config values such as video_api_endpoint/video_api_key.
  *
  * Supported providers:
- *   - Kling AI  (快手可灵):  https://api.klingai.com
+ *   - Kling AI  (Kling AI):  https://api.klingai.com
  *   - Agnes APIHub:         https://apihub.agnes-ai.com
  *   - Any OpenAI-compatible video endpoint
  *
@@ -213,17 +213,17 @@ class GenerateVideoSkill(
             cloudinaryApiSecret = cloudinaryApiSecret,
         )
         if (submission == null) {
-            return@withContext SkillResult(false, "视频任务提交失败，未收到服务端响应。")
+            return@withContext SkillResult(false, "Video submission failed because the server returned no response.")
         }
         if (submission.taskId.isBlank()) {
             val failure = buildString {
-                append("视频任务提交失败")
-                submission.httpCode?.let { append("，HTTP $it") }
+                append("Video submission failed")
+                submission.httpCode?.let { append(", HTTP $it") }
                 if (submission.errorMessage.isNotBlank()) {
-                    append("：")
+                    append(": ")
                     append(submission.errorMessage)
                 } else if (submission.rawResponse.isNotBlank()) {
-                    append("：")
+                    append(": ")
                     append(submission.rawResponse.take(300))
                 }
             }
@@ -251,7 +251,7 @@ class GenerateVideoSkill(
         if (!waitForCompletion) {
             return@withContext SkillResult(
                 success = true,
-                output = "视频任务已提交，已加入任务列表后台追踪。task_id: $taskId",
+                output = "Video submitted and queued for background tracking.task_id: $taskId",
             )
         }
 
@@ -261,7 +261,7 @@ class GenerateVideoSkill(
             taskManager.markTimedOut(taskId)
             return@withContext SkillResult(
                 success = true,
-                output = "视频任务已提交，生成时间较长，已加入长任务列表继续追踪。task_id: $taskId",
+                output = "Video submitted; because generation may take time, it was added to long-running task tracking.task_id: $taskId",
             )
         }
 
@@ -279,7 +279,7 @@ class GenerateVideoSkill(
 
         SkillResult(
             success = true,
-            output = "视频已生成：${outputFile.name}",
+            output = "Video generated: ${outputFile.name}",
             data = SkillAttachment.FileData(outputFile.absolutePath, outputFile.name, "video/mp4", outputFile.length()),
         )
     }

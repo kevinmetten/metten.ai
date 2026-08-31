@@ -30,7 +30,7 @@ object PrivilegedClient {
         withContext(Dispatchers.IO) {
             val cmd = "am start --display $displayId -n $flatComponent -f 0x10200000"
             val reply = sendRaw(cmd)
-                ?: return@withContext "特权服务未激活 (TCP 127.0.0.1:${PrivilegedServer.PORT} 不可达)"
+                ?: return@withContext "Privileged service is not active (TCP 127.0.0.1:${PrivilegedServer.PORT} is unreachable)"
             if (reply.startsWith("ok:")) null
             else reply.removePrefix("err:").ifBlank { "server error" }
         }

@@ -4,7 +4,7 @@ import com.mobileclaw.memory.MemoryFact
 import com.mobileclaw.memory.db.EpisodeEntity
 import com.mobileclaw.ui.chat.AiQuizQuestion
 
-// 画像与记忆页的运行态聚合到 profile feature，避免 MainUiState 持续膨胀。
+// Keep profile and memory runtime state in the profile feature instead of expanding MainUiState.
 data class ProfileUiState(
     val facts: Map<String, String> = emptyMap(),
     val semanticFacts: List<MemoryFact> = emptyList(),

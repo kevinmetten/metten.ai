@@ -63,7 +63,7 @@ class UserProfileSkill(
                     ?: return SkillResult(false, "value is required for update")
                 val storageKey = if (key.startsWith(PROFILE_PREFIX)) key else "$PROFILE_PREFIX$key"
                 memory.set(key = storageKey, value = value, source = "user_profile_skill")
-                userConfig?.let { MemoryWriter(memory, it).syncUserConfig("user.${storageKey.removePrefix(PROFILE_PREFIX)}", value, "由用户画像同步") }
+                userConfig?.let { MemoryWriter(memory, it).syncUserConfig("user.${storageKey.removePrefix(PROFILE_PREFIX)}", value, "Synced from user profile") }
                 SkillResult(true, "Profile updated: $key = $value")
             }
             "delete" -> {

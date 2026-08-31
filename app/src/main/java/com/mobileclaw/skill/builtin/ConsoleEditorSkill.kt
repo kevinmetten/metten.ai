@@ -9,7 +9,7 @@ import com.mobileclaw.skill.SkillType
 import com.mobileclaw.skill.SkillToolCategory
 
 /**
- * Lets the agent fully customise the LAN console web page — the "千人千面" feature.
+ * Lets the agent fully customise the LAN console web page — the "customizable console" feature.
  *
  * The console lives at filesDir/console_web/index.html and is served by ConsoleServer on
  * the local network. The agent can read the current page, replace it entirely with a
@@ -68,54 +68,54 @@ class ConsoleEditorSkill(private val server: ConsoleServer) : Skill {
         return when (val action = params["action"] as? String) {
             "read" -> {
                 val html = server.readHtml()
-                SkillResult(true, "控制台当前 HTML（${html.length} 字符）:\n\n$html")
+                SkillResult(true, "Current console HTML(${html.length} characters):\n\n$html")
             }
 
             "write" -> {
                 val html = params["html"] as? String
-                    ?: return SkillResult(false, "html 参数必填")
+                    ?: return SkillResult(false, "html is required")
                 if (!html.contains("<html", ignoreCase = true)) {
-                    return SkillResult(false, "html 必须是完整的 HTML 文档（包含 <html> 标签）")
+                    return SkillResult(false, "html must be a complete HTML document containing an <html> tag")
                 }
                 server.writeHtml(html)
-                SkillResult(true, "✅ 控制台页面已更新（${html.length} 字符）。刷新浏览器即可看到新页面。")
+                SkillResult(true, "✅ Console page updated(${html.length} characters).Refresh the browser to see the new page.")
             }
 
             "patch_css" -> {
                 val css = params["css"] as? String
-                    ?: return SkillResult(false, "css 参数必填")
+                    ?: return SkillResult(false, "css is required")
                 val current = server.readHtml()
                 val styleBlock = "\n<style>\n/* console_patch */\n$css\n</style>\n"
                 val patched = injectBeforeClosingHead(current, styleBlock)
                 server.writeHtml(patched)
-                SkillResult(true, "✅ CSS 已注入控制台。刷新浏览器生效。")
+                SkillResult(true, "✅ CSS injected into the console. Refresh the browser to apply it.")
             }
 
             "patch_js" -> {
                 val js = params["js"] as? String
-                    ?: return SkillResult(false, "js 参数必填")
+                    ?: return SkillResult(false, "js is required")
                 val current = server.readHtml()
                 val scriptBlock = "\n<script>\n/* console_patch */\n$js\n</script>\n"
                 val patched = injectBeforeClosingBody(current, scriptBlock)
                 server.writeHtml(patched)
-                SkillResult(true, "✅ JS 已注入控制台。刷新浏览器生效。")
+                SkillResult(true, "✅ JavaScript injected into the console. Refresh the browser to apply it.")
             }
 
             "reset" -> {
                 server.resetHtml()
-                SkillResult(true, "✅ 控制台已恢复默认样式。刷新浏览器生效。")
+                SkillResult(true, "✅ The console was reset to its default style. Refresh the browser to apply it.")
             }
 
             "get_url" -> {
                 val url = server.getLanUrl()
-                SkillResult(true, "控制台 LAN 地址：$url\n\n同一局域网内用浏览器打开即可访问。")
+                SkillResult(true, "Console LAN URL: $url\n\nOpen it in a browser on the same LAN.")
             }
 
-            null, "" -> SkillResult(false, "action 参数必填")
+            null, "" -> SkillResult(false, "action is required")
 
             else -> SkillResult(
                 false,
-                "未知 action: $action。可用值: read | write | patch_css | patch_js | reset | get_url",
+                "Unknown action: $action.Allowed values: read | write | patch_css | patch_js | reset | get_url",
             )
         }
     }

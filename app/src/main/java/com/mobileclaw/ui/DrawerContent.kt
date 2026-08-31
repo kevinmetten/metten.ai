@@ -132,7 +132,7 @@ fun DrawerContent(
                 }
             }
             Spacer(modifier = Modifier.width(10.dp))
-            // 用户配置入口不再只挂在一小段副标题文字上，整块信息区都可点击，减少抽屉里点不中的问题。
+            // Make the entire user configuration area clickable instead of only the subtitle, improving the drawer touch target.
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -151,7 +151,7 @@ fun DrawerContent(
                 )
                 val configCount = userConfigEntries.size
                 Text(
-                    text = if (configCount > 0) "${configCount} 项配置 · ${str(R.string.drawer_user_config)}" else str(R.string.drawer_user_config),
+                    text = if (configCount > 0) "${configCount} configurations · ${str(R.string.drawer_user_config)}" else str(R.string.drawer_user_config),
                     fontSize = 11.sp,
                     color = c.subtext,
                     letterSpacing = 0.sp,
@@ -211,7 +211,7 @@ fun DrawerContent(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = "Codex 会话",
+                text = "Codex session",
                 fontSize = 13.sp,
                 color = c.text,
                 fontWeight = FontWeight.SemiBold,
@@ -220,7 +220,7 @@ fun DrawerContent(
             )
             Spacer(modifier = Modifier.weight(1f))
             Text(
-                text = "电脑",
+                text = "Desktop",
                 fontSize = 10.sp,
                 color = c.subtext,
                 maxLines = 1,

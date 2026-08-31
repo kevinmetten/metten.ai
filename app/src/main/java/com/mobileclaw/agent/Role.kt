@@ -137,7 +137,6 @@ fun Role.effectiveModelBinding(): RoleModelBinding? {
     return binding ?: RoleModelBinding.fromLegacy(modelOverride)
 }
 
-fun Role.localizedName(@Suppress("UNUSED_PARAMETER") language: String): String = name
 
 object RoleAvatarDefaults {
     const val GENERAL = "role:general"

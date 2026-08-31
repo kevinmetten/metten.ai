@@ -204,7 +204,7 @@ class AgentRuntime(
                     ctx.steps.add(reviewStep)
                     workingMemory.push(reviewStep)
                     pendingReview = null
-                    emit(AgentEvent.ThinkingComplete("后台复盘已完成，已更新下一步执行上下文。"))
+                    emit(AgentEvent.ThinkingComplete("Background review complete; the next-step context has been updated."))
                     onWorkspaceUpdate?.invoke(
                         AgentWorkspaceUpdate(
                             stage = "review_completed",
@@ -256,7 +256,7 @@ class AgentRuntime(
                     )
                     if (finalAfterSuccess && skillResult.success) {
                         val appName = extractRequestedAppName(goal).orEmpty()
-                        val summary = if (appName.isNotBlank()) "已打开$appName。" else "已打开目标应用。"
+                        val summary = if (appName.isNotBlank()) "Opened $appName." else "Opened the target app."
                         emit(AgentEvent.Completed(summary))
                         onWorkspaceUpdate?.invoke(
                             AgentWorkspaceUpdate(
@@ -271,7 +271,7 @@ class AgentRuntime(
                         return finish(AgentResult(success = true, summary = summary, context = ctx))
                     }
                     if (!skillResult.success && skillResult.data is SkillAttachment.AccessibilityRequest) {
-                        val summary = "需要先开启无障碍服务，才能执行打开应用和手机操作。"
+                        val summary = "Enable the accessibility service before opening apps or controlling the phone."
                         emit(AgentEvent.Completed(summary))
                         onWorkspaceUpdate?.invoke(
                             AgentWorkspaceUpdate(
@@ -375,7 +375,7 @@ class AgentRuntime(
                     )
                     ctx.steps.add(reflectionStep)
                     workingMemory.push(reflectionStep)
-                    emit(AgentEvent.ThinkingComplete("检测到重复操作，正在反思并切换策略。"))
+                    emit(AgentEvent.ThinkingComplete("Repeated actions detected; reviewing progress and switching strategy."))
                     onWorkspaceUpdate?.invoke(
                         AgentWorkspaceUpdate(
                             stage = "reflection",
@@ -430,7 +430,7 @@ class AgentRuntime(
                     )
                     ctx.steps.add(repairStep)
                     workingMemory.push(repairStep)
-                    emit(AgentEvent.ThinkingComplete("发现产物只是草稿状态，继续按诊断修复，不把超时当成完成。"))
+                    emit(AgentEvent.ThinkingComplete("The artifact is still a draft; continuing diagnosis instead of treating the timeout as completion."))
                     onWorkspaceUpdate?.invoke(
                         AgentWorkspaceUpdate(
                             stage = "draft_repair",
@@ -454,7 +454,7 @@ class AgentRuntime(
                     )
                     ctx.steps.add(repairStep)
                     workingMemory.push(repairStep)
-                    emit(AgentEvent.ThinkingComplete("发现本轮页面/应用校验未通过，正在继续修补。"))
+                    emit(AgentEvent.ThinkingComplete("Page/app validation failed; continuing repairs."))
                     onWorkspaceUpdate?.invoke(
                         AgentWorkspaceUpdate(
                             stage = "validation_repair",
@@ -479,7 +479,7 @@ class AgentRuntime(
                     )
                     ctx.steps.add(repairStep)
                     workingMemory.push(repairStep)
-                    emit(AgentEvent.ThinkingComplete("发现 MiniAPP 运行日志仍有错误，继续按日志修复。"))
+                    emit(AgentEvent.ThinkingComplete("MiniAPP runtime logs still contain errors; continuing repairs from the logs."))
                     onWorkspaceUpdate?.invoke(
                         AgentWorkspaceUpdate(
                             stage = "runtime_log_repair",
@@ -589,7 +589,7 @@ class AgentRuntime(
                         }
                     }
                     pendingReview = reviewJob
-                    emit(AgentEvent.ThinkingComplete("已启动后台复盘，当前手机操作继续执行。"))
+                    emit(AgentEvent.ThinkingComplete("Started a background review while phone actions continue."))
                 }
             }
 
@@ -615,7 +615,7 @@ class AgentRuntime(
                 )
                 ctx.steps.add(checkpointStep)
                 workingMemory.push(checkpointStep)
-                emit(AgentEvent.ThinkingComplete("已完成 20 步检查点，整理进展并继续。"))
+                emit(AgentEvent.ThinkingComplete("Reached the 20-step checkpoint; summarizing progress and continuing."))
                 onWorkspaceUpdate?.invoke(
                     AgentWorkspaceUpdate(
                         stage = "continuation_checkpoint",
@@ -643,7 +643,7 @@ class AgentRuntime(
             Log.e(TAG, "Final summary generation failed for taskId=${ctx.taskId}", t)
             ""
         }
-            .ifBlank { "已完成当前可执行步骤。" }
+            .ifBlank { "Completed the currently executable steps." }
         emit(AgentEvent.Completed(finalSummary))
         onWorkspaceUpdate?.invoke(
             AgentWorkspaceUpdate(

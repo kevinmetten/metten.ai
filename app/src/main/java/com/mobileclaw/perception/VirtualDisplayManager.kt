@@ -88,8 +88,8 @@ class VirtualDisplayManager(private val context: Context) {
 
         throw SecurityException(
             "ROM security policy blocked launch for $packageName.\n" +
-            "已尝试: setLaunchDisplayId + su + 特权服务 ($privError)\n\n" +
-            "请在「设置 → Virtual Display → 特权服务」复制激活命令并在电脑终端执行一次。"
+            "Tried setLaunchDisplayId, su, and the privileged service ($privError)\n\n" +
+            "Copy the activation command from Settings → Virtual Display → Privileged service and run it once in a desktop terminal."
         )
     }
 
@@ -109,16 +109,16 @@ class VirtualDisplayManager(private val context: Context) {
         val brand = Build.BRAND.lowercase()
         return when {
             brand.contains("vivo") ->
-                "OriginOS: 开发者选项 → 多任务显示，或 ADB: enable_freeform_support 1"
+                "OriginOS: Developer options → multi-task display, or ADB: enable_freeform_support 1"
             brand.contains("xiaomi") || brand.contains("redmi") ->
-                "MIUI: 开发者选项 → 自由窗口，或 ADB: enable_freeform_support 1"
+                "MIUI: Developer options → free-form windows, or ADB: enable_freeform_support 1"
             brand.contains("oppo") || brand.contains("realme") || brand.contains("oneplus") ->
-                "ColorOS 安全策略拦截。需要 Root 或 Shizuku。" +
-                "ADB 命令已不够: enable_freeform_support + force_desktop_mode 均已无效。"
+                "Blocked by ColorOS security policy. Root or Shizuku is required." +
+                "ADB commands are insufficient: enable_freeform_support + force_desktop_mode are both ineffective."
             brand.contains("huawei") || brand.contains("honor") ->
-                "EMUI: 开发者选项 → 多窗口，或 ADB: enable_freeform_support 1"
+                "EMUI: Developer options → multi-window, or ADB: enable_freeform_support 1"
             else ->
-                "开发者选项 → 自由窗口，或 ADB: enable_freeform_support 1"
+                "Developer options → free-form windows, or ADB: enable_freeform_support 1"
         }
     }
 
@@ -177,13 +177,13 @@ class VirtualDisplayManager(private val context: Context) {
         val brand = Build.BRAND.lowercase()
         return when {
             brand.contains("xiaomi") || brand.contains("redmi") || brand.contains("poco") ->
-                " MIUI: 开发者选项→自由窗口"
+                " MIUI: Developer options→free-form windows"
             brand.contains("huawei") || brand.contains("honor") ->
-                " EMUI: 开发者选项→多窗口"
+                " EMUI: Developer options→multi-window"
             brand.contains("oppo") || brand.contains("realme") || brand.contains("oneplus") ->
-                " ColorOS: 开发者选项→多窗口"
+                " ColorOS: Developer options→multi-window"
             brand.contains("vivo") ->
-                " OriginOS: 开发者选项→多任务"
+                " OriginOS: Developer options → multitasking"
             else -> " Try: adb shell pm grant ${context.packageName} android.permission.CAPTURE_VIDEO_OUTPUT"
         }
     }

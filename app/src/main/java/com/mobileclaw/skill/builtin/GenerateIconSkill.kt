@@ -38,8 +38,8 @@ import java.util.concurrent.TimeUnit
  * Generates app icons using configurable Chinese domestic AI image APIs.
  *
  * Supported providers (configured via user_config key "icon_api_provider"):
- *   - dashscope  (通义万象 / Wanx) — default  endpoint: https://dashscope.aliyuncs.com
- *   - cogview    (智谱 CogView)               endpoint: https://open.bigmodel.cn
+ *   - dashscope  (Wanx) — default  endpoint: https://dashscope.aliyuncs.com
+ *   - cogview    (CogView)               endpoint: https://open.bigmodel.cn
  *   - openai     (OpenAI / compatible)        uses image_api_endpoint or main endpoint
  *
  * Required user_config keys:
@@ -156,13 +156,13 @@ class GenerateIconSkill(
         val dataUri = "data:image/png;base64,$b64"
 
         val appNote = when {
-            applyToRole != null -> " 已应用到角色 '$applyToRole'。"
-            applyToApp != null -> " 已应用到应用 '$applyToApp'。"
-            else -> " 使用 apply_to_app 或 apply_to_role 参数将其设置为应用图标或角色头像。"
+            applyToRole != null -> " Applied to role '$applyToRole'."
+            applyToApp != null -> " Applied to app '$applyToApp'."
+            else -> " Use apply_to_app or apply_to_role to set it as an app icon or role avatar."
         }
         SkillResult(
             success = true,
-            output = "图标已生成：${outFile.name}$appNote",
+            output = "Icon generated: ${outFile.name}$appNote",
             imageBase64 = dataUri,
             data = com.mobileclaw.skill.SkillAttachment.ImageData(dataUri, prompt),
         )

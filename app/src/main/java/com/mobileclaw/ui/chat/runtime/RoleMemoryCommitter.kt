@@ -123,10 +123,10 @@ class RoleMemoryCommitter(
     }.trim()
 
     private fun renderMemoryEntry(input: RoleMemoryCommitInput): String = buildString {
-        appendLine("### ${nowText()} · 任务经验")
-        appendLine("- 触发条件: ${input.controlPlan.persistencePolicy.memoryImportanceThreshold}")
-        appendLine("- 用户目标: ${input.goal.compactLine(500)}")
-        appendLine("- 可复用经验: ${input.summary.compactLine(900)}")
+        appendLine("### ${nowText()} · Task experience")
+        appendLine("- Trigger condition: ${input.controlPlan.persistencePolicy.memoryImportanceThreshold}")
+        appendLine("- User goal: ${input.goal.compactLine(500)}")
+        appendLine("- Reusable experience: ${input.summary.compactLine(900)}")
     }.trim()
 
     private fun String.compactLine(maxChars: Int): String =

@@ -263,15 +263,15 @@ class TownBuilderSkill(
             else -> "cozy pixel studio"
         }
         val motto = when (sprite) {
-            "terminal" -> "我把问题拆开，再把答案跑通"
-            "workshop" -> "灵感先进工坊，再变成作品"
-            "library" -> "把线索整理成可靠结论"
-            "tower" -> "需要动手机时，我替你跑一趟"
-            "warehouse" -> "能力都归位，调用才顺手"
-            "bunker" -> "先把通路稳住，再谈速度"
-            "shop" -> "把好东西摆出来，让它有用"
-            "cabin" -> "我在安静处整理思路"
-            else -> "${role?.name?.ifBlank { roleId } ?: roleId} 的房间会随使用生长"
+            "terminal" -> "Break down the problem and validate the answer"
+            "workshop" -> "Bring ideas into the workshop and turn them into creations"
+            "library" -> "Organize clues into reliable conclusions"
+            "tower" -> "I can handle tasks that require phone interaction"
+            "warehouse" -> "Keep capabilities organized and ready to use"
+            "bunker" -> "Stabilize the connection before optimizing speed"
+            "shop" -> "Put useful things where they can help"
+            "cabin" -> "I organize my thoughts in a quiet place"
+            else -> "${role?.name?.ifBlank { roleId } ?: roleId}’s room grows through use"
         }
         val furniture = when (sprite) {
             "terminal" -> listOf(
@@ -323,8 +323,8 @@ class TownBuilderSkill(
             "style" to style,
             "accent" to accent,
             "motto" to motto,
-            "idle_line" to "我在房间里整理今天的工具。",
-            "working_line" to "我正在处理一个任务，房间灯亮着。",
+            "idle_line" to "I am organizing today’s tools in my room.",
+            "working_line" to "I am working on a task with the room lights on.",
             "furniture" to furniture,
             "apply_flow" to listOf("decorate_room", "place_furniture for each furniture item"),
         )
