@@ -27,7 +27,7 @@ class ConsoleEditorSkill(private val server: ConsoleServer) : Skill {
     override val meta = SkillMeta(
         id = "console_editor",
         name = "Console Editor",
-        description = "Read or rewrite the LAN web console page (千人千面). " +
+        description = "Read or rewrite the customizable LAN web console page. " +
             "Actions: " +
             "read — get the current console HTML; " +
             "write — replace the entire page with new HTML (use for full redesigns); " +
@@ -61,7 +61,7 @@ class ConsoleEditorSkill(private val server: ConsoleServer) : Skill {
         type = SkillType.NATIVE,
         injectionLevel = 1,
         categories = listOf(SkillToolCategory.SYSTEM, SkillToolCategory.ARTIFACT),
-        tags = listOf("系统"),
+        tags = listOf("System"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {

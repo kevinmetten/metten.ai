@@ -35,7 +35,6 @@ class GenerateDocumentSkill(private val context: Context) : Skill {
     override val meta = SkillMeta(
         id = "generate_document",
         name = "Generate Document",
-        nameZh = "生成文档",
         description = "Creates business-grade PPTX, DOCX, XLSX, PDF, CSV or Markdown files and returns them as downloadable attachments. This is the required tool for Office documents; do not use create_file, run_python, pandas, python-pptx, openpyxl, xlsxwriter, or ad-hoc Python for PPTX/DOCX/XLSX/PDF generation. " +
             "For PPTX/DOCX/PDF use JSON with title, subtitle, theme, slides or sections. Supports web image search/download via image_queries, direct image_urls, generated executive backgrounds, charts, tables, bullets and commercial layouts. " +
             "Slide/section chart format: {\"type\":\"bar|line|pie|donut\",\"title\":\"...\",\"labels\":[...],\"values\":[...]}. " +
@@ -43,7 +42,6 @@ class GenerateDocumentSkill(private val context: Context) : Skill {
             "pptx format: {\"title\":\"Deck\",\"subtitle\":\"...\",\"image_queries\":[\"modern data center\"],\"slides\":[{\"title\":\"...\",\"bullets\":[...],\"chart\":{...},\"image_query\":\"...\"}]}. " +
             "docx/pdf format: {\"title\":\"Report\",\"sections\":[{\"heading\":\"...\",\"paragraphs\":[...],\"bullets\":[...],\"chart\":{...},\"table\":[[...]]}]}. " +
             "xlsx format: {\"sheets\":[{\"name\":\"Sheet1\",\"headers\":[\"A\",\"B\"],\"rows\":[[1,2]],\"charts\":[{\"type\":\"bar\",\"title\":\"...\"}]}]}. Type aliases are accepted: ppt→pptx, word→docx, excel→xlsx. csv/md: plain text content.",
-        descriptionZh = "生成具有商业展示价值的 PPTX/DOCX/XLSX/PDF/CSV/Markdown 文件并作为附件返回。生成办公文档必须使用此 skill，不要用 create_file、run_python、pandas、python-pptx、openpyxl、xlsxwriter 或临时手写 Python 生成 PPTX/DOCX/XLSX/PDF。PPTX/DOCX/PDF 支持联网检索并下载图片、插入图片直链、生成商务背景、图表、表格、项目符号和商业版式。content 使用 JSON，可包含 title、subtitle、theme、image_queries、image_urls、slides 或 sections。chart 格式：{\"type\":\"bar|line|pie|donut\",\"title\":\"...\",\"labels\":[...],\"values\":[...]}。type 支持别名：ppt→pptx、word→docx、excel→xlsx。",
         parameters = listOf(
             SkillParam("type", "string", "Document type: pptx | docx | xlsx | pdf | csv | md. Aliases accepted: ppt | word | excel"),
             SkillParam("filename", "string", "Output filename. Extension is optional, e.g. 'report' or 'report.pptx'"),
@@ -53,7 +51,7 @@ class GenerateDocumentSkill(private val context: Context) : Skill {
         injectionLevel = 1,
         isBuiltin = true,
         categories = listOf(SkillToolCategory.ARTIFACT, SkillToolCategory.CODE),
-        tags = listOf("创作", "文件"),
+        tags = listOf("Creative", "Files"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult = withContext(Dispatchers.IO) {

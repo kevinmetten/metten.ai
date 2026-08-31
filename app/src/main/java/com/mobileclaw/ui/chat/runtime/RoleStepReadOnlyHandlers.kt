@@ -123,9 +123,7 @@ class RoleStepReadOnlyHandlers(
                 val haystack = buildString {
                     appendLine(skill.id)
                     appendLine(skill.name)
-                    appendLine(skill.nameZh.orEmpty())
                     appendLine(skill.description)
-                    appendLine(skill.descriptionZh.orEmpty())
                     appendLine(skill.tags.joinToString(" "))
                     appendLine(skill.categories.joinToString(" ") { it.name })
                 }.lowercase()

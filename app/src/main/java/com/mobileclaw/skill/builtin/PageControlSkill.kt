@@ -27,10 +27,8 @@ class PageControlSkill(val pageRequests: MutableSharedFlow<String>) : Skill {
         ),
         type = SkillType.NATIVE,
         injectionLevel = 1,
-        nameZh = "页面控制",
-        descriptionZh = "控制应用导航到指定页面。",
         categories = listOf(SkillToolCategory.SYSTEM, SkillToolCategory.CHAT, SkillToolCategory.MEMORY),
-        tags = listOf("用户"),
+        tags = listOf("User"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {

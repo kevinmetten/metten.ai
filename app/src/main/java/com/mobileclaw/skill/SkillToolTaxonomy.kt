@@ -130,10 +130,6 @@ object SkillToolTaxonomy {
             append(' ')
             append(meta.description)
             append(' ')
-            append(meta.nameZh.orEmpty())
-            append(' ')
-            append(meta.descriptionZh.orEmpty())
-            append(' ')
             append(meta.tags.joinToString(" "))
         }
         return explicitCategoriesFor(meta.id).ifEmpty { heuristicCategoriesFor(seed) }

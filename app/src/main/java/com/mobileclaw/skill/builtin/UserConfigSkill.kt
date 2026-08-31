@@ -31,10 +31,8 @@ class UserConfigSkill(
         ),
         type = SkillType.NATIVE,
         injectionLevel = 1,
-        nameZh = "用户配置",
-        descriptionZh = "读写用户配置项（键值对）。",
         categories = listOf(SkillToolCategory.MEMORY),
-        tags = listOf("用户"),
+        tags = listOf("User"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult = withContext(Dispatchers.IO) {

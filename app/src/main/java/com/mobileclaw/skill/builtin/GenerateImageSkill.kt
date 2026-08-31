@@ -80,10 +80,8 @@ class GenerateImageSkill(
         ),
         type = SkillType.NATIVE,
         injectionLevel = 1,
-        nameZh = "生成图片",
-        descriptionZh = "通过 AI 模型生成图片并在聊天中展示。支持 Hugging Face / SiliconFlow / Together.ai / OpenAI / Pollinations (免费无需Key)。",
         categories = listOf(SkillToolCategory.MEDIA),
-        tags = listOf("创作"),
+        tags = listOf("Creative"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult = withContext(Dispatchers.IO) {

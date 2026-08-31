@@ -24,13 +24,11 @@ class TownBuilderSkill(
     override val meta = SkillMeta(
         id = "town_builder",
         name = "AI Home Builder",
-        nameZh = "AI Home 构建器",
         description = "Read and evolve an AI role's RPG home. Treat this as the dedicated Home channel, not a chat response. " +
             "Use it when a role wants to decorate its house, pin memories, showcase MiniAPP/AI Page/file/image artifacts, expose favorite tools, update mood lines, or inspect its home. " +
             "Actions: get_town, get_room, get_map, plan_room_layout, update_map_theme, replace_map, patch_tile, place_sprite, update_room, decorate_room, place_furniture, remove_furniture, pin_memory, pin_artifact, pin_skill, reset_room. " +
             "For role home work, call this tool to update structured room/map data instead of describing visual changes in chat. " +
             "Typical flow: get_room -> plan_room_layout -> update_room/decorate_room -> place_furniture -> pin_memory/pin_artifact/pin_skill.",
-        descriptionZh = "读取并演化 AI 角色的 RPG Home。角色可以用它布置自己的房间、钉住记忆、展示 MiniAPP/AI 页面/文件/图片作品、公开常用技能、更新心情台词，或查看自己的 Home。",
         parameters = listOf(
             SkillParam("action", "string", "get_town | get_room | get_map | plan_room_layout | update_map_theme | replace_map | patch_tile | place_sprite | update_room | decorate_room | place_furniture | remove_furniture | pin_memory | pin_artifact | pin_skill | reset_room"),
             SkillParam("role_id", "string", "Target role id. Defaults to current/known role when possible.", required = false),
@@ -62,7 +60,7 @@ class TownBuilderSkill(
         injectionLevel = 1,
         internalTool = true,
         categories = listOf(SkillToolCategory.SELF_EVOLUTION, SkillToolCategory.MEMORY, SkillToolCategory.ARTIFACT),
-        tags = listOf("home", "room", "role", "memory", "decor", "furniture", "artifact", "角色", "房间", "装修"),
+        tags = listOf("home", "room", "role", "memory", "decor", "furniture", "artifact", "Roles", "Room", "Decor"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {

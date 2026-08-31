@@ -27,9 +27,7 @@ class TaskRecipeSkill(
     override val meta = SkillMeta(
         id = "task_recipe",
         name = "Task Replay & Recipe",
-        nameZh = "任务回放与配方",
         description = "Inspect task replays, turn successful tasks into reusable recipes, run saved recipes, and create AI Page shortcuts for recipes. Actions: list_replays | get_replay | list_recipes | create_recipe | run_recipe | create_page | delete_recipe.",
-        descriptionZh = "查看任务回放，把成功任务沉淀为可复用配方，运行配方，并为配方生成 AI Page 快捷入口。",
         parameters = listOf(
             SkillParam("action", "string", "list_replays | get_replay | list_recipes | create_recipe | run_recipe | create_page | delete_recipe"),
             SkillParam("id", "string", "Replay ID or recipe ID", required = false),
@@ -38,7 +36,7 @@ class TaskRecipeSkill(
         type = SkillType.NATIVE,
         injectionLevel = 1,
         categories = listOf(SkillToolCategory.MEMORY, SkillToolCategory.SKILL, SkillToolCategory.ARTIFACT),
-        tags = listOf("任务", "回放", "配方", "自动化"),
+        tags = listOf("Tasks", "Replay", "Recipes", "Automation"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {

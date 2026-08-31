@@ -31,11 +31,9 @@ class MetaSkill(
             "Allowed types: 'http', 'python'. Provide a complete skill definition as JSON.",
         parameters = listOf(
             SkillParam("id", "string", "Unique snake_case skill ID"),
-            SkillParam("name", "string", "English skill name"),
-            SkillParam("name_zh", "string", "Chinese skill name (中文名)", required = false),
-            SkillParam("description", "string", "English description (shown to LLM)"),
-            SkillParam("description_zh", "string", "Chinese description (中文描述)", required = false),
-            SkillParam("tags", "string", "Comma-separated category tags, e.g. '网络,工具' (optional)", required = false),
+            SkillParam("name", "string", "Canonical skill name"),
+            SkillParam("description", "string", "Canonical description shown to the model"),
+            SkillParam("tags", "string", "Optional comma-separated category tags", required = false),
             SkillParam("categories", "string", "Comma-separated channel categories: CHAT,MEMORY,SKILL,SELF_EVOLUTION,ARTIFACT,PHONE,WEB,MEDIA,VPN,CODE,SYSTEM. Optional; inferred when omitted.", required = false),
             SkillParam("type", "string", "'http' or 'python'"),
             SkillParam("script", "string", "Python script (required for type=python)", required = false),
@@ -45,10 +43,8 @@ class MetaSkill(
         ),
         type = SkillType.NATIVE,
         injectionLevel = 1,
-        nameZh = "创建技能",
-        descriptionZh = "创建新的 JSON 格式 AI 技能。",
         categories = listOf(SkillToolCategory.SKILL, SkillToolCategory.SELF_EVOLUTION),
-        tags = listOf("技能"),
+        tags = listOf("Skills"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -75,8 +71,6 @@ class MetaSkill(
             }
         }.getOrElse { emptyList() }
 
-        val nameZh = (params["name_zh"] as? String)?.takeIf { it.isNotBlank() }
-        val descriptionZh = (params["description_zh"] as? String)?.takeIf { it.isNotBlank() }
         val tags = (params["tags"] as? String)
             ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
             ?: emptyList()
@@ -89,8 +83,6 @@ class MetaSkill(
             type = SkillType.valueOf(type.uppercase()),
             injectionLevel = 2,
             isBuiltin = false,
-            nameZh = nameZh,
-            descriptionZh = descriptionZh,
             tags = tags,
         )
         val explicitCategories = parseCategories(params["categories"] as? String)

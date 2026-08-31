@@ -32,10 +32,8 @@ class WebSearchSkill(private val webView: InAppWebViewManager? = null) : Skill {
     override val meta = SkillMeta(
         id = "web_search",
         name = "Web Search",
-        nameZh = "网络搜索",
         description = "Searches the web using a real hidden browser (no API key needed). " +
             "Auto mode tries Baidu → Sogou → Bing → DuckDuckGo.",
-        descriptionZh = "使用内置隐藏浏览器搜索网络，无需 API，自动选择最佳引擎（百度→搜狗→Bing→DuckDuckGo）。",
         parameters = listOf(
             SkillParam("query", "string", "Search query"),
             SkillParam("max_results", "number", "Max results to return (default 5)", required = false),
@@ -44,7 +42,7 @@ class WebSearchSkill(private val webView: InAppWebViewManager? = null) : Skill {
         type = SkillType.NATIVE,
         injectionLevel = 1,
         categories = listOf(SkillToolCategory.WEB),
-        tags = listOf("网络"),
+        tags = listOf("Web"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -325,16 +323,14 @@ class FetchUrlSkill : Skill {
     override val meta = SkillMeta(
         id = "fetch_url",
         name = "Fetch URL",
-        nameZh = "抓取网页",
         description = "Fetches a URL and returns its main text content (truncated to 4000 chars). Also produces a WebPage card attachment shown in chat.",
-        descriptionZh = "抓取网页并返回可读文本（最多 4000 字），同时在聊天中显示网页卡片。",
         parameters = listOf(
             SkillParam("url", "string", "URL to fetch"),
         ),
         type = SkillType.NATIVE,
         injectionLevel = 1,
         categories = listOf(SkillToolCategory.WEB),
-        tags = listOf("网络"),
+        tags = listOf("Web"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult = withContext(Dispatchers.IO) {
@@ -382,7 +378,7 @@ class WebBrowseSkill(private val manager: InAppWebViewManager) : Skill {
         type = SkillType.NATIVE,
         injectionLevel = 1,
         categories = listOf(SkillToolCategory.WEB),
-        tags = listOf("网络"),
+        tags = listOf("Web"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -407,7 +403,7 @@ class WebContentSkill(private val manager: InAppWebViewManager) : Skill {
         type = SkillType.NATIVE,
         injectionLevel = 1,
         categories = listOf(SkillToolCategory.WEB),
-        tags = listOf("网络"),
+        tags = listOf("Web"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -432,7 +428,7 @@ class WebJsSkill(private val manager: InAppWebViewManager) : Skill {
         type = SkillType.NATIVE,
         injectionLevel = 1,
         categories = listOf(SkillToolCategory.WEB),
-        tags = listOf("网络"),
+        tags = listOf("Web"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {

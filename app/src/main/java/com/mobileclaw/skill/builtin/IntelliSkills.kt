@@ -44,10 +44,8 @@ class SkillCheckSkill(private val registry: SkillRegistry) : Skill {
         ),
         type = SkillType.NATIVE,
         injectionLevel = 1,
-        nameZh = "查看技能库",
-        descriptionZh = "列出当前已有的技能及其状态。",
         categories = listOf(SkillToolCategory.SKILL),
-        tags = listOf("技能"),
+        tags = listOf("Skills"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -146,10 +144,8 @@ class QuickSkillSkill(
         ),
         type = SkillType.NATIVE,
         injectionLevel = 1,
-        nameZh = "快速生成技能",
-        descriptionZh = "根据描述自动生成新技能。",
         categories = listOf(SkillToolCategory.SKILL, SkillToolCategory.SELF_EVOLUTION),
-        tags = listOf("技能"),
+        tags = listOf("Skills"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -269,7 +265,7 @@ class SkillMarketSkill(
         id = "skill_market",
         name = "Skill Marketplace",
         description = "Browse, search, and install skills from real skill markets.\n" +
-            "market= 'clawhub' (OpenClaw官方, 13k+ skills) | 'skillsmp' (聚合270k+) | 'local' (内置推荐)\n" +
+            "market= 'clawhub' (official OpenClaw catalog, 13k+ skills) | 'skillsmp' (aggregated 270k+) | 'local' (bundled recommendations)\n" +
             "Actions: 'browse'/'list' (show recommended local catalog), 'search' (find by keyword), 'install' (download+install by slug). Prefer browse/list before search.",
         parameters = listOf(
             SkillParam("action", "string", "'browse' | 'list' | 'search' | 'install' (default: browse)", required = false),
@@ -279,10 +275,8 @@ class SkillMarketSkill(
         ),
         type = SkillType.NATIVE,
         injectionLevel = 1,
-        nameZh = "技能市场",
-        descriptionZh = "浏览推荐技能，也可从 ClawHub、SkillsMP 搜索并安装技能。",
         categories = listOf(SkillToolCategory.SKILL),
-        tags = listOf("技能"),
+        tags = listOf("Skills"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -375,8 +369,7 @@ class SkillMarketSkill(
                 type = SkillType.PYTHON,
                 injectionLevel = 2,
                 isBuiltin = false,
-                nameZh = firstLine.take(60),
-                tags = listOf("技能"),
+                tags = listOf("Skills"),
         )
         val def = SkillDefinition(
             meta = baseMeta.copy(categories = SkillToolTaxonomy.categoriesFor(baseMeta).toList()),
@@ -419,18 +412,17 @@ class SkillMarketSkill(
         val entries = com.mobileclaw.skill.SkillMarket.catalog.filter { entry ->
             q.isBlank() ||
                 entry.def.meta.id.contains(q) ||
-                (entry.def.meta.nameZh ?: "").contains(q) ||
                 entry.def.meta.name.lowercase().contains(q) ||
                 entry.category.contains(q)
         }
         if (entries.isEmpty()) return SkillResult(true, "No local market skills found for '$query'.")
         val lines = mutableListOf(if (q.isBlank()) "Recommended installable skills:\n" else "Recommended skills matching '$q':\n")
         entries.groupBy { it.category }.forEach { (cat, catEntries) ->
-            lines += "【$cat】"
+            lines += "[$cat]"
             catEntries.forEach { e ->
                 val installed = runCatching { loader.isInstalled(e.def.meta.id) }.getOrDefault(false)
-                val tag = if (installed) " ✓已安装" else ""
-                lines += "  ${e.emoji} ${e.def.meta.nameZh ?: e.def.meta.name}$tag — ${e.def.meta.descriptionZh ?: e.def.meta.description.take(60)}"
+                val tag = if (installed) " ✓ installed" else ""
+                lines += "  ${e.emoji} ${e.def.meta.name}$tag — ${e.def.meta.description.take(60)}"
                 lines += "    → install: skill_market(action=install, market=local, slug='${e.def.meta.id}')"
             }
         }
@@ -442,7 +434,7 @@ class SkillMarketSkill(
             ?: return SkillResult(false, "Local skill '$slug' not found. Use action=list to browse.")
         return runCatching {
             loader.persist(entry.def)
-            SkillResult(true, "Installed local skill '${entry.def.meta.nameZh ?: entry.def.meta.name}' (${slug}).")
+            SkillResult(true, "Installed local skill '${entry.def.meta.name}' (${slug}).")
         }.getOrElse { SkillResult(false, "Install failed: ${it.message}") }
     }
 

@@ -1474,7 +1474,7 @@ class MainViewModel : ViewModel() {
                 role.id,
                 RoomTool(
                     id = skillId,
-                    title = meta?.nameZh?.takeIf { it.isNotBlank() } ?: meta?.name ?: skillId,
+                    title = meta?.name ?: skillId,
                     category = purpose.take(40),
                 )
             )
@@ -5201,7 +5201,7 @@ For pure conversational replies, greetings, explanations, and simple factual ans
             refreshPromotableSkills()
             withContext(Dispatchers.Main) {
                 if (result.isSuccess) {
-                    Toast.makeText(app, str(R.string.installed_skill, def.meta.nameZh ?: def.meta.name), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(app, str(R.string.installed_skill, def.meta.name), Toast.LENGTH_SHORT).show()
                 } else {
                     val msg = result.exceptionOrNull()?.message ?: str(R.string.vm_not_)
                     Toast.makeText(app, str(R.string.install_failed, msg), Toast.LENGTH_LONG).show()

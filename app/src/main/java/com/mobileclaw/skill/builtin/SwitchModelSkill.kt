@@ -23,10 +23,8 @@ class SwitchModelSkill(private val config: AgentConfig) : Skill {
         ),
         type = SkillType.NATIVE,
         injectionLevel = 1,
-        nameZh = "切换 AI 模型",
-        descriptionZh = "切换当前使用的 AI 语言模型。",
         categories = listOf(SkillToolCategory.SELF_EVOLUTION, SkillToolCategory.SYSTEM),
-        tags = listOf("系统"),
+        tags = listOf("System"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {

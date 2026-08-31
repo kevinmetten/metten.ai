@@ -42,10 +42,8 @@ class McpClientSkill : Skill {
         ),
         type = SkillType.NATIVE,
         injectionLevel = 1,
-        nameZh = "MCP 客户端",
-        descriptionZh = "连接标准 MCP HTTP/SSE 服务，列出工具并调用工具。",
         categories = listOf(SkillToolCategory.SKILL, SkillToolCategory.SYSTEM),
-        tags = listOf("MCP", "工具"),
+        tags = listOf("MCP", "Tools"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -182,10 +180,8 @@ class McpConnectSkill(
         ),
         type = SkillType.NATIVE,
         injectionLevel = 1,
-        nameZh = "接入 MCP 服务",
-        descriptionZh = "发现远程 MCP 服务的工具，并自动安装成可复用的 MobileClaw 技能。",
         categories = listOf(SkillToolCategory.SKILL, SkillToolCategory.SYSTEM),
-        tags = listOf("MCP", "工具"),
+        tags = listOf("MCP", "Tools"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -209,8 +205,8 @@ class McpConnectSkill(
                     buildString {
                         appendLine("MCP tools discovered (${defs.size}):")
                         defs.forEach { def ->
-                            appendLine("- ${def.meta.id}: ${def.meta.nameZh ?: def.meta.name}")
-                            appendLine("  ${def.meta.descriptionZh ?: def.meta.description}")
+                            appendLine("- ${def.meta.id}: ${def.meta.name}")
+                            appendLine("  ${def.meta.description}")
                         }
                         appendLine()
                         appendLine("Install all: mcp_connect(action=install, endpoint=..., headers_json=...)")
@@ -278,14 +274,12 @@ class McpConnectSkill(
         val meta = SkillMeta(
             id = id,
             name = title,
-            nameZh = title,
             description = desc,
-            descriptionZh = desc,
             parameters = parameters,
             type = SkillType.MCP,
             injectionLevel = 2,
             isBuiltin = false,
-            tags = listOf("MCP", "工具"),
+            tags = listOf("MCP", "Tools"),
         )
         return SkillDefinition(
             meta = meta.copy(categories = SkillToolTaxonomy.categoriesFor(meta).toList()),

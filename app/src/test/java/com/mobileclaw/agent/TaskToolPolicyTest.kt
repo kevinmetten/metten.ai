@@ -108,7 +108,6 @@ class TaskToolPolicyTest {
                 name = "مترجم",
                 description = "أداة ترجمة مخصصة",
                 tags = listOf("ترجمة"),
-                nameZh = "legacy-only-name",
             ),
         )
 
@@ -200,13 +199,11 @@ class TaskToolPolicyTest {
         name: String = id,
         description: String = "Test skill for $id",
         tags: List<String> = emptyList(),
-        nameZh: String? = null,
         injectionLevel: Int = 1,
     ): SkillMeta = SkillMeta(
         id = id,
         name = name,
         description = description,
-        nameZh = nameZh,
         tags = tags,
         categories = listOf(category),
         injectionLevel = injectionLevel,

@@ -19,9 +19,7 @@ class RoleWorkspaceSkill(
     override val meta = SkillMeta(
         id = "role_workspace",
         name = "Role Workspace",
-        nameZh = "角色工作区",
         description = "Read and write durable markdown files for each AI role. Use this when a role needs its own core.md, skills.md, memory.md, model.md, journal.md, or skill_index.md context.",
-        descriptionZh = "读写每个 AI 角色自己的持久 Markdown 工作区，包括 core.md、skills.md、memory.md、model.md、journal.md 和 skill_index.md。",
         parameters = listOf(
             SkillParam("action", "string", "ensure | snapshot | list | read | write | append | refresh_skills | record_model_config | read_model_config"),
             SkillParam("role_id", "string", "Target role id. Defaults to current active role when caller provides it in context.", required = false),

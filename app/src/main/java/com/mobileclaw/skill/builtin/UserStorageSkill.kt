@@ -30,10 +30,8 @@ class UserStorageSkill(private val storage: UserStorageManager) : Skill {
         ),
         type = SkillType.NATIVE,
         injectionLevel = 1,
-        nameZh = "用户存储",
-        descriptionZh = "读写用户自定义存储数据。",
         categories = listOf(SkillToolCategory.ARTIFACT, SkillToolCategory.SYSTEM),
-        tags = listOf("用户"),
+        tags = listOf("User"),
     )
 
     private val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())

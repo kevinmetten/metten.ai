@@ -23,10 +23,8 @@ class BgLaunchSkill(private val manager: VirtualDisplayManager) : Skill {
         ),
         type = SkillType.NATIVE,
         injectionLevel = 1,
-        nameZh = "虚拟屏幕启动应用",
-        descriptionZh = "在后台虚拟显示器上启动指定应用。",
         categories = listOf(SkillToolCategory.PHONE, SkillToolCategory.SYSTEM),
-        tags = listOf("后台"),
+        tags = listOf("Background"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -74,10 +72,8 @@ class BgReadScreenSkill(private val manager: VirtualDisplayManager) : Skill {
             "If the tree is empty, use bg_screenshot for visual analysis instead.",
         type = SkillType.NATIVE,
         injectionLevel = 1,
-        nameZh = "读取虚拟屏幕（XML）",
-        descriptionZh = "以 XML 格式读取虚拟显示器的 UI 结构。",
         categories = listOf(SkillToolCategory.PHONE, SkillToolCategory.SYSTEM),
-        tags = listOf("后台"),
+        tags = listOf("Background"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -108,10 +104,8 @@ class BgScreenshotSkill(private val manager: VirtualDisplayManager) : Skill {
             "Use after bg_launch when bg_read_screen returns no useful content (Flutter/game/WebView apps).",
         type = SkillType.NATIVE,
         injectionLevel = 1,
-        nameZh = "虚拟屏幕截图",
-        descriptionZh = "对虚拟显示器进行截图。",
         categories = listOf(SkillToolCategory.PHONE, SkillToolCategory.SYSTEM),
-        tags = listOf("后台"),
+        tags = listOf("Background"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -136,10 +130,8 @@ class BgStopSkill(private val manager: VirtualDisplayManager) : Skill {
             "Call this when the background task is complete to free resources.",
         type = SkillType.NATIVE,
         injectionLevel = 1,
-        nameZh = "停止虚拟显示器",
-        descriptionZh = "停止并关闭虚拟显示器。",
         categories = listOf(SkillToolCategory.PHONE, SkillToolCategory.SYSTEM),
-        tags = listOf("后台"),
+        tags = listOf("Background"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
@@ -156,10 +148,8 @@ class VirtualDisplaySetupSkill(private val manager: VirtualDisplayManager) : Ski
             "Call this when bg_launch fails or the user reports the virtual display is unavailable.",
         type = SkillType.NATIVE,
         injectionLevel = 2,
-        nameZh = "虚拟显示器配置指南",
-        descriptionZh = "获取虚拟显示器的安装和配置步骤。",
         categories = listOf(SkillToolCategory.PHONE, SkillToolCategory.SYSTEM),
-        tags = listOf("后台"),
+        tags = listOf("Background"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {

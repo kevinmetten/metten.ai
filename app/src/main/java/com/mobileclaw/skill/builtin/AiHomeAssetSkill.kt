@@ -20,12 +20,10 @@ class AiHomeAssetSkill(
     override val meta = SkillMeta(
         id = "ai_home_assets",
         name = "AI Home Asset Catalog",
-        nameZh = "AI Home 素材库",
         description = "Search and inspect RPG room image assets for AI Home decoration. " +
             "Use this before town_builder when a role wants to decorate its room with real image resources. " +
             "Actions: list_packs, list_assets, search_assets, get_asset, recommend_room_assets, usage_guide. " +
             "Return asset_id/path/tile size/layer/orientation, then place selected assets through town_builder.place_furniture.",
-        descriptionZh = "查询 AI Home 的 RPG 房间素材资源。角色装修房间时先用它找床、桌子、墙体、门窗、摆饰等图片素材，再用 town_builder 写入房间结构。",
         parameters = listOf(
             SkillParam("action", "string", "list_packs | list_assets | search_assets | get_asset | recommend_room_assets | room_schema | validate_layout | usage_guide"),
             SkillParam("query", "string", "Free-text search, e.g. bed, workbench, north wall, cozy, terminal, library.", required = false),
@@ -40,7 +38,7 @@ class AiHomeAssetSkill(
         injectionLevel = 1,
         internalTool = true,
         categories = listOf(SkillToolCategory.SELF_EVOLUTION, SkillToolCategory.ARTIFACT, SkillToolCategory.MEDIA),
-        tags = listOf("home", "room", "rpg", "pixel", "asset", "tileset", "furniture", "房间", "素材", "装修"),
+        tags = listOf("home", "room", "rpg", "pixel", "asset", "tileset", "furniture", "Room", "Assets", "Decor"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {

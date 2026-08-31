@@ -24,9 +24,7 @@ class VpnControlSkill(
         ),
         type = SkillType.NATIVE,
         injectionLevel = 0,
-        nameZh = "VPN 控制",
-        descriptionZh = "开启、关闭或检查全局 VPN。需要用户先在 VPN 页面授权一次系统 VPN 权限。",
-        tags = listOf("系统"),
+        tags = listOf("System"),
         categories = listOf(SkillToolCategory.VPN, SkillToolCategory.SYSTEM),
     )
 

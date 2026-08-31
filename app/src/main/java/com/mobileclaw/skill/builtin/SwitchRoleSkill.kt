@@ -25,10 +25,8 @@ class SwitchRoleSkill(
         ),
         type = SkillType.NATIVE,
         injectionLevel = 2,
-        nameZh = "切换角色",
-        descriptionZh = "切换当前活跃的 AI 角色或人设。",
         categories = listOf(SkillToolCategory.SELF_EVOLUTION),
-        tags = listOf("角色"),
+        tags = listOf("Roles"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {

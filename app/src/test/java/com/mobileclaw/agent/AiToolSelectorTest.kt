@@ -18,8 +18,6 @@ class AiToolSelectorTest {
                     id = "web_lookup",
                     name = "Web Lookup",
                     description = "Find current information from web sources.",
-                    nameZh = "ALT_NAME",
-                    descriptionZh = "ALT_DESCRIPTION",
                     type = SkillType.HTTP,
                     categories = listOf(SkillToolCategory.WEB),
                 ),
@@ -46,7 +44,6 @@ class AiToolSelectorTest {
         val directory = AiToolSelectionContract.toolDirectory(
             listOf(
                 skill(id = "later", name = "Later", description = "On demand", injectionLevel = 2),
-                skill(id = "blank_english", name = "", description = "", nameZh = "ALT_NAME", injectionLevel = 0),
                 skill(id = "always", name = "Always", description = "Always available", injectionLevel = 0),
             ),
         )
@@ -148,8 +145,6 @@ class AiToolSelectorTest {
         id: String,
         name: String,
         description: String,
-        nameZh: String? = null,
-        descriptionZh: String? = null,
         type: SkillType = SkillType.NATIVE,
         injectionLevel: Int = 0,
         internalTool: Boolean = false,
@@ -161,8 +156,6 @@ class AiToolSelectorTest {
         type = type,
         injectionLevel = injectionLevel,
         internalTool = internalTool,
-        nameZh = nameZh,
-        descriptionZh = descriptionZh,
         categories = categories,
     )
 }

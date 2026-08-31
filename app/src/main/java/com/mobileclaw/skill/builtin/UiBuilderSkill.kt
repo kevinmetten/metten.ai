@@ -38,11 +38,9 @@ class UiBuilderSkill(
     override val meta = SkillMeta(
         id = "ui_builder",
         name = "AI Native Page Builder",
-        nameZh = "AI 原生页面生成",
         description = "Preferred tool for creating user-facing pages inside MobileClaw: native Android pages, dashboards, forms, settings panels, management screens, data viewers, control pages, and lightweight tools. " +
             "Use this before mini-app/HTML unless the user explicitly needs a program/game/custom HTML runtime. Never return page JSON or code in chat; call this tool. " +
             "Pages support real UI components, Android APIs, app context data, HTTP, shell, notifications, sensors. Actions: create | update | analyze_change | inspect_structure | inspect_runtime | validate | list | get | delete | open | pin_shortcut | export_package | import_package | get_guide",
-        descriptionZh = "优先用于创建 MobileClaw 内的用户可见原生页面：AI 页面、仪表盘、表单、设置面板、管理页、数据查看器、控制页和轻量工具。除非用户明确需要程序/小游戏/自定义 HTML 运行时，否则优先用此工具，不要在聊天里返回页面 JSON 或代码。",
         parameters = listOf(
             SkillParam("action", "string", required = true,
                 description = "create | update | analyze_change | validate | list | get | delete | open | pin_shortcut | get_guide"),
@@ -73,7 +71,7 @@ class UiBuilderSkill(
         injectionLevel = 1,
         type = SkillType.NATIVE,
         categories = listOf(SkillToolCategory.ARTIFACT, SkillToolCategory.SKILL),
-        tags = listOf("页面", "应用"),
+        tags = listOf("Pages", "Apps"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {

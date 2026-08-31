@@ -49,10 +49,8 @@ class ShellSkill(private val executor: ShellExecutor = ShellExecutor()) : Skill 
         ),
         type = SkillType.SHELL,
         injectionLevel = 1,
-        nameZh = "Shell 命令",
-        descriptionZh = "执行任意 Shell 命令，支持管道和重定向。注意：没有系统 Python/pip，Python 需通过 python skill 或 Claw.pip() 使用，超时 30 秒。",
         categories = listOf(SkillToolCategory.CODE),
-        tags = listOf("系统"),
+        tags = listOf("System"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {

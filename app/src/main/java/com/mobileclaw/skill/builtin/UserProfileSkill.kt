@@ -39,10 +39,8 @@ class UserProfileSkill(
         ),
         type = SkillType.NATIVE,
         injectionLevel = 1,
-        nameZh = "用户画像",
-        descriptionZh = "读取或更新用户的持久化画像信息（职业、兴趣、习惯等）。",
         categories = listOf(SkillToolCategory.MEMORY),
-        tags = listOf("记忆"),
+        tags = listOf("Memory"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {

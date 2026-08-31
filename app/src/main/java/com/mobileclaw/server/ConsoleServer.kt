@@ -415,7 +415,6 @@ class ConsoleServer(
             mapOf(
                 "id" to skill.meta.id,
                 "name" to skill.meta.name,
-                "nameZh" to (skill.meta.nameZh ?: skill.meta.name),
                 "description" to skill.meta.description,
                 "type" to skill.meta.type.name.lowercase(),
                 "injectionLevel" to skill.meta.injectionLevel,

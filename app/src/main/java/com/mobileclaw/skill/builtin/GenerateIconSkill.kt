@@ -67,13 +67,10 @@ class GenerateIconSkill(
     override val meta = SkillMeta(
         id = "generate_icon",
         name = "Generate Icon",
-        nameZh = "生成图标",
         description = "Generates a 512×512 app icon using configurable Chinese domestic AI APIs " +
             "(DashScope/Wanx, CogView, or any OpenAI-compatible image API). " +
             "Requires user_config key icon_api_key; optionally icon_api_provider (dashscope|cogview|openai) and icon_api_endpoint. " +
             "Use apply_to_app to set the icon on an existing mini-app, or apply_to_role to set it as a role avatar.",
-        descriptionZh = "使用可配置的国内 AI 图像接口生成 512×512 应用图标（支持通义万象、CogView、OpenAI 兼容接口）。" +
-            "需要在 user_config 中设置 icon_api_key。可用 apply_to_app 设置迷你应用图标，或 apply_to_role 设置角色头像。",
         parameters = listOf(
             SkillParam("prompt", "string", "Description of the icon to generate, e.g. 'a minimalist calendar icon with blue gradient'"),
             SkillParam("apply_to_app", "string", "App ID to apply the generated icon to (optional)", required = false),
@@ -84,7 +81,7 @@ class GenerateIconSkill(
         injectionLevel = 1,
         isBuiltin = true,
         categories = listOf(SkillToolCategory.MEDIA, SkillToolCategory.ARTIFACT),
-        tags = listOf("创作"),
+        tags = listOf("Creative"),
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult = withContext(Dispatchers.IO) {
