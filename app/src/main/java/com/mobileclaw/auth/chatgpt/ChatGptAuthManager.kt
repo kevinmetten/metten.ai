@@ -19,8 +19,8 @@ class ChatGptAuthManager(private val context: Context) {
     private val _state = MutableStateFlow<ChatGptAuthState>(ChatGptAuthState.SignedOut)
     val state: StateFlow<ChatGptAuthState> = _state.asStateFlow()
     private val refreshCoordinator: ChatGptRefreshCoordinator
+    private val loginGate = LoginAttemptGate()
     private var loginJob: Job? = null
-    private var loginGeneration = 0L
     private var listener: Pair<Long, ServerSocket>? = null
 
     init {
@@ -32,7 +32,7 @@ class ChatGptAuthManager(private val context: Context) {
     fun signInWithBrowser() = startLogin { generation ->
         val socket = bindLoopback()
         synchronized(this) {
-            if (loginGeneration != generation) { socket.close(); throw CancellationException() }
+            if (!loginGate.isCurrent(generation)) { socket.close(); throw CancellationException() }
             listener = generation to socket
         }
         val redirect = "http://localhost:${socket.localPort}/auth/callback"
@@ -41,10 +41,10 @@ class ChatGptAuthManager(private val context: Context) {
         _state.value = ChatGptAuthState.AwaitingBrowser()
         openBrowser(ChatGptOAuthProtocol.authorizationUrl(redirect, pkce, oauthState))
         val code = withTimeout(5 * 60 * 1000L) { receiveCallback(socket, CallbackValidator(oauthState)) }
-        complete(api.exchange(code, redirect, pkce.verifier))
+        completeLogin(generation, api.exchange(code, redirect, pkce.verifier))
     }
 
-    fun signInWithDeviceCode() = startLogin { _ ->
+    fun signInWithDeviceCode() = startLogin { generation ->
         val device = api.deviceCode()
         _state.value = ChatGptAuthState.AwaitingDeviceCode(device.userCode)
         val result = withTimeout(15 * 60 * 1000L) {
@@ -54,13 +54,13 @@ class ChatGptAuthManager(private val context: Context) {
             }
             error("unreachable")
         }
-        complete(api.exchange(result.authorizationCode, ChatGptOAuth.DEVICE_REDIRECT_URI, result.codeVerifier))
+        completeLogin(generation, api.exchange(result.authorizationCode, ChatGptOAuth.DEVICE_REDIRECT_URI, result.codeVerifier))
     }
 
     fun openDeviceVerificationPage() = openBrowser(ChatGptOAuth.DEVICE_VERIFICATION_URL)
 
     @Synchronized fun cancelLogin() {
-        loginGeneration++
+        loginGate.invalidate()
         val oldJob = loginJob
         val oldListener = listener
         loginJob = null; listener = null
@@ -82,7 +82,7 @@ class ChatGptAuthManager(private val context: Context) {
 
     @Synchronized private fun startLogin(block: suspend (Long) -> Unit) {
         if (loginJob?.isActive == true) return
-        val generation = ++loginGeneration
+        val generation = loginGate.begin()
         val job = scope.launch {
                 _state.value = ChatGptAuthState.SigningIn
                 try { block(generation) }
@@ -91,7 +91,7 @@ class ChatGptAuthManager(private val context: Context) {
                 catch (e: ChatGptAuthException) { _state.value = ChatGptAuthState.Error(e.message ?: "Could not complete ChatGPT sign-in.") }
                 catch (_: Throwable) { _state.value = ChatGptAuthState.Error("Could not reach the ChatGPT authentication service.") }
                 finally { synchronized(this@ChatGptAuthManager) {
-                    if (loginGeneration == generation) {
+                    if (loginGate.isCurrent(generation)) {
                         listener?.takeIf { it.first == generation }?.second?.runCatching { close() }
                         listener = null; loginJob = null
                     }
@@ -122,7 +122,7 @@ class ChatGptAuthManager(private val context: Context) {
         }
     }
 
-    private fun complete(response: TokenResponse) {
+    private fun completeLogin(generation: Long, response: TokenResponse) = loginGate.runIfCurrent(generation) {
         val access = response.accessToken?.takeIf(String::isNotBlank) ?: throw ChatGptAuthException("Could not complete ChatGPT sign-in.")
         val refresh = response.refreshToken?.takeIf(String::isNotBlank) ?: throw ChatGptAuthException("Could not complete ChatGPT sign-in.")
         val tokens = ChatGptOAuthTokens(response.idToken, access, refresh, ChatGptExpiration.resolve(System.currentTimeMillis(), response.expiresIn, access))

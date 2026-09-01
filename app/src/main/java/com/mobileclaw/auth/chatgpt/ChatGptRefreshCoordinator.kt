@@ -83,13 +83,18 @@ internal class ChatGptRefreshCoordinator(
     }
 
     private fun destroyIfCurrent(started: ChatGptSessionSnapshot) {
-        synchronized(sessionLock) {
+        val destructionFailure = synchronized(sessionLock) {
             ensureCurrent(started)
             generation++
             session = null
-            repository.destroy()
+            runCatching { repository.destroy() }.exceptionOrNull()
         }
-        onState(ChatGptAuthState.Error("Your ChatGPT session expired. Please sign in again."))
+        if (destructionFailure == null) {
+            onState(ChatGptAuthState.Error("Your ChatGPT session expired. Please sign in again."))
+        } else {
+            onState(ChatGptAuthState.Error("Could not securely remove ChatGPT credentials."))
+            throw ChatGptAuthException("Could not securely remove ChatGPT credentials.")
+        }
     }
 
     private fun ensureCurrent(started: ChatGptSessionSnapshot) {

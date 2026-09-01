@@ -128,6 +128,19 @@ class ChatGptRefreshCoordinatorTest {
         assertTrue(runCatching { ChatGptCredentialDestruction.requireSecure(false, false) }.isFailure)
     }
 
+    @Test fun `permanent invalidation reaches terminal error when destruction fails`() = runBlocking {
+        val states = mutableListOf<ChatGptAuthState>()
+        val repo = FakeRepository(tokens() to account, failDestroy = true)
+        val coordinator = ChatGptRefreshCoordinator(
+            FakeService { throw ChatGptRefreshException.Permanent() }, repo, repo.value,
+            now = { 100 }, onState = states::add,
+        )
+        assertTrue(runCatching { coordinator.credentials() }.isFailure)
+        val terminal = states.last()
+        assertTrue(terminal is ChatGptAuthState.Error)
+        assertEquals("Could not securely remove ChatGPT credentials.", (terminal as ChatGptAuthState.Error).message)
+    }
+
     private class FakeRepository(overrideValue: Pair<ChatGptOAuthTokens, ChatGptAccountInfo>?, private val failSave: Boolean = false, private val failDestroy: Boolean = false) : ChatGptCredentialRepository {
         var value = overrideValue; var saveCount = 0; var destroyCount = 0
         override fun save(tokens: ChatGptOAuthTokens, account: ChatGptAccountInfo) { if (failSave) error("storage unavailable"); saveCount++; value = tokens to account }
