@@ -1,6 +1,7 @@
 package com.mobileclaw.auth.chatgpt
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
@@ -31,7 +32,7 @@ class ChatGptRefreshCoordinatorTest {
             val coordinator = ChatGptRefreshCoordinator(FakeService { throw failure }, repo, repo.value, now = { 100 })
             val result = runCatching { coordinator.credentials() }
             assertSame(failure, result.exceptionOrNull())
-            assertNotNull(coordinator.current); assertEquals(0, repo.clearCount)
+            assertNotNull(coordinator.snapshot()); assertEquals(0, repo.destroyCount)
         }
     }
 
@@ -39,13 +40,13 @@ class ChatGptRefreshCoordinatorTest {
         val invalidRepo = FakeRepository(tokens() to account)
         val invalid = ChatGptRefreshCoordinator(FakeService { throw ChatGptRefreshException.Permanent() }, invalidRepo, invalidRepo.value, now = { 100 })
         assertTrue(runCatching { invalid.credentials() }.exceptionOrNull() is ChatGptRefreshException.Permanent)
-        assertNull(invalid.current); assertEquals(1, invalidRepo.clearCount)
+        assertNull(invalid.snapshot()); assertEquals(1, invalidRepo.destroyCount)
 
         val mismatchRepo = FakeRepository(tokens() to account)
         val mismatchAccess = jwt(mapOf("chatgpt_account_id" to "account-b"))
         val mismatch = ChatGptRefreshCoordinator(FakeService { TokenResponse(null, mismatchAccess, null, 3600) }, mismatchRepo, mismatchRepo.value, now = { 100 })
         assertTrue(runCatching { mismatch.credentials() }.exceptionOrNull() is ChatGptRefreshException.Permanent)
-        assertNull(mismatch.current)
+        assertNull(mismatch.snapshot())
     }
 
     @Test fun `missing access does not extend old token`() = runBlocking {
@@ -53,7 +54,7 @@ class ChatGptRefreshCoordinatorTest {
         val repo = FakeRepository(old to account)
         val coordinator = ChatGptRefreshCoordinator(FakeService { TokenResponse(null, null, "rotated", 7200) }, repo, repo.value, now = { 100 })
         assertTrue(runCatching { coordinator.credentials() }.exceptionOrNull() is ChatGptRefreshException.Transient)
-        assertSame(old, coordinator.current!!.first); assertEquals(150, coordinator.current!!.first.accessTokenExpiresAt)
+        assertSame(old, coordinator.snapshot()!!.tokens); assertEquals(150, coordinator.snapshot()!!.tokens.accessTokenExpiresAt)
         assertEquals(0, repo.saveCount)
     }
 
@@ -72,14 +73,66 @@ class ChatGptRefreshCoordinatorTest {
         val repo = FakeRepository(old to account, failSave = true)
         val coordinator = ChatGptRefreshCoordinator(FakeService { TokenResponse(null, "new-access", "new-refresh", 3600) }, repo, repo.value, now = { 100 })
         assertTrue(runCatching { coordinator.credentials() }.exceptionOrNull() is ChatGptRefreshException.Transient)
-        assertSame(old, coordinator.current!!.first)
+        assertSame(old, coordinator.snapshot()!!.tokens)
     }
 
-    private class FakeRepository(overrideValue: Pair<ChatGptOAuthTokens, ChatGptAccountInfo>?, private val failSave: Boolean = false) : ChatGptCredentialRepository {
-        var value = overrideValue; var saveCount = 0; var clearCount = 0
+    @Test fun `refresh completion after sign out cannot resurrect session`() = runBlocking {
+        val entered = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
+        val states = mutableListOf<ChatGptAuthState>()
+        val repo = FakeRepository(tokens() to account)
+        val service = FakeService { entered.complete(Unit); release.await(); TokenResponse(null, "stale-access", "stale-refresh", 3600) }
+        val coordinator = ChatGptRefreshCoordinator(service, repo, repo.value, now = { 100 }, onState = states::add)
+        val caller = async { runCatching { coordinator.credentials() } }
+        entered.await()
+        coordinator.destroy()
+        val savesBeforeRelease = repo.saveCount
+        states.clear()
+        release.complete(Unit)
+        assertTrue(caller.await().exceptionOrNull() is ChatGptSessionChangedException)
+        assertNull(coordinator.snapshot()); assertNull(repo.value)
+        assertEquals(savesBeforeRelease, repo.saveCount)
+        assertTrue(states.none { it is ChatGptAuthState.SignedIn })
+    }
+
+    @Test fun `old account refresh cannot overwrite replacement login`() = runBlocking {
+        val entered = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
+        val states = mutableListOf<ChatGptAuthState>()
+        val repo = FakeRepository(tokens() to account)
+        val coordinator = ChatGptRefreshCoordinator(FakeService {
+            entered.complete(Unit); release.await(); TokenResponse(null, "account-a-new-access", "account-a-new-refresh", 3600)
+        }, repo, repo.value, now = { 100 }, onState = states::add)
+        val caller = async { runCatching { coordinator.credentials() } }
+        entered.await()
+        coordinator.destroy()
+        val accountB = ChatGptAccountInfo(email = "b@example.invalid", chatGptAccountId = "account-b")
+        val tokensB = tokens("account-b-access", "account-b-refresh", 99_999)
+        coordinator.replace(tokensB, accountB)
+        states.clear()
+        release.complete(Unit)
+        assertTrue(caller.await().exceptionOrNull() is ChatGptSessionChangedException)
+        assertSame(tokensB, coordinator.snapshot()!!.tokens); assertSame(tokensB, repo.value!!.first)
+        assertTrue(states.none { it is ChatGptAuthState.SignedIn && it.account.chatGptAccountId == "account-a" })
+    }
+
+    @Test fun `durable destruction failure is reported and cannot claim success`() {
+        val repo = FakeRepository(tokens() to account, failDestroy = true)
+        val coordinator = ChatGptRefreshCoordinator(FakeService { error("unused") }, repo, repo.value)
+        assertTrue(runCatching { coordinator.destroy() }.isFailure)
+        assertNull(coordinator.snapshot())
+        assertNotNull(repo.value)
+    }
+
+    @Test fun `credential destruction accepts either durable invalidation mechanism`() {
+        ChatGptCredentialDestruction.requireSecure(preferencesCleared = true, keyDestroyed = false)
+        ChatGptCredentialDestruction.requireSecure(preferencesCleared = false, keyDestroyed = true)
+        assertTrue(runCatching { ChatGptCredentialDestruction.requireSecure(false, false) }.isFailure)
+    }
+
+    private class FakeRepository(overrideValue: Pair<ChatGptOAuthTokens, ChatGptAccountInfo>?, private val failSave: Boolean = false, private val failDestroy: Boolean = false) : ChatGptCredentialRepository {
+        var value = overrideValue; var saveCount = 0; var destroyCount = 0
         override fun save(tokens: ChatGptOAuthTokens, account: ChatGptAccountInfo) { if (failSave) error("storage unavailable"); saveCount++; value = tokens to account }
         override fun load() = value
-        override fun clear() { clearCount++; value = null }
+        override fun destroy() { destroyCount++; if (failDestroy) error("durable destruction unavailable"); value = null }
     }
     private class FakeService(private val refreshBlock: suspend () -> TokenResponse) : ChatGptAuthService {
         var refreshCalls = 0

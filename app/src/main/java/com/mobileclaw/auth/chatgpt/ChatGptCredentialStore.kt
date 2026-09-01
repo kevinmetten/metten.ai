@@ -16,7 +16,16 @@ internal data class StoredTokens(val idToken: String?, val accessToken: String, 
 internal interface ChatGptCredentialRepository {
     fun save(tokens: ChatGptOAuthTokens, account: ChatGptAccountInfo)
     fun load(): Pair<ChatGptOAuthTokens, ChatGptAccountInfo>?
-    fun clear()
+    /** Makes any previously persisted credential bundle unusable after restart. */
+    fun destroy()
+}
+
+internal object ChatGptCredentialDestruction {
+    fun requireSecure(preferencesCleared: Boolean, keyDestroyed: Boolean) {
+        if (!preferencesCleared && !keyDestroyed) {
+            throw ChatGptAuthException("Could not securely remove ChatGPT credentials.")
+        }
+    }
 }
 
 internal class ChatGptCredentialStore(context: Context) : ChatGptCredentialRepository {
@@ -51,12 +60,20 @@ internal class ChatGptCredentialStore(context: Context) : ChatGptCredentialRepos
             clear.fill(0)
             ChatGptOAuthTokens(stored.tokens.idToken, stored.tokens.accessToken, stored.tokens.refreshToken, stored.tokens.accessTokenExpiresAt) to stored.account
         } catch (_: Throwable) {
-            clear()
+            runCatching { destroy() }
             null
         }
     }
 
-    override fun clear() { prefs.edit().clear().commit() }
+    override fun destroy() {
+        val preferencesCleared = prefs.edit().clear().commit()
+        val keyDestroyed = runCatching {
+            val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+            if (keyStore.containsAlias(alias)) keyStore.deleteEntry(alias)
+            !keyStore.containsAlias(alias)
+        }.getOrDefault(false)
+        ChatGptCredentialDestruction.requireSecure(preferencesCleared, keyDestroyed)
+    }
 
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }

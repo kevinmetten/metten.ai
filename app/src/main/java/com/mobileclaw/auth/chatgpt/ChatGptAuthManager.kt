@@ -18,16 +18,15 @@ class ChatGptAuthManager(private val context: Context) {
     private val api = ChatGptAuthApi()
     private val _state = MutableStateFlow<ChatGptAuthState>(ChatGptAuthState.SignedOut)
     val state: StateFlow<ChatGptAuthState> = _state.asStateFlow()
-    @Volatile private var credentials: Pair<ChatGptOAuthTokens, ChatGptAccountInfo>? = null
-    private lateinit var refreshCoordinator: ChatGptRefreshCoordinator
+    private val refreshCoordinator: ChatGptRefreshCoordinator
     private var loginJob: Job? = null
     private var loginGeneration = 0L
     private var listener: Pair<Long, ServerSocket>? = null
 
     init {
-        credentials = store.load()
-        refreshCoordinator = ChatGptRefreshCoordinator(api, store, credentials, onState = { _state.value = it })
-        credentials?.let { _state.value = ChatGptAuthState.SignedIn(it.second) }
+        val restored = store.load()
+        refreshCoordinator = ChatGptRefreshCoordinator(api, store, restored, onState = { _state.value = it })
+        restored?.let { _state.value = ChatGptAuthState.SignedIn(it.second) }
     }
 
     fun signInWithBrowser() = startLogin { generation ->
@@ -67,21 +66,19 @@ class ChatGptAuthManager(private val context: Context) {
         loginJob = null; listener = null
         oldJob?.cancel()
         oldListener?.second?.runCatching { close() }
-        _state.value = credentials?.let { ChatGptAuthState.SignedIn(it.second) } ?: ChatGptAuthState.SignedOut
+        _state.value = refreshCoordinator.snapshot()?.let { ChatGptAuthState.SignedIn(it.account) } ?: ChatGptAuthState.SignedOut
     }
 
     fun signOut() {
         cancelLogin()
-        val old = credentials
-        credentials = null; refreshCoordinator.clear(); store.clear(); _state.value = ChatGptAuthState.SignedOut
-        scope.launch { runCatching { old?.let { api.revoke(it.first) } } }
+        val old = refreshCoordinator.snapshot()?.tokens
+        val destroyed = runCatching { refreshCoordinator.destroy() }
+        _state.value = if (destroyed.isSuccess) ChatGptAuthState.SignedOut
+            else ChatGptAuthState.Error("Could not securely remove ChatGPT credentials.")
+        scope.launch { runCatching { old?.let { api.revoke(it) } } }
     }
 
-    suspend fun getValidBackendCredentials(): ChatGptBackendCredentials = try {
-        refreshCoordinator.credentials()
-    } finally {
-        credentials = refreshCoordinator.current
-    }
+    suspend fun getValidBackendCredentials(): ChatGptBackendCredentials = refreshCoordinator.credentials()
 
     @Synchronized private fun startLogin(block: suspend (Long) -> Unit) {
         if (loginJob?.isActive == true) return
@@ -130,9 +127,7 @@ class ChatGptAuthManager(private val context: Context) {
         val refresh = response.refreshToken?.takeIf(String::isNotBlank) ?: throw ChatGptAuthException("Could not complete ChatGPT sign-in.")
         val tokens = ChatGptOAuthTokens(response.idToken, access, refresh, ChatGptExpiration.resolve(System.currentTimeMillis(), response.expiresIn, access))
         val account = ChatGptJwtMetadata.extract(response.idToken, access)
-        try { store.save(tokens, account) } catch (_: Throwable) { throw ChatGptAuthException("Could not save credentials securely.") }
-        credentials = tokens to account
-        refreshCoordinator.replace(tokens, account)
+        try { refreshCoordinator.replace(tokens, account) } catch (_: Throwable) { throw ChatGptAuthException("Could not save credentials securely.") }
         _state.value = ChatGptAuthState.SignedIn(account)
     }
 
