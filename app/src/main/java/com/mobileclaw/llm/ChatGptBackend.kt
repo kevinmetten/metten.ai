@@ -16,6 +16,7 @@ import java.io.Reader
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -155,7 +156,7 @@ class ChatGptModelService internal constructor(
                     visibility = o.string("visibility"),
                     supportedInApi = o["supported_in_api"]?.takeUnless { it.isJsonNull }?.asBoolean,
                     priority = o["priority"]?.takeUnless { it.isJsonNull }?.asInt ?: Int.MAX_VALUE,
-                    inputModalities = o.strings("input_modalities"),
+                    inputModalities = if (o.has("input_modalities")) o.strings("input_modalities") else listOf("text", "image"),
                     contextWindow = o["context_window"]?.takeUnless { it.isJsonNull }?.asLong,
                 )
             }.getOrNull()
@@ -163,10 +164,19 @@ class ChatGptModelService internal constructor(
     }
 }
 
+internal data class ChatGptParsedTurn(
+    val response: ChatResponse,
+    val providerReplayItems: List<JsonObject>,
+)
+
 internal class ChatGptResponsesStreamParser(private val gson: Gson = Gson()) {
-    fun parse(reader: Reader, request: ChatRequest, isCancelled: () -> Boolean = { false }): ChatResponse {
+    fun parse(reader: Reader, request: ChatRequest, isCancelled: () -> Boolean = { false }): ChatResponse =
+        parseTurn(reader, request, isCancelled).response
+
+    fun parseTurn(reader: Reader, request: ChatRequest, isCancelled: () -> Boolean = { false }): ChatGptParsedTurn {
         val text = StringBuilder()
         val arguments = StringBuilder()
+        val replayItems = mutableListOf<JsonObject>()
         var callId: String? = null
         var toolName: String? = null
         var completed = false
@@ -196,6 +206,11 @@ internal class ChatGptResponsesStreamParser(private val gson: Gson = Gson()) {
                         toolName = item.string("name") ?: toolName
                         item.string("arguments")?.let { arguments.clear(); arguments.append(it) }
                     }
+                    val replayableReasoning = item.string("type") == "reasoning" &&
+                        item["encrypted_content"]?.takeUnless { it.isJsonNull } != null
+                    if (event.string("type") == "response.output_item.done" &&
+                        (replayableReasoning || item.string("type") == "function_call")
+                    ) replayItems += item.deepCopy()
                 }
                 "response.completed" -> completed = true
                 "response.failed" -> throw ChatGptResponseException("failed", event.safeResponseMessage() ?: "ChatGPT could not complete the response.")
@@ -223,8 +238,24 @@ internal class ChatGptResponsesStreamParser(private val gson: Gson = Gson()) {
             }.getOrElse { throw IOException("ChatGPT returned malformed tool arguments.") }
             ToolCall(callId ?: throw IOException("ChatGPT returned a tool call without an ID."), name, params)
         }
-        return ChatResponse(text.toString().ifBlank { null }, tool, if (tool != null) "tool_calls" else "stop")
+        return ChatGptParsedTurn(
+            ChatResponse(text.toString().ifBlank { null }, tool, if (tool != null) "tool_calls" else "stop"),
+            replayItems,
+        )
     }
+}
+
+/** Bounded, process-memory-only provider state. Values are never logged or persisted. */
+internal class ChatGptTurnReplayStore(private val maxEntries: Int = 64) {
+    private val turns = ConcurrentHashMap<String, List<JsonObject>>()
+
+    @Synchronized fun put(callId: String, items: List<JsonObject>) {
+        if (callId.isBlank() || items.isEmpty()) return
+        if (turns.size >= maxEntries) turns.keys.firstOrNull()?.let { turns.remove(it) }
+        turns[callId] = items.map(JsonObject::deepCopy)
+    }
+
+    @Synchronized fun take(callIds: Set<String>): List<JsonObject> = callIds.flatMap { id -> turns.remove(id).orEmpty() }
 }
 
 internal class ChatGptResponseException(val category: String, message: String) : IOException(message)
@@ -236,6 +267,7 @@ class ChatGptOAuthGateway internal constructor(
     private val client: OkHttpClient = defaultChatGptClient(),
     private val root: String = CHATGPT_BACKEND_ROOT,
     private val parser: ChatGptResponsesStreamParser = ChatGptResponsesStreamParser(),
+    private val replayStore: ChatGptTurnReplayStore = ChatGptTurnReplayStore(),
 ) : LlmGateway {
     constructor(auth: ChatGptAuthManager, config: AgentConfig, models: ChatGptModelService) :
         this(auth.backendCredentialProvider(), config, models)
@@ -243,7 +275,9 @@ class ChatGptOAuthGateway internal constructor(
     override suspend fun chat(request: ChatRequest): ChatResponse {
         val model = resolveModel(request)
         val backendCredentials = credentials.credentials()
-        val json = buildResponsesRequest(request, model)
+        val outputCallIds = request.messages.filter { it.role == "tool" }.mapNotNull { it.toolCallId }.toSet()
+        val replayItems = replayStore.take(outputCallIds)
+        val json = buildResponsesRequest(request, model, replayItems)
         val httpRequest = Request.Builder().url("$root/responses")
             .chatGptHeaders(backendCredentials)
             .header("Content-Type", "application/json")
@@ -251,7 +285,9 @@ class ChatGptOAuthGateway internal constructor(
             .post(json.toString().toRequestBody("application/json".toMediaType())).build()
         return client.newCall(httpRequest).awaitAndConsume { response, isCancelled ->
             if (!response.isSuccessful) throw backendFailure(response.code)
-            parser.parse(response.body?.charStream() ?: throw IOException("ChatGPT returned an empty response."), request, isCancelled)
+            val parsed = parser.parseTurn(response.body?.charStream() ?: throw IOException("ChatGPT returned an empty response."), request, isCancelled)
+            parsed.response.toolCall?.let { replayStore.put(it.id, parsed.providerReplayItems) }
+            parsed.response
         }
     }
 
@@ -267,8 +303,8 @@ class ChatGptOAuthGateway internal constructor(
     override suspend fun embed(text: String): FloatArray =
         throw UnsupportedOperationException("ChatGPT subscription does not provide embeddings.")
 
-    internal fun buildResponsesRequest(request: ChatRequest, model: String): JsonObject =
-        ChatGptResponsesRequestMapper.buildResponsesRequest(request, model)
+    internal fun buildResponsesRequest(request: ChatRequest, model: String, replayItems: List<JsonObject> = emptyList()): JsonObject =
+        ChatGptResponsesRequestMapper.buildResponsesRequest(request, model, replayItems)
 }
 
 internal object ChatGptModelResolver {
@@ -280,18 +316,35 @@ internal object ChatGptModelResolver {
 
 internal object ChatGptResponsesRequestMapper {
     private val gson = Gson()
-    internal fun buildResponsesRequest(request: ChatRequest, model: String): JsonObject {
+    internal fun buildResponsesRequest(request: ChatRequest, model: String, replayItems: List<JsonObject> = emptyList()): JsonObject {
         val input = JsonArray()
+        val replayCallIds = replayItems.mapNotNull { if (it.string("type") == "function_call") it.string("call_id") else null }.toSet()
+        val consumedReplay = mutableSetOf<String>()
         request.messages.filterNot { it.role == "system" }.forEach { msg ->
             when {
-                msg.toolCalls != null -> msg.toolCalls.forEach { call -> input.add(JsonObject().apply {
-                    addProperty("type", "function_call"); addProperty("call_id", call.id)
-                    addProperty("name", call.skillId); addProperty("arguments", gson.toJson(call.params))
-                }) }
-                msg.role == "tool" && msg.toolCallId != null -> input.add(JsonObject().apply {
-                    addProperty("type", "function_call_output"); addProperty("call_id", msg.toolCallId)
-                    addProperty("output", msg.content.orEmpty())
-                })
+                msg.toolCalls != null -> {
+                    val replayCallId = msg.toolCalls.firstOrNull { it.id in replayCallIds }?.id
+                    if (replayCallId != null) replayItems.filter { it.string("type") == "reasoning" }.forEach { input.add(it.deepCopy()) }
+                    if (!msg.content.isNullOrBlank()) input.add(messageItem(msg.role, msg.content, msg.imageBase64))
+                    msg.toolCalls.forEach { call ->
+                        val captured = replayItems.firstOrNull { it.string("type") == "function_call" && it.string("call_id") == call.id }
+                        if (captured != null) { input.add(captured.deepCopy()); consumedReplay += call.id }
+                        else input.add(JsonObject().apply {
+                            addProperty("type", "function_call"); addProperty("call_id", call.id)
+                            addProperty("name", call.skillId); addProperty("arguments", gson.toJson(call.params))
+                        })
+                    }
+                }
+                msg.role == "tool" && msg.toolCallId != null -> {
+                    if (msg.toolCallId !in consumedReplay && msg.toolCallId in replayCallIds) {
+                        replayItems.forEach { input.add(it.deepCopy()) }
+                        consumedReplay += msg.toolCallId
+                    }
+                    input.add(JsonObject().apply {
+                        addProperty("type", "function_call_output"); addProperty("call_id", msg.toolCallId)
+                        addProperty("output", msg.content.orEmpty())
+                    })
+                }
                 else -> input.add(JsonObject().apply {
                     addProperty("type", "message"); addProperty("role", msg.role)
                     val content = JsonArray()
@@ -314,6 +367,7 @@ internal object ChatGptResponsesRequestMapper {
             addProperty("parallel_tool_calls", false)
             addProperty("store", false)
             addProperty("stream", true)
+            add("include", JsonArray().apply { add("reasoning.encrypted_content") })
             if (request.tools.isNotEmpty()) {
                 add("tools", gson.toJsonTree(request.tools.map { tool -> mapOf(
                     "type" to "function", "name" to tool.name, "description" to tool.description, "strict" to false,
@@ -325,6 +379,19 @@ internal object ChatGptResponsesRequestMapper {
                 addProperty("tool_choice", "auto")
             }
         }
+    }
+
+    private fun messageItem(role: String, contentText: String?, imageBase64: String?): JsonObject = JsonObject().apply {
+        addProperty("type", "message"); addProperty("role", role)
+        val content = JsonArray()
+        if (!contentText.isNullOrBlank()) content.add(JsonObject().apply {
+            addProperty("type", if (role == "assistant") "output_text" else "input_text")
+            addProperty("text", contentText)
+        })
+        imageBase64?.takeIf { role == "user" }?.let { image -> content.add(JsonObject().apply {
+            addProperty("type", "input_image"); addProperty("image_url", CloudImagePreparer.prepare(image))
+        }) }
+        add("content", content)
     }
 }
 

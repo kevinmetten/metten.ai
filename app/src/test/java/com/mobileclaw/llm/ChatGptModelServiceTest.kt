@@ -50,6 +50,17 @@ class ChatGptModelServiceTest {
         assertNull(server.takeRequest().getHeader(RESIDENCY_HEADER))
     }
 
+    @Test fun `input modalities distinguish legacy missing text-only and image-capable models`() {
+        val parsed = service().parseModels("""{"models":[
+          {"slug":"legacy","visibility":"list"},
+          {"slug":"text-only","visibility":"list","input_modalities":["text"]},
+          {"slug":"vision","visibility":"list","input_modalities":["text","image"]}
+        ]}""").associateBy { it.slug }
+        assertEquals(listOf("text", "image"), parsed.getValue("legacy").inputModalities)
+        assertEquals(listOf("text"), parsed.getValue("text-only").inputModalities)
+        assertEquals(listOf("text", "image"), parsed.getValue("vision").inputModalities)
+    }
+
     @Test fun `cancellation aborts stalled model discovery`() = runBlocking {
         server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
         val job = launch { service().fetchModels() }

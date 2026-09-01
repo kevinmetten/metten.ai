@@ -48,6 +48,16 @@ class CloudProviderResolverTest {
             chatGptModel = null,
             apiGatewaySupportsMultimodal = false,
         ))
+        assertFalse(CloudProviderResolver.supportsCloudMultimodal(
+            EffectiveCloudProvider.CHATGPT_ACCOUNT,
+            chatGptModel = ChatGptModel("text", inputModalities = listOf("text")),
+            apiGatewaySupportsMultimodal = true,
+        ))
+        assertTrue(CloudProviderResolver.supportsCloudMultimodal(
+            EffectiveCloudProvider.CHATGPT_ACCOUNT,
+            chatGptModel = ChatGptModel("vision", inputModalities = listOf("text", "image")),
+            apiGatewaySupportsMultimodal = false,
+        ))
     }
 
     @Test fun `embedding capability may use capability-specific credentials`() {

@@ -58,10 +58,48 @@ class ChatGptResponsesTest {
         assertFalse(json["parallel_tool_calls"].asBoolean)
         assertFalse(json["store"].asBoolean)
         assertTrue(json["stream"].asBoolean)
+        assertEquals("reasoning.encrypted_content", json["include"].asJsonArray.single().asString)
         assertTrue(wire.contains("input_text")); assertTrue(wire.contains("input_image")); assertTrue(wire.contains("output_text"))
         assertTrue(wire.contains("function_call")); assertTrue(wire.contains("function_call_output")); assertTrue(wire.contains("call-1"))
         assertTrue(json["tools"].asJsonArray[0].asJsonObject.has("strict"))
         listOf("fake-access", "fake-refresh", "fake-id-token").forEach { assertFalse(wire.contains(it)) }
+    }
+
+    @Test fun `assistant text and tool call are both replayed`() {
+        val json = ChatGptResponsesRequestMapper.buildResponsesRequest(ChatRequest(messages = listOf(
+            Message("assistant", "I will inspect that now.", toolCalls = listOf(ToolCall("call_123", "test_tool", mapOf("value" to "abc")))),
+            Message("tool", "result", toolCallId = "call_123"),
+        )), "model")
+        val wire = json["input"].asJsonArray
+        assertTrue(wire.any { it.toString().contains("I will inspect that now.") })
+        assertEquals(1, wire.count { it.asJsonObject["type"].asString == "function_call" })
+        assertTrue(wire.any { it.asJsonObject["type"].asString == "function_call_output" && it.asJsonObject["call_id"].asString == "call_123" })
+    }
+
+    @Test fun `opaque reasoning is captured privately and replayed in tool order`() = runBlocking {
+        val tokens = mutableListOf<String>(); val thinking = mutableListOf<String>()
+        val parsed = ChatGptResponsesStreamParser().parseTurn(StringReader(events(
+            """{"type":"response.output_item.done","item":{"type":"reasoning","id":"r1","encrypted_content":"PRIVATE_REASONING_SENTINEL","summary":[{"text":"PRIVATE_SUMMARY"}]}}""",
+            """{"type":"response.output_item.done","item":{"type":"function_call","id":"fc1","call_id":"call_123","name":"test_tool","arguments":"{\"value\":\"abc\"}"}}""",
+            """{"type":"response.completed"}""",
+        )), ChatRequest(emptyList(), onToken = tokens::add, onThinkToken = thinking::add))
+        assertNull(parsed.response.content)
+        assertEquals("call_123", parsed.response.toolCall!!.id)
+        assertFalse(parsed.response.toolCall!!.params.toString().contains("PRIVATE_REASONING_SENTINEL"))
+        assertTrue(tokens.isEmpty()); assertTrue(thinking.isEmpty())
+
+        val next = ChatGptResponsesRequestMapper.buildResponsesRequest(ChatRequest(messages = listOf(
+            Message("assistant", "I will inspect that now.", toolCalls = listOf(parsed.response.toolCall!!)),
+            Message("tool", "ok", toolCallId = "call_123"),
+        )), "model", parsed.providerReplayItems)
+        val input = next["input"].asJsonArray
+        val types = input.map { it.asJsonObject["type"].asString }
+        assertEquals(listOf("reasoning", "message", "function_call", "function_call_output"), types)
+        assertEquals(1, types.count { it == "function_call" })
+        assertEquals("fc1", input[2].asJsonObject["id"].asString)
+        assertEquals("call_123", input[2].asJsonObject["call_id"].asString)
+        assertTrue(next.toString().contains("PRIVATE_REASONING_SENTINEL"))
+        assertFalse(parsed.response.toString().contains("PRIVATE_REASONING_SENTINEL"))
     }
 
     @Test fun `SSE framing concatenates text ignores reasoning and completes`() = runBlocking {
