@@ -18,12 +18,15 @@ import com.mobileclaw.config.AgentConfig
 import com.mobileclaw.config.SkillLevelStore
 import com.mobileclaw.config.SkillNotesStore
 import com.mobileclaw.config.UserConfig
+import com.mobileclaw.config.supportsCapabilityMultimodal
 import com.mobileclaw.llm.HybridLlmGateway
 import com.mobileclaw.llm.LocalGemmaGateway
 import com.mobileclaw.llm.OpenAiGateway
 import com.mobileclaw.llm.ChatGptOAuthGateway
+import com.mobileclaw.llm.ChatGptModelService
 import com.mobileclaw.llm.CloudLlmRouter
 import com.mobileclaw.llm.CloudProviderResolver
+import com.mobileclaw.llm.EffectiveCloudProvider
 import com.mobileclaw.llm.LocalModelManager
 import com.mobileclaw.memory.ConversationMemory
 import com.mobileclaw.memory.SemanticMemory
@@ -49,6 +52,9 @@ import java.util.UUID
 class ClawApplication : Application() {
 
     lateinit var chatGptAuthManager: ChatGptAuthManager
+        private set
+
+    lateinit var chatGptModelService: ChatGptModelService
         private set
 
     lateinit var database: ClawDatabase
@@ -142,6 +148,7 @@ class ClawApplication : Application() {
         super.onCreate()
         instance = this
         chatGptAuthManager = ChatGptAuthManager(this)
+        chatGptModelService = ChatGptModelService(chatGptAuthManager)
         registerForegroundCallbacks()
         database = ClawDatabase.getInstance(this)
         agentConfig = AgentConfig(this)
@@ -206,12 +213,31 @@ class ClawApplication : Application() {
         agentTownStore = AgentTownStore(this)
     }
 
-    fun providerReadiness() = agentConfig.snapshot().let { snapshot ->
+    fun providerReadiness(snapshot: com.mobileclaw.config.ConfigSnapshot = agentConfig.snapshot()) = snapshot.let {
         CloudProviderResolver.readiness(
-            snapshot.cloudProviderPreference,
-            snapshot.localModelEnabled || snapshot.localNativeOnly,
+            it.cloudProviderPreference,
+            CloudProviderResolver.localRuntimeReady(it.localModelEnabled, it.localNativeOnly, localModelManager.modelPath(it.localModelId) != null),
             chatGptAuthManager.hasUsableSession(),
-            snapshot.chatEndpoint.isNotBlank() && snapshot.chatApiKey.isNotBlank(),
+            it.chatEndpoint.isNotBlank() && it.chatApiKey.isNotBlank(),
+        )
+    }
+
+    fun effectiveModel(snapshot: com.mobileclaw.config.ConfigSnapshot = agentConfig.snapshot()): String = when {
+        (snapshot.localModelEnabled || snapshot.localNativeOnly) && localModelManager.modelPath(snapshot.localModelId) != null -> "local:${snapshot.localModelId}"
+        providerReadiness(snapshot).effectiveCloudProvider == EffectiveCloudProvider.CHATGPT_ACCOUNT ->
+            snapshot.chatGptModel.ifBlank { chatGptModelService.pickerModels().firstOrNull()?.slug.orEmpty() }
+        else -> snapshot.chatModel
+    }
+
+    fun supportsEffectiveMultimodal(snapshot: com.mobileclaw.config.ConfigSnapshot = agentConfig.snapshot()): Boolean {
+        if ((snapshot.localModelEnabled || snapshot.localNativeOnly) && localModelManager.modelPath(snapshot.localModelId) != null) {
+            val model = localModelManager.modelInfo(snapshot.localModelId) ?: return false
+            return model.supportsVision && localModelManager.visionModelPathFor(snapshot.localModelId) != null
+        }
+        return CloudProviderResolver.supportsCloudMultimodal(
+            providerReadiness(snapshot).effectiveCloudProvider,
+            chatGptModelService.model(snapshot.chatGptModel),
+            snapshot.activeGateway?.supportsCapabilityMultimodal() ?: snapshot.supportsMultimodal,
         )
     }
 
@@ -220,7 +246,7 @@ class ClawApplication : Application() {
         val cloud = CloudLlmRouter(
             agentConfig,
             apiGateway,
-            ChatGptOAuthGateway(chatGptAuthManager, agentConfig),
+            ChatGptOAuthGateway(chatGptAuthManager, agentConfig, chatGptModelService),
             chatGptAuthManager::hasUsableSession,
         )
         return HybridLlmGateway(

@@ -454,7 +454,8 @@ class MainViewModel : ViewModel() {
             config = config.configFlow,
             isConfigured = app.providerReadiness().overallReady,
             currentPage = AppPage.HOME,
-            currentModel = config.model,
+            currentModel = app.effectiveModel(),
+            supportsMultimodal = app.supportsEffectiveMultimodal(),
             currentRole = Role.DEFAULT,
             consoleServerUrl = if (app.consoleServer.isEnabled()) app.consoleServer.getAccessUrl() else "",
             localModels = app.localModelManager.models.value,
@@ -519,13 +520,11 @@ class MainViewModel : ViewModel() {
 
         viewModelScope.launch {
             config.configFlow.collect { snap ->
-                val configured = app.providerReadiness().let { readiness ->
-                    readiness.copy(localReady = (snap.localModelEnabled || snap.localNativeOnly) && app.localModelManager.modelPath(snap.localModelId) != null).overallReady
-                }
+                val configured = app.providerReadiness(snap).overallReady
                 _uiState.update { it.copy(
                     isConfigured = configured,
-                    currentModel = snap.model,
-                    supportsMultimodal = supportsCurrentMultimodal(snap),
+                    currentModel = app.effectiveModel(snap),
+                    supportsMultimodal = app.supportsEffectiveMultimodal(snap),
                 ) }
             }
         }
@@ -535,17 +534,21 @@ class MainViewModel : ViewModel() {
                 val snap = config.snapshot()
                 _uiState.update { it.copy(
                     localModels = models,
-                    isConfigured = app.providerReadiness().let { readiness ->
-                        readiness.copy(localReady = (snap.localModelEnabled || snap.localNativeOnly) && app.localModelManager.modelPath(snap.localModelId) != null).overallReady
-                    },
-                    supportsMultimodal = supportsCurrentMultimodal(snap),
+                    isConfigured = app.providerReadiness(snap).overallReady,
+                    currentModel = app.effectiveModel(snap),
+                    supportsMultimodal = app.supportsEffectiveMultimodal(snap),
                 ) }
             }
         }
 
         viewModelScope.launch {
             app.chatGptAuthManager.state.collect {
-                _uiState.update { state -> state.copy(isConfigured = app.providerReadiness().overallReady) }
+                val snap = config.snapshot()
+                _uiState.update { state -> state.copy(
+                    isConfigured = app.providerReadiness(snap).overallReady,
+                    currentModel = app.effectiveModel(snap),
+                    supportsMultimodal = app.supportsEffectiveMultimodal(snap),
+                ) }
             }
         }
 
@@ -6660,13 +6663,6 @@ private fun summarizeTechnicalResultForUser(skillId: String?, rawText: String): 
 }
 
 private const val PROFILE_MEMORY_PAGE_SIZE = 40
-
-private fun supportsCurrentMultimodal(snapshot: ConfigSnapshot): Boolean {
-    if (!snapshot.localModelEnabled && !snapshot.localNativeOnly) return snapshot.activeGateway?.supportsCapabilityMultimodal() ?: snapshot.supportsMultimodal
-    val manager = ClawApplication.instance.localModelManager
-    val model = manager.modelInfo(snapshot.localModelId) ?: return false
-    return model.supportsVision && manager.visionModelPathFor(snapshot.localModelId) != null
-}
 
 private fun String.cleanLocalTurnTokens(): String = cleanLocalGeneratedText()
 

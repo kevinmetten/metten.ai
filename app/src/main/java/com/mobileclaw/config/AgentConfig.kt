@@ -106,6 +106,11 @@ class AgentConfig(private val context: Context) {
         }
     }
 
+    suspend fun updateChatGptModel(model: String) {
+        context.dataStore.edit { it[Keys.CHATGPT_MODEL] = model }
+    }
+
+    /** API-Gateway-only readiness. Overall LLM readiness belongs to ClawApplication.providerReadiness(). */
     fun isConfigured() = snapshot().let { it.endpoint.isNotBlank() && it.apiKey.isNotBlank() }
 
     fun snapshot(): ConfigSnapshot = runBlocking { configFlow.first() }

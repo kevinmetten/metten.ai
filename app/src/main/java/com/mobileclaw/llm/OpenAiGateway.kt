@@ -1,8 +1,5 @@
 package com.mobileclaw.llm
 
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.util.Base64
 import com.google.gson.Gson
 import com.google.gson.JsonArray
 import com.google.gson.JsonNull
@@ -23,7 +20,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.sse.EventSource
 import okhttp3.sse.EventSourceListener
 import okhttp3.sse.EventSources
-import java.io.ByteArrayOutputStream
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -159,7 +155,7 @@ class OpenAiGateway(private val config: AgentConfig) : LlmGateway {
                 }
                 msg.imageBase64 != null -> {
                     // Vision message: multipart content array
-                    val safeImage = compressImageForApi(msg.imageBase64)
+                    val safeImage = CloudImagePreparer.prepare(msg.imageBase64)
                     val contentArr = JsonArray()
                     if (!msg.content.isNullOrBlank()) {
                         contentArr.add(JsonObject().apply {
@@ -313,36 +309,6 @@ class OpenAiGateway(private val config: AgentConfig) : LlmGateway {
     suspend fun fetchModels(): List<String> {
         val snapshot = config.snapshot()
         return fetchModels(snapshot.chatEndpoint, snapshot.chatApiKey)
-    }
-
-    /** Scales to ≤1920px long-edge / JPEG-85 for high fidelity while staying within typical proxy limits. */
-    private fun compressImageForApi(dataUri: String): String {
-        return try {
-            val commaIdx = dataUri.indexOf(',')
-            if (commaIdx < 0) return dataUri
-            val b64 = dataUri.substring(commaIdx + 1)
-            val bytes = Base64.decode(b64, Base64.DEFAULT)
-            val original = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return dataUri
-
-            val maxPx = 1920
-            val scale = minOf(1f, maxPx.toFloat() / maxOf(original.width, original.height))
-            val bmp = if (scale < 1f) {
-                Bitmap.createScaledBitmap(
-                    original,
-                    (original.width * scale).toInt(),
-                    (original.height * scale).toInt(),
-                    true,
-                )
-            } else original
-
-            val out = ByteArrayOutputStream()
-            bmp.compress(Bitmap.CompressFormat.JPEG, 85, out)
-            if (bmp !== original) bmp.recycle()
-            original.recycle()
-            "data:image/jpeg;base64," + Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
-        } catch (_: Exception) {
-            dataUri
-        }
     }
 
     // Extract human-readable message from {"error":{"message":"..."}} or fall back to raw body.

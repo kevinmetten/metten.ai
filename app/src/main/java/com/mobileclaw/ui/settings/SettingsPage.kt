@@ -63,7 +63,6 @@ import com.mobileclaw.config.supportsCapabilityMultimodal
 import com.mobileclaw.llm.LocalModelInfo
 import com.mobileclaw.llm.OpenAiGateway
 import com.mobileclaw.llm.ChatGptModel
-import com.mobileclaw.llm.ChatGptModelService
 import com.mobileclaw.memory.db.VideoGenerationTaskEntity
 import com.mobileclaw.perception.VirtualDisplayManager
 import com.mobileclaw.ui.ClawColors
@@ -751,12 +750,15 @@ private fun CloudProviderCard(app: ClawApplication, snapshot: ConfigSnapshot, on
         if (!signedIn || loading) return
         scope.launch {
             loading = true; error = null
-            runCatching { ChatGptModelService(app.chatGptAuthManager).fetchModels() }
-                .onSuccess { catalog ->
-                    models = catalog.filter { it.visibility.equals("list", true) }
-                    if (snapshot.chatGptModel.isBlank()) models.firstOrNull()?.let { onSave(snapshot.copy(chatGptModel = it.slug)) }
-                }
-                .onFailure { error = it.message ?: "Could not load ChatGPT models." }
+            try {
+                val catalog = app.chatGptModelService.fetchModels()
+                models = app.chatGptModelService.pickerModels(catalog)
+                if (snapshot.chatGptModel.isBlank()) models.firstOrNull()?.let { onSave(snapshot.copy(chatGptModel = it.slug)) }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Throwable) {
+                error = failure.message ?: "Could not load ChatGPT models."
+            }
             loading = false
         }
     }

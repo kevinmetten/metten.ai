@@ -2,6 +2,8 @@ package com.mobileclaw.llm
 
 import com.mobileclaw.config.AgentConfig
 import com.mobileclaw.config.CloudProviderPreference
+import com.mobileclaw.config.capabilityApiKey
+import com.mobileclaw.config.capabilityEndpoint
 
 enum class EffectiveCloudProvider { CHATGPT_ACCOUNT, API_GATEWAY }
 
@@ -15,6 +17,23 @@ data class ProviderReadiness(
 }
 
 object CloudProviderResolver {
+    fun hasEmbeddingCapability(snapshot: com.mobileclaw.config.ConfigSnapshot): Boolean {
+        val gateway = snapshot.activeGateway ?: return false
+        return gateway.capabilityEndpoint("embedding").isNotBlank() && gateway.capabilityApiKey("embedding").isNotBlank()
+    }
+    fun localRuntimeReady(enabled: Boolean, nativeOnly: Boolean, installed: Boolean): Boolean =
+        (enabled || nativeOnly) && installed
+
+    fun supportsCloudMultimodal(
+        provider: EffectiveCloudProvider?,
+        chatGptModel: ChatGptModel?,
+        apiGatewaySupportsMultimodal: Boolean,
+    ): Boolean = when (provider) {
+        EffectiveCloudProvider.CHATGPT_ACCOUNT -> chatGptModel?.inputModalities?.any { it.equals("image", true) } ?: true
+        EffectiveCloudProvider.API_GATEWAY -> apiGatewaySupportsMultimodal
+        null -> false
+    }
+
     fun resolve(
         preference: CloudProviderPreference,
         chatGptReady: Boolean,
@@ -37,14 +56,17 @@ object CloudProviderResolver {
         ProviderReadiness(localReady, apiGatewayReady, chatGptReady, resolve(preference, chatGptReady, apiGatewayReady))
 }
 
-class CloudLlmRouter(
-    private val config: AgentConfig,
+class CloudLlmRouter internal constructor(
+    private val snapshotProvider: () -> com.mobileclaw.config.ConfigSnapshot,
     private val apiGateway: LlmGateway,
     private val chatGptGateway: LlmGateway,
     private val chatGptReady: () -> Boolean,
 ) : LlmGateway {
+    constructor(config: AgentConfig, apiGateway: LlmGateway, chatGptGateway: LlmGateway, chatGptReady: () -> Boolean) :
+        this(config::snapshot, apiGateway, chatGptGateway, chatGptReady)
+
     override suspend fun chat(request: ChatRequest): ChatResponse {
-        val snapshot = config.snapshot()
+        val snapshot = snapshotProvider()
         val apiReady = snapshot.chatEndpoint.isNotBlank() && snapshot.chatApiKey.isNotBlank()
         return when (CloudProviderResolver.resolve(snapshot.cloudProviderPreference, chatGptReady(), apiReady, request.callOptions.gatewayId)) {
             EffectiveCloudProvider.CHATGPT_ACCOUNT -> chatGptGateway.chat(request)
@@ -54,8 +76,10 @@ class CloudLlmRouter(
     }
 
     override suspend fun embed(text: String): FloatArray {
-        val snapshot = config.snapshot()
-        if (snapshot.endpoint.isBlank() || snapshot.apiKey.isBlank()) throw UnsupportedOperationException("Embeddings require a configured API Gateway.")
+        val snapshot = snapshotProvider()
+        if (!CloudProviderResolver.hasEmbeddingCapability(snapshot)) {
+            throw UnsupportedOperationException("Embeddings require a configured API Gateway embedding capability.")
+        }
         return apiGateway.embed(text)
     }
 }
