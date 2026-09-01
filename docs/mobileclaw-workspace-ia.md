@@ -26,7 +26,6 @@ Each subsystem owns its storage and validation rules. The Workspace UI is an ind
 - Imports must validate their own schema and paths before writing data.
 - Exports should be explicit about included user data and should omit transient caches.
 - MiniAPP import and export uses the MiniAPP package boundary, not a generic workspace archive.
-- Role Market packages and generated catalog checksums are maintained as a separate generated unit.
 
 ## Navigation and presentation
 
