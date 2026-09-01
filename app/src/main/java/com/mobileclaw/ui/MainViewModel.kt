@@ -2101,7 +2101,7 @@ class MainViewModel : ViewModel() {
         }
         val route = resolveRunRoute(goal, prepared, routeOverride)
         val execution = prepareRunExecution(goal, visibleUserText, prepared, route, routeOverride)
-        val executionMode = determineChatExecutionMode(prepared, route, execution)
+        val executionMode = determineChatExecutionMode(goal, prepared, route, execution)
         val runtimePlan = createChatRuntimePlan(
             goal = goal,
             visibleUserText = visibleUserText,
@@ -3082,6 +3082,7 @@ class MainViewModel : ViewModel() {
     }
 
     private fun determineChatExecutionMode(
+        goal: String,
         prepared: PreparedRunInput,
         route: TaskRoute,
         execution: PreparedRunExecution,
@@ -3098,7 +3099,7 @@ class MainViewModel : ViewModel() {
         }
         if (prepared.attachedImage == null &&
             prepared.attachedFile == null &&
-            shouldRunDirectChat(route, execution.roleControlPlan, goal)) {
+            shouldRunDirectChat(route, execution.roleControlPlan, execution.contextualGoal.ifBlank { goal })) {
             return ChatExecutionMode.DIRECT_CHAT
         }
         return ChatExecutionMode.AGENT

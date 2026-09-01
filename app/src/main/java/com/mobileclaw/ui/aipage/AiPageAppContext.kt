@@ -123,7 +123,6 @@ class AiPageAppContext(private val context: Context) {
         val userConfig = runCatching { app.userConfig.allEntries() }.getOrDefault(emptyMap())
         return mapOf(
             "agent" to mapOf(
-                "language" to agent.language,
                 "darkTheme" to agent.darkTheme,
                 "accentColor" to agent.accentColor,
                 "activeGatewayId" to agent.activeGatewayId.orEmpty(),
