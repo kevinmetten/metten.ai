@@ -223,7 +223,7 @@ private fun ChatRequest.toLocalVisionToolPrompt(): String {
 
 class HybridLlmGateway(
     private val local: LocalGemmaGateway,
-    private val cloud: OpenAiGateway,
+    private val cloud: LlmGateway,
     private val useLocal: () -> Boolean,
     private val canUseCloud: () -> Boolean,
     private val nativeOnly: () -> Boolean,

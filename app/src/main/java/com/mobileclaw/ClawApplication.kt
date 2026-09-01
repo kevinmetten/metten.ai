@@ -21,6 +21,9 @@ import com.mobileclaw.config.UserConfig
 import com.mobileclaw.llm.HybridLlmGateway
 import com.mobileclaw.llm.LocalGemmaGateway
 import com.mobileclaw.llm.OpenAiGateway
+import com.mobileclaw.llm.ChatGptOAuthGateway
+import com.mobileclaw.llm.CloudLlmRouter
+import com.mobileclaw.llm.CloudProviderResolver
 import com.mobileclaw.llm.LocalModelManager
 import com.mobileclaw.memory.ConversationMemory
 import com.mobileclaw.memory.SemanticMemory
@@ -203,14 +206,32 @@ class ClawApplication : Application() {
         agentTownStore = AgentTownStore(this)
     }
 
-    fun createLlmGateway() = HybridLlmGateway(
-        local = LocalGemmaGateway(this, localModelManager) { agentConfig.snapshot().localModelId },
-        cloud = OpenAiGateway(agentConfig),
-        useLocal = { agentConfig.snapshot().localModelEnabled },
-        canUseCloud = { agentConfig.snapshot().let { it.endpoint.isNotBlank() && it.apiKey.isNotBlank() } },
-        nativeOnly = { agentConfig.snapshot().localNativeOnly },
-        localToolCallingEnabled = { agentConfig.snapshot().localToolCallingEnabled },
-    )
+    fun providerReadiness() = agentConfig.snapshot().let { snapshot ->
+        CloudProviderResolver.readiness(
+            snapshot.cloudProviderPreference,
+            snapshot.localModelEnabled || snapshot.localNativeOnly,
+            chatGptAuthManager.hasUsableSession(),
+            snapshot.chatEndpoint.isNotBlank() && snapshot.chatApiKey.isNotBlank(),
+        )
+    }
+
+    fun createLlmGateway(): com.mobileclaw.llm.LlmGateway {
+        val apiGateway = OpenAiGateway(agentConfig)
+        val cloud = CloudLlmRouter(
+            agentConfig,
+            apiGateway,
+            ChatGptOAuthGateway(chatGptAuthManager, agentConfig),
+            chatGptAuthManager::hasUsableSession,
+        )
+        return HybridLlmGateway(
+            local = LocalGemmaGateway(this, localModelManager) { agentConfig.snapshot().localModelId },
+            cloud = cloud,
+            useLocal = { agentConfig.snapshot().localModelEnabled },
+            canUseCloud = { providerReadiness().effectiveCloudProvider != null },
+            nativeOnly = { agentConfig.snapshot().localNativeOnly },
+            localToolCallingEnabled = { agentConfig.snapshot().localToolCallingEnabled },
+        )
+    }
 
     override fun onTerminate() {
         super.onTerminate()

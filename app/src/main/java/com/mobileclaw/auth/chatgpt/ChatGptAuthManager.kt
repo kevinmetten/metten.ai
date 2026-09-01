@@ -79,6 +79,9 @@ class ChatGptAuthManager(private val context: Context) {
 
     suspend fun getValidBackendCredentials(): ChatGptBackendCredentials = refreshCoordinator.credentials()
 
+    /** Non-secret readiness snapshot; remains true while a saved session is refreshing. */
+    fun hasUsableSession(): Boolean = refreshCoordinator.snapshot() != null
+
     @Synchronized private fun startLogin(block: suspend (Long) -> Unit) {
         if (loginJob?.isActive == true) return
         val generation = loginGate.begin()

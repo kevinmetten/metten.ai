@@ -452,7 +452,7 @@ class MainViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(
         MainUiState(
             config = config.configFlow,
-            isConfigured = config.isConfigured(),
+            isConfigured = app.providerReadiness().overallReady,
             currentPage = AppPage.HOME,
             currentModel = config.model,
             currentRole = Role.DEFAULT,
@@ -519,8 +519,9 @@ class MainViewModel : ViewModel() {
 
         viewModelScope.launch {
             config.configFlow.collect { snap ->
-                val configured = (snap.chatEndpoint.isNotBlank() && snap.chatApiKey.isNotBlank()) ||
-                    ((snap.localModelEnabled || snap.localNativeOnly) && app.localModelManager.modelPath(snap.localModelId) != null)
+                val configured = app.providerReadiness().let { readiness ->
+                    readiness.copy(localReady = (snap.localModelEnabled || snap.localNativeOnly) && app.localModelManager.modelPath(snap.localModelId) != null).overallReady
+                }
                 _uiState.update { it.copy(
                     isConfigured = configured,
                     currentModel = snap.model,
@@ -534,10 +535,17 @@ class MainViewModel : ViewModel() {
                 val snap = config.snapshot()
                 _uiState.update { it.copy(
                     localModels = models,
-                    isConfigured = (snap.chatEndpoint.isNotBlank() && snap.chatApiKey.isNotBlank()) ||
-                        ((snap.localModelEnabled || snap.localNativeOnly) && app.localModelManager.modelPath(snap.localModelId) != null),
+                    isConfigured = app.providerReadiness().let { readiness ->
+                        readiness.copy(localReady = (snap.localModelEnabled || snap.localNativeOnly) && app.localModelManager.modelPath(snap.localModelId) != null).overallReady
+                    },
                     supportsMultimodal = supportsCurrentMultimodal(snap),
                 ) }
+            }
+        }
+
+        viewModelScope.launch {
+            app.chatGptAuthManager.state.collect {
+                _uiState.update { state -> state.copy(isConfigured = app.providerReadiness().overallReady) }
             }
         }
 
