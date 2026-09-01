@@ -17,6 +17,9 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 internal data class TokenResponse(@SerializedName("id_token") val idToken: String?, @SerializedName("access_token") val accessToken: String?, @SerializedName("refresh_token") val refreshToken: String?, @SerializedName("expires_in") val expiresIn: Long?)
 internal data class DeviceCode(val deviceAuthId: String, val userCode: String, val interval: Long)
@@ -82,15 +85,24 @@ internal object ChatGptDeviceProtocol {
 
 internal object OkHttpCallAwaiter {
     suspend fun await(call: Call): Pair<Int, String> = suspendCancellableCoroutine { continuation ->
-        continuation.invokeOnCancellation { call.cancel() }
+        val terminal = AtomicBoolean(false)
+        continuation.invokeOnCancellation {
+            terminal.compareAndSet(false, true)
+            call.cancel()
+        }
         call.enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                continuation.tryResumeWithException(e)?.let(continuation::completeResume)
+                if (terminal.compareAndSet(false, true)) continuation.resumeWithException(e)
             }
             override fun onResponse(call: Call, response: Response) {
                 response.use {
-                    val result = it.code to it.body?.string().orEmpty()
-                    continuation.tryResume(result)?.let(continuation::completeResume)
+                    val result = try {
+                        it.code to it.body?.string().orEmpty()
+                    } catch (failure: IOException) {
+                        if (terminal.compareAndSet(false, true)) continuation.resumeWithException(failure)
+                        return
+                    }
+                    if (terminal.compareAndSet(false, true)) continuation.resume(result)
                 }
             }
         })

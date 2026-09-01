@@ -7,11 +7,16 @@ internal interface BrowserCallbackResponder {
 }
 
 internal object BrowserCallbackCompletion {
-    suspend fun <T> complete(callback: BrowserCallbackResponder, operation: suspend () -> T): T = try {
-        operation().also { callback.success() }
-    } catch (failure: Throwable) {
-        runCatching { callback.failure() }
-        throw failure
+    suspend fun <T> complete(callback: BrowserCallbackResponder, operation: suspend () -> T): T {
+        val result = try {
+            operation()
+        } catch (failure: Throwable) {
+            runCatching { callback.failure() }
+            throw failure
+        }
+        // Authentication is already committed. Browser delivery is informational only.
+        runCatching { callback.success() }
+        return result
     }
 }
 

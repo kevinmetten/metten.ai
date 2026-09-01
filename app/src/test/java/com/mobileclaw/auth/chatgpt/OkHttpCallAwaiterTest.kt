@@ -18,6 +18,8 @@ class OkHttpCallAwaiterTest {
         request.cancel()
         runCatching { request.await() }
         assertTrue(call.isCanceled())
+        call.failAfterCancellation()
+        assertTrue(request.isCancelled)
     }
 
     private class FakeCall : Call {
@@ -25,12 +27,14 @@ class OkHttpCallAwaiterTest {
         private var canceled = false
         override fun request(): Request = Request.Builder().url("https://auth.openai.com/oauth/token").build()
         override fun execute(): Response = throw UnsupportedOperationException()
-        override fun enqueue(responseCallback: Callback) { enqueued.complete(Unit) }
+        private var callback: Callback? = null
+        override fun enqueue(responseCallback: Callback) { callback = responseCallback; enqueued.complete(Unit) }
         override fun cancel() { canceled = true }
         override fun isExecuted() = true
         override fun isCanceled() = canceled
         override fun timeout() = Timeout.NONE
         override fun clone(): Call = FakeCall()
         suspend fun awaitEnqueued() = enqueued.await()
+        fun failAfterCancellation() = callback?.onFailure(this, java.io.IOException("late callback"))
     }
 }
