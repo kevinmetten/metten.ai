@@ -16,7 +16,7 @@ import java.io.Reader
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
-import java.util.concurrent.ConcurrentHashMap
+import java.util.LinkedHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -208,8 +208,9 @@ internal class ChatGptResponsesStreamParser(private val gson: Gson = Gson()) {
                     }
                     val replayableReasoning = item.string("type") == "reasoning" &&
                         item["encrypted_content"]?.takeUnless { it.isJsonNull } != null
+                    val replayableAssistantMessage = item.string("type") == "message" && item.string("role") == "assistant"
                     if (event.string("type") == "response.output_item.done" &&
-                        (replayableReasoning || item.string("type") == "function_call")
+                        (replayableReasoning || replayableAssistantMessage || item.string("type") == "function_call")
                     ) replayItems += item.deepCopy()
                 }
                 "response.completed" -> completed = true
@@ -246,16 +247,22 @@ internal class ChatGptResponsesStreamParser(private val gson: Gson = Gson()) {
 }
 
 /** Bounded, process-memory-only provider state. Values are never logged or persisted. */
+internal data class ChatGptTurnReplay(val callId: String, val orderedItems: List<JsonObject>)
+
 internal class ChatGptTurnReplayStore(private val maxEntries: Int = 64) {
-    private val turns = ConcurrentHashMap<String, List<JsonObject>>()
+    private val turns = LinkedHashMap<String, List<JsonObject>>()
 
     @Synchronized fun put(callId: String, items: List<JsonObject>) {
         if (callId.isBlank() || items.isEmpty()) return
-        if (turns.size >= maxEntries) turns.keys.firstOrNull()?.let { turns.remove(it) }
+        turns.remove(callId)
         turns[callId] = items.map(JsonObject::deepCopy)
+        while (turns.size > maxEntries) turns.entries.iterator().run { next(); remove() }
     }
 
-    @Synchronized fun take(callIds: Set<String>): List<JsonObject> = callIds.flatMap { id -> turns.remove(id).orEmpty() }
+    /** Non-destructive independent snapshots let background and main requests replay the same turn. */
+    @Synchronized fun snapshot(callIds: List<String>): List<ChatGptTurnReplay> = callIds.distinct().mapNotNull { id ->
+        turns[id]?.let { items -> ChatGptTurnReplay(id, items.map(JsonObject::deepCopy)) }
+    }
 }
 
 internal class ChatGptResponseException(val category: String, message: String) : IOException(message)
@@ -275,9 +282,9 @@ class ChatGptOAuthGateway internal constructor(
     override suspend fun chat(request: ChatRequest): ChatResponse {
         val model = resolveModel(request)
         val backendCredentials = credentials.credentials()
-        val outputCallIds = request.messages.filter { it.role == "tool" }.mapNotNull { it.toolCallId }.toSet()
-        val replayItems = replayStore.take(outputCallIds)
-        val json = buildResponsesRequest(request, model, replayItems)
+        val outputCallIds = request.messages.filter { it.role == "tool" }.mapNotNull { it.toolCallId }
+        val replayTurns = replayStore.snapshot(outputCallIds)
+        val json = buildResponsesRequest(request, model, replayTurns)
         val httpRequest = Request.Builder().url("$root/responses")
             .chatGptHeaders(backendCredentials)
             .header("Content-Type", "application/json")
@@ -293,18 +300,20 @@ class ChatGptOAuthGateway internal constructor(
 
     internal suspend fun resolveModel(request: ChatRequest): String {
         val snapshot = config.snapshot()
-        ChatGptModelResolver.resolve(request.callOptions.model, snapshot.chatGptModel, models.pickerModels())?.let { return it }
-        val selected = ChatGptModelResolver.resolve(null, null, models.pickerModels(models.fetchModels(force = false)))
-            ?: throw IOException("Could not discover an available ChatGPT model. Please try again.")
-        config.updateChatGptModel(selected)
-        return selected
+        return ChatGptModelResolver.resolveOrDiscover(
+            request.callOptions.model,
+            snapshot.chatGptModel,
+            models.pickerModels(),
+            discover = { models.pickerModels(models.fetchModels(force = false)) },
+            persist = config::updateChatGptModel,
+        )
     }
 
     override suspend fun embed(text: String): FloatArray =
         throw UnsupportedOperationException("ChatGPT subscription does not provide embeddings.")
 
-    internal fun buildResponsesRequest(request: ChatRequest, model: String, replayItems: List<JsonObject> = emptyList()): JsonObject =
-        ChatGptResponsesRequestMapper.buildResponsesRequest(request, model, replayItems)
+    internal fun buildResponsesRequest(request: ChatRequest, model: String, replayTurns: List<ChatGptTurnReplay> = emptyList()): JsonObject =
+        ChatGptResponsesRequestMapper.buildResponsesRequest(request, model, replayTurns)
 }
 
 internal object ChatGptModelResolver {
@@ -312,32 +321,57 @@ internal object ChatGptModelResolver {
         requestModel?.takeIf(String::isNotBlank)
             ?: storedModel?.takeIf(String::isNotBlank)
             ?: pickerModels.firstOrNull()?.slug
+
+    suspend fun resolveOrDiscover(
+        requestModel: String?,
+        storedModel: String?,
+        cachedModels: List<ChatGptModel>,
+        discover: suspend () -> List<ChatGptModel>,
+        persist: suspend (String) -> Unit,
+    ): String {
+        resolve(requestModel, storedModel, cachedModels)?.let { return it }
+        val selected = discover().firstOrNull()?.slug
+            ?: throw IOException("Could not discover an available ChatGPT model. Please try again.")
+        persist(selected)
+        return selected
+    }
 }
 
 internal object ChatGptResponsesRequestMapper {
     private val gson = Gson()
-    internal fun buildResponsesRequest(request: ChatRequest, model: String, replayItems: List<JsonObject> = emptyList()): JsonObject {
+    internal fun buildResponsesRequest(request: ChatRequest, model: String, replayTurns: List<ChatGptTurnReplay> = emptyList()): JsonObject {
         val input = JsonArray()
-        val replayCallIds = replayItems.mapNotNull { if (it.string("type") == "function_call") it.string("call_id") else null }.toSet()
+        val replayByCallId = replayTurns.associateBy(ChatGptTurnReplay::callId)
         val consumedReplay = mutableSetOf<String>()
         request.messages.filterNot { it.role == "system" }.forEach { msg ->
             when {
                 msg.toolCalls != null -> {
-                    val replayCallId = msg.toolCalls.firstOrNull { it.id in replayCallIds }?.id
-                    if (replayCallId != null) replayItems.filter { it.string("type") == "reasoning" }.forEach { input.add(it.deepCopy()) }
-                    if (!msg.content.isNullOrBlank()) input.add(messageItem(msg.role, msg.content, msg.imageBase64))
+                    var genericAssistantEmitted = false
                     msg.toolCalls.forEach { call ->
-                        val captured = replayItems.firstOrNull { it.string("type") == "function_call" && it.string("call_id") == call.id }
-                        if (captured != null) { input.add(captured.deepCopy()); consumedReplay += call.id }
-                        else input.add(JsonObject().apply {
+                        val replay = replayByCallId[call.id]
+                        if (replay != null) {
+                            val hasProviderMessage = replay.orderedItems.any { it.string("type") == "message" }
+                            replay.orderedItems.forEach { item ->
+                                if (!hasProviderMessage && !genericAssistantEmitted && item.string("type") == "function_call" && !msg.content.isNullOrBlank()) {
+                                    input.add(messageItem(msg.role, msg.content, msg.imageBase64)); genericAssistantEmitted = true
+                                }
+                                input.add(item.deepCopy())
+                            }
+                            consumedReplay += call.id
+                        } else {
+                            if (!genericAssistantEmitted && !msg.content.isNullOrBlank()) {
+                                input.add(messageItem(msg.role, msg.content, msg.imageBase64)); genericAssistantEmitted = true
+                            }
+                            input.add(JsonObject().apply {
                             addProperty("type", "function_call"); addProperty("call_id", call.id)
                             addProperty("name", call.skillId); addProperty("arguments", gson.toJson(call.params))
-                        })
+                            })
+                        }
                     }
                 }
                 msg.role == "tool" && msg.toolCallId != null -> {
-                    if (msg.toolCallId !in consumedReplay && msg.toolCallId in replayCallIds) {
-                        replayItems.forEach { input.add(it.deepCopy()) }
+                    if (msg.toolCallId !in consumedReplay) {
+                        replayByCallId[msg.toolCallId]?.orderedItems?.forEach { input.add(it.deepCopy()) }
                         consumedReplay += msg.toolCallId
                     }
                     input.add(JsonObject().apply {

@@ -71,6 +71,16 @@ class CloudProviderResolverTest {
         assertEquals("catalog-default", ChatGptModelResolver.resolve(null, "", listOf(ChatGptModel("catalog-default", visibility = "list"))))
     }
 
+    @Test fun `restored session discovers and persists a model with empty cache`() = runBlocking {
+        var persisted: String? = null
+        val selected = ChatGptModelResolver.resolveOrDiscover(null, "", emptyList(),
+            discover = { listOf(ChatGptModel("discovered-default", visibility = "list")) },
+            persist = { persisted = it },
+        )
+        assertEquals("discovered-default", selected)
+        assertEquals("discovered-default", persisted)
+    }
+
     @Test fun `router delegates explicit gateway override and auto ChatGPT correctly`() = runBlocking {
         class FakeGateway(private val label: String) : LlmGateway {
             var calls = 0
