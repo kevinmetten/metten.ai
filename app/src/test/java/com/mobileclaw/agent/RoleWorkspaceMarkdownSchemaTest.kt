@@ -73,6 +73,25 @@ class RoleWorkspaceMarkdownSchemaTest {
     }
 
     @Test
+    fun `legacy empty forced skills fallback migrates without changing role data or Unicode`() {
+        val legacyFallback = chars(
+            0x2d, 0x20, 0x5f53, 0x524d, 0x89d2, 0x8272, 0x6ca1, 0x6709, 0x5f3a, 0x5236,
+            0x6280, 0x80fd, 0xff1b, 0x6309, 0x4efb, 0x52a1, 0x9700, 0x8981, 0x9009, 0x62e9,
+            0x3002,
+        )
+        val forcedSkills = "- web_search, generate_document"
+        val unrelatedUnicode = "User note: 天気 ☀️ — لوحة المشروع"
+        val markdown = "# Chat Execution Protocol\n\n## Skill Policy\n$legacyFallback\n$forcedSkills\n$unrelatedUnicode\n"
+
+        val migrated = RoleWorkspaceMarkdownMigrator.migrate(RoleWorkspaceStore.CHAT_PROTOCOL_MD, markdown)
+
+        assertTrue(migrated.contains("- This role has no forced skills; select them according to the task."))
+        assertTrue(migrated.contains(forcedSkills))
+        assertTrue(migrated.contains(unrelatedUnicode))
+        assertFalse(migrated.contains(legacyFallback))
+    }
+
+    @Test
     fun `migration merges duplicate canonical sections and is idempotent`() {
         val workingMethod = chars(0x5de5, 0x4f5c, 0x65b9, 0x6cd5)
         val markdown = "# Role\n\n## Working Method\nCanonical body.\n\n## $workingMethod\nLegacy body.\n"

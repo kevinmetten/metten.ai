@@ -54,6 +54,7 @@ import com.mobileclaw.config.capabilityApiKey
 import com.mobileclaw.config.capabilityEndpoint
 import com.mobileclaw.config.capabilityModel
 import com.mobileclaw.config.hasCapability
+import com.mobileclaw.config.responseLanguageShortInstruction
 import com.mobileclaw.config.supportsCapabilityMultimodal
 import com.mobileclaw.llm.ChatRequest
 import com.mobileclaw.llm.LlmCallOptions
@@ -2100,7 +2101,7 @@ class MainViewModel : ViewModel() {
         }
         val route = resolveRunRoute(goal, prepared, routeOverride)
         val execution = prepareRunExecution(goal, visibleUserText, prepared, route, routeOverride)
-        val executionMode = determineChatExecutionMode(prepared, route, execution)
+        val executionMode = determineChatExecutionMode(goal, prepared, route, execution)
         val runtimePlan = createChatRuntimePlan(
             goal = goal,
             visibleUserText = visibleUserText,
@@ -3081,6 +3082,7 @@ class MainViewModel : ViewModel() {
     }
 
     private fun determineChatExecutionMode(
+        goal: String,
         prepared: PreparedRunInput,
         route: TaskRoute,
         execution: PreparedRunExecution,
@@ -3097,7 +3099,7 @@ class MainViewModel : ViewModel() {
         }
         if (prepared.attachedImage == null &&
             prepared.attachedFile == null &&
-            shouldRunDirectChat(route, execution.roleControlPlan, goal)) {
+            shouldRunDirectChat(route, execution.roleControlPlan, execution.contextualGoal.ifBlank { goal })) {
             return ChatExecutionMode.DIRECT_CHAT
         }
         return ChatExecutionMode.AGENT
@@ -3480,7 +3482,7 @@ class MainViewModel : ViewModel() {
         executionContext: String,
         imageBase64: String?,
     ): DirectChatContext {
-        val langSection = "\nYou MUST respond in English.\n"
+        val langSection = "\n${responseLanguageShortInstruction()}\n"
         val roleSection = if (currentRole.id != "general" && currentRole.systemPromptAddendum.isNotBlank()) {
             "\n## Your Persona\n${currentRole.systemPromptAddendum.trim()}\n"
         } else ""

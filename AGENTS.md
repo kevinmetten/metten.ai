@@ -10,6 +10,6 @@ All Android Compose UI work in this project must follow the chat list / conversa
 - Use mint `#56D6BA` only for tiny online, working, progress, or AI status cues.
 - Do not add blue, purple, cyan, colorful gradients, or accent-tinted page themes for app surfaces.
 - Lists should match the conversation list language: leading avatar/tile, bold title, muted subtitle/meta, optional right action, and thin inset dividers.
-- Role list, role detail, role edit, settings, skills, workspace, MiniAPP, image, video, group chat, and future pages should all read as the same app.
+- Role list, role detail, role edit, settings, skills, workspace, MiniAPP, image, video, Agent Town, and future pages should all read as the same app.
 
 See `docs/mobile-claw-ui-style.md` before adding or redesigning UI.
