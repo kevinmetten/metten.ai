@@ -27,6 +27,24 @@ class ChatGptJwtMetadataTest {
         assertEquals(ChatGptAccountInfo(), ChatGptJwtMetadata.extract("bad", "also.bad"))
     }
 
+    @Test fun `access token fills metadata omitted by id token`() {
+        val id = jwt(mapOf("email" to "id@example.test"))
+        val access = jwt(mapOf("https://api.openai.com/auth" to mapOf(
+            "chatgpt_plan_type" to "plus", "chatgpt_user_id" to "access-user",
+            "chatgpt_compute_residency" to "eu", "chatgpt_account_is_fedramp" to true,
+        ), "chatgpt_account_id" to "access-account"))
+        val info = ChatGptJwtMetadata.extract(id, access)
+        assertEquals("id@example.test", info.email); assertEquals("plus", info.planType)
+        assertEquals("access-user", info.chatGptUserId); assertEquals("access-account", info.chatGptAccountId)
+        assertEquals("eu", info.computeResidency); assertEquals(true, info.isFedRamp)
+    }
+
+    @Test fun `account id supports top level custom auth and organization paths`() {
+        assertEquals("top", ChatGptJwtMetadata.extract(jwt(mapOf("chatgpt_account_id" to "top")), null).chatGptAccountId)
+        assertEquals("custom", ChatGptJwtMetadata.extract(jwt(mapOf("https://api.openai.com/auth" to mapOf("chatgpt_account_id" to "custom"))), null).chatGptAccountId)
+        assertEquals("org", ChatGptJwtMetadata.extract(jwt(mapOf("organizations" to listOf(mapOf("id" to "org")))), null).chatGptAccountId)
+    }
+
     @Test fun `expiration uses response JWT and skew`() {
         assertEquals(1_061_000L, ChatGptExpiration.resolve(1_000L, 1060, null))
         val token = jwt(mapOf("exp" to 1234))

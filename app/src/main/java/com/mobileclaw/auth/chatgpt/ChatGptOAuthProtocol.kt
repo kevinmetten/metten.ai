@@ -30,9 +30,9 @@ internal class CallbackValidator(private val expectedState: String) {
         if (path != "/auth/callback") throw ChatGptAuthException("Unrelated callback route.")
         if (completed) throw ChatGptAuthException("This sign-in response was already handled.")
         completed = true
-        parameters["error"]?.let { throw ChatGptAuthException(parameters["error_description"] ?: "Sign-in was cancelled.") }
         val state = parameters["state"] ?: throw ChatGptAuthException("The sign-in response was missing state.")
         if (state != expectedState) throw ChatGptAuthException("The sign-in response did not match this request. Please try again.")
+        parameters["error"]?.let { throw ChatGptAuthException(parameters["error_description"] ?: "Sign-in was cancelled.") }
         return parameters["code"] ?: throw ChatGptAuthException("The sign-in response was missing a code.")
     }
 }
@@ -41,20 +41,25 @@ object ChatGptJwtMetadata {
     fun extract(idToken: String?, accessToken: String?): ChatGptAccountInfo {
         val id = payload(idToken)
         val access = payload(accessToken)
-        val source = id ?: access ?: JsonObject()
-        val auth = source.obj("https://api.openai.com/auth")
-        val profile = source.obj("https://api.openai.com/profile")
+        val idAuth = id?.obj("https://api.openai.com/auth")
+        val accessAuth = access?.obj("https://api.openai.com/auth")
+        val idProfile = id?.obj("https://api.openai.com/profile")
+        val accessProfile = access?.obj("https://api.openai.com/profile")
         fun account(root: JsonObject?): String? = root?.string("chatgpt_account_id")
             ?: root?.obj("https://api.openai.com/auth")?.string("chatgpt_account_id")
             ?: root?.getAsJsonArray("organizations")?.firstOrNull()?.asJsonObject?.string("id")
-        val residency = auth?.string("chatgpt_compute_residency") ?: source.string("chatgpt_compute_residency")
+        val residency = idAuth?.string("chatgpt_compute_residency") ?: id?.string("chatgpt_compute_residency")
+            ?: accessAuth?.string("chatgpt_compute_residency") ?: access?.string("chatgpt_compute_residency")
         return ChatGptAccountInfo(
-            email = source.string("email") ?: profile?.string("email"),
-            planType = auth?.string("chatgpt_plan_type") ?: source.string("chatgpt_plan_type"),
-            chatGptUserId = auth?.string("chatgpt_user_id") ?: auth?.string("user_id") ?: source.string("chatgpt_user_id"),
+            email = id?.string("email") ?: idProfile?.string("email") ?: access?.string("email") ?: accessProfile?.string("email"),
+            planType = idAuth?.string("chatgpt_plan_type") ?: id?.string("chatgpt_plan_type")
+                ?: accessAuth?.string("chatgpt_plan_type") ?: access?.string("chatgpt_plan_type"),
+            chatGptUserId = idAuth?.string("chatgpt_user_id") ?: idAuth?.string("user_id") ?: id?.string("chatgpt_user_id")
+                ?: accessAuth?.string("chatgpt_user_id") ?: accessAuth?.string("user_id") ?: access?.string("chatgpt_user_id"),
             chatGptAccountId = account(id) ?: account(access),
             computeResidency = residency?.takeUnless { it == "no_constraint" },
-            isFedRamp = auth?.get("chatgpt_account_is_fedramp")?.takeIf { it.isJsonPrimitive }?.asBoolean,
+            isFedRamp = boolean(idAuth, "chatgpt_account_is_fedramp") ?: boolean(id, "chatgpt_account_is_fedramp")
+                ?: boolean(accessAuth, "chatgpt_account_is_fedramp") ?: boolean(access, "chatgpt_account_is_fedramp"),
         )
     }
 
@@ -65,6 +70,7 @@ object ChatGptJwtMetadata {
     }.getOrNull()
     private fun JsonObject.string(name: String) = get(name)?.takeIf { it.isJsonPrimitive }?.asString?.takeIf(String::isNotBlank)
     private fun JsonObject.obj(name: String) = get(name)?.takeIf { it.isJsonObject }?.asJsonObject
+    private fun boolean(value: JsonObject?, name: String) = value?.get(name)?.takeIf { it.isJsonPrimitive }?.runCatching { asBoolean }?.getOrNull()
 }
 
 object ChatGptExpiration {

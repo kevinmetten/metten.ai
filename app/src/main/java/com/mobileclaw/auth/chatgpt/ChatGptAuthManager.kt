@@ -7,8 +7,6 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.InetAddress
@@ -18,22 +16,26 @@ class ChatGptAuthManager(private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val store = ChatGptCredentialStore(context)
     private val api = ChatGptAuthApi()
-    private val loginMutex = Mutex()
-    private val refreshMutex = Mutex()
     private val _state = MutableStateFlow<ChatGptAuthState>(ChatGptAuthState.SignedOut)
     val state: StateFlow<ChatGptAuthState> = _state.asStateFlow()
     @Volatile private var credentials: Pair<ChatGptOAuthTokens, ChatGptAccountInfo>? = null
+    private lateinit var refreshCoordinator: ChatGptRefreshCoordinator
     private var loginJob: Job? = null
-    private var listener: ServerSocket? = null
+    private var loginGeneration = 0L
+    private var listener: Pair<Long, ServerSocket>? = null
 
     init {
         credentials = store.load()
+        refreshCoordinator = ChatGptRefreshCoordinator(api, store, credentials, onState = { _state.value = it })
         credentials?.let { _state.value = ChatGptAuthState.SignedIn(it.second) }
     }
 
-    fun signInWithBrowser() = startLogin {
+    fun signInWithBrowser() = startLogin { generation ->
         val socket = bindLoopback()
-        listener = socket
+        synchronized(this) {
+            if (loginGeneration != generation) { socket.close(); throw CancellationException() }
+            listener = generation to socket
+        }
         val redirect = "http://localhost:${socket.localPort}/auth/callback"
         val pkce = ChatGptPkce.generate()
         val oauthState = ChatGptOAuthProtocol.generateState()
@@ -43,7 +45,7 @@ class ChatGptAuthManager(private val context: Context) {
         complete(api.exchange(code, redirect, pkce.verifier))
     }
 
-    fun signInWithDeviceCode() = startLogin {
+    fun signInWithDeviceCode() = startLogin { _ ->
         val device = api.deviceCode()
         _state.value = ChatGptAuthState.AwaitingDeviceCode(device.userCode)
         val result = withTimeout(15 * 60 * 1000L) {
@@ -58,68 +60,47 @@ class ChatGptAuthManager(private val context: Context) {
 
     fun openDeviceVerificationPage() = openBrowser(ChatGptOAuth.DEVICE_VERIFICATION_URL)
 
-    fun cancelLogin() {
-        loginJob?.cancel()
-        listener?.runCatching { close() }
-        listener = null
-        loginJob = null
+    @Synchronized fun cancelLogin() {
+        loginGeneration++
+        val oldJob = loginJob
+        val oldListener = listener
+        loginJob = null; listener = null
+        oldJob?.cancel()
+        oldListener?.second?.runCatching { close() }
         _state.value = credentials?.let { ChatGptAuthState.SignedIn(it.second) } ?: ChatGptAuthState.SignedOut
     }
 
     fun signOut() {
         cancelLogin()
-        scope.launch {
-            val old = credentials
-            runCatching { old?.let { api.revoke(it.first) } }
-            credentials = null
-            store.clear()
-            _state.value = ChatGptAuthState.SignedOut
-        }
+        val old = credentials
+        credentials = null; refreshCoordinator.clear(); store.clear(); _state.value = ChatGptAuthState.SignedOut
+        scope.launch { runCatching { old?.let { api.revoke(it.first) } } }
     }
 
-    suspend fun getValidBackendCredentials(): ChatGptBackendCredentials = refreshMutex.withLock {
-        var current = credentials ?: throw ChatGptAuthException("Your ChatGPT session has expired. Please sign in again.")
-        if (ChatGptExpiration.requiresRefresh(current.first.accessTokenExpiresAt, System.currentTimeMillis())) {
-            _state.value = ChatGptAuthState.Refreshing(current.second)
-            val refresh = current.first.refreshToken ?: return@withLock expireSession()
-            try {
-                val response = api.refresh(refresh)
-                val access = response.accessToken ?: current.first.accessToken
-                val tokens = ChatGptOAuthTokens(response.idToken ?: current.first.idToken, access,
-                    response.refreshToken ?: current.first.refreshToken,
-                    ChatGptExpiration.resolve(System.currentTimeMillis(), response.expiresIn, access))
-                val extracted = ChatGptJwtMetadata.extract(response.idToken, response.accessToken)
-                val oldId = current.second.chatGptAccountId
-                val newId = extracted.chatGptAccountId
-                if (oldId != null && newId != null && oldId != newId) return@withLock expireSession()
-                val account = mergeAccount(current.second, extracted)
-                store.save(tokens, account)
-                credentials = tokens to account
-                current = tokens to account
-                _state.value = ChatGptAuthState.SignedIn(account)
-            } catch (_: Throwable) { return@withLock expireSession() }
-        }
-        ChatGptBackendCredentials(current.first.accessToken, current.second.chatGptAccountId, current.second.computeResidency)
+    suspend fun getValidBackendCredentials(): ChatGptBackendCredentials = try {
+        refreshCoordinator.credentials()
+    } finally {
+        credentials = refreshCoordinator.current
     }
 
-    private fun expireSession(): Nothing {
-        credentials = null; store.clear(); _state.value = ChatGptAuthState.Error("Your ChatGPT session has expired. Please sign in again.")
-        throw ChatGptAuthException("Your ChatGPT session has expired. Please sign in again.")
-    }
-
-    private fun startLogin(block: suspend () -> Unit) {
+    @Synchronized private fun startLogin(block: suspend (Long) -> Unit) {
         if (loginJob?.isActive == true) return
-        loginJob = scope.launch {
-            loginMutex.withLock {
+        val generation = ++loginGeneration
+        val job = scope.launch {
                 _state.value = ChatGptAuthState.SigningIn
-                try { block() }
+                try { block(generation) }
                 catch (_: TimeoutCancellationException) { _state.value = ChatGptAuthState.Error("ChatGPT sign-in timed out.") }
                 catch (_: CancellationException) { }
                 catch (e: ChatGptAuthException) { _state.value = ChatGptAuthState.Error(e.message ?: "Could not complete ChatGPT sign-in.") }
                 catch (_: Throwable) { _state.value = ChatGptAuthState.Error("Could not reach the ChatGPT authentication service.") }
-                finally { listener?.runCatching { close() }; listener = null; loginJob = null }
-            }
+                finally { synchronized(this@ChatGptAuthManager) {
+                    if (loginGeneration == generation) {
+                        listener?.takeIf { it.first == generation }?.second?.runCatching { close() }
+                        listener = null; loginJob = null
+                    }
+                } }
         }
+        loginJob = job
     }
 
     private fun bindLoopback(): ServerSocket {
@@ -151,9 +132,9 @@ class ChatGptAuthManager(private val context: Context) {
         val account = ChatGptJwtMetadata.extract(response.idToken, access)
         try { store.save(tokens, account) } catch (_: Throwable) { throw ChatGptAuthException("Could not save credentials securely.") }
         credentials = tokens to account
+        refreshCoordinator.replace(tokens, account)
         _state.value = ChatGptAuthState.SignedIn(account)
     }
 
     private fun openBrowser(url: String) = context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-    private fun mergeAccount(old: ChatGptAccountInfo, new: ChatGptAccountInfo) = ChatGptAccountInfo(new.email ?: old.email, new.planType ?: old.planType, new.chatGptUserId ?: old.chatGptUserId, new.chatGptAccountId ?: old.chatGptAccountId, new.computeResidency ?: old.computeResidency, new.isFedRamp ?: old.isFedRamp)
 }

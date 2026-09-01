@@ -13,22 +13,32 @@ import javax.crypto.spec.GCMParameterSpec
 internal data class StoredCredentials(val tokens: StoredTokens, val account: ChatGptAccountInfo)
 internal data class StoredTokens(val idToken: String?, val accessToken: String, val refreshToken: String?, val accessTokenExpiresAt: Long)
 
-class ChatGptCredentialStore(context: Context) {
+internal interface ChatGptCredentialRepository {
+    fun save(tokens: ChatGptOAuthTokens, account: ChatGptAccountInfo)
+    fun load(): Pair<ChatGptOAuthTokens, ChatGptAccountInfo>?
+    fun clear()
+}
+
+internal class ChatGptCredentialStore(context: Context) : ChatGptCredentialRepository {
     private val prefs = context.getSharedPreferences("chatgpt_oauth_encrypted_v1", Context.MODE_PRIVATE)
     private val gson = Gson()
     private val alias = "com.mobileclaw.chatgpt.oauth.aes.v1"
 
-    internal fun save(tokens: ChatGptOAuthTokens, account: ChatGptAccountInfo) {
+    override fun save(tokens: ChatGptOAuthTokens, account: ChatGptAccountInfo) {
         val plaintext = gson.toJson(StoredCredentials(StoredTokens(tokens.idToken, tokens.accessToken, tokens.refreshToken, tokens.accessTokenExpiresAt), account)).toByteArray()
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
-        val encrypted = cipher.doFinal(plaintext)
-        prefs.edit().putInt("version", 1)
-            .putString("iv", android.util.Base64.encodeToString(cipher.iv, android.util.Base64.NO_WRAP))
-            .putString("ciphertext", android.util.Base64.encodeToString(encrypted, android.util.Base64.NO_WRAP)).commit()
-        plaintext.fill(0)
+        try {
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
+            val encrypted = cipher.doFinal(plaintext)
+            val persisted = prefs.edit().putInt("version", 1)
+                .putString("iv", android.util.Base64.encodeToString(cipher.iv, android.util.Base64.NO_WRAP))
+                .putString("ciphertext", android.util.Base64.encodeToString(encrypted, android.util.Base64.NO_WRAP)).commit()
+            if (!persisted) throw ChatGptAuthException("Could not save credentials securely.")
+        } finally {
+            plaintext.fill(0)
+        }
     }
 
-    internal fun load(): Pair<ChatGptOAuthTokens, ChatGptAccountInfo>? {
+    override fun load(): Pair<ChatGptOAuthTokens, ChatGptAccountInfo>? {
         if (!prefs.contains("ciphertext")) return null
         return try {
             require(prefs.getInt("version", 0) == 1)
@@ -46,7 +56,7 @@ class ChatGptCredentialStore(context: Context) {
         }
     }
 
-    fun clear() { prefs.edit().clear().commit() }
+    override fun clear() { prefs.edit().clear().commit() }
 
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }

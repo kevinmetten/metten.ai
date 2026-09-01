@@ -67,4 +67,9 @@ sealed interface ChatGptAuthState {
     data class Error(val message: String) : ChatGptAuthState
 }
 
-class ChatGptAuthException(message: String) : Exception(message)
+open class ChatGptAuthException(message: String) : Exception(message)
+
+sealed class ChatGptRefreshException(message: String) : ChatGptAuthException(message) {
+    class Permanent(message: String = "Your ChatGPT session expired. Please sign in again.") : ChatGptRefreshException(message)
+    class Transient(message: String = "Could not refresh the ChatGPT session. Please try again.") : ChatGptRefreshException(message)
+}

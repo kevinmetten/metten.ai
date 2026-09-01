@@ -37,7 +37,7 @@ class ChatGptOAuthProtocolTest {
         assertFails { CallbackValidator("state").validate("/auth/callback", mapOf("code" to "x")) }
         assertFails { CallbackValidator("state").validate("/auth/callback", mapOf("state" to "state")) }
         assertFails { CallbackValidator("state").validate("/else", emptyMap()) }
-        val error = runCatching { CallbackValidator("state").validate("/auth/callback", mapOf("error" to "denied", "error_description" to "cancelled")) }.exceptionOrNull()
+        val error = runCatching { CallbackValidator("state").validate("/auth/callback", mapOf("state" to "state", "error" to "denied", "error_description" to "cancelled")) }.exceptionOrNull()
         assertTrue(error?.message?.contains("cancelled") == true)
         val once = CallbackValidator("state")
         once.validate("/auth/callback", mapOf("state" to "state", "code" to "one"))
