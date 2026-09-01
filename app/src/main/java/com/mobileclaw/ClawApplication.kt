@@ -5,6 +5,7 @@ import android.app.Application
 import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import com.mobileclaw.agent.RoleManager
+import com.mobileclaw.auth.chatgpt.ChatGptAuthManager
 import com.mobileclaw.agent.RoleWorkspaceStore
 import com.mobileclaw.agent.TaskRecipeStore
 import com.mobileclaw.agent.TaskReplayStore
@@ -43,6 +44,9 @@ import kotlinx.coroutines.runBlocking
 import java.util.UUID
 
 class ClawApplication : Application() {
+
+    lateinit var chatGptAuthManager: ChatGptAuthManager
+        private set
 
     lateinit var database: ClawDatabase
         private set
@@ -134,6 +138,7 @@ class ClawApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        chatGptAuthManager = ChatGptAuthManager(this)
         registerForegroundCallbacks()
         database = ClawDatabase.getInstance(this)
         agentConfig = AgentConfig(this)

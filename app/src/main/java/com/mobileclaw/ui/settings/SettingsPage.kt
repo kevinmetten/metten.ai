@@ -50,6 +50,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mobileclaw.R
+import com.mobileclaw.ClawApplication
+import com.mobileclaw.auth.chatgpt.ChatGptAuthState
 import com.mobileclaw.config.CacheCategory
 import com.mobileclaw.config.CacheCleaner
 import com.mobileclaw.config.ConfigSnapshot
@@ -481,6 +483,8 @@ fun SettingsPage(
                     userConfigEntries[CODEX_DESKTOP_TOKEN_KEY]?.value.orEmpty().isNotBlank()
                 val roleRuntimeDryRunEnabled = userConfigEntries[ROLE_RUNTIME_DRY_RUN_TRACE_KEY]?.value == "true"
 
+                ChatGptAccountCard((context.applicationContext as ClawApplication), c)
+
                 SettingsHubCard(c) {
                     SettingsCategoryRow(
                         iconKey = "gateway",
@@ -678,6 +682,55 @@ fun SettingsPage(
                 onBack = { subPage = null },
             )
             else -> Unit
+        }
+    }
+}
+
+@Composable
+private fun ChatGptAccountCard(app: ClawApplication, c: ClawColors) {
+    val manager = app.chatGptAuthManager
+    val state by manager.state.collectAsState()
+    SettingsHubCard(c) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("ChatGPT Account", color = c.text, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+            when (val current = state) {
+                ChatGptAuthState.SignedOut -> {
+                    Text("Use your ChatGPT subscription with MobileClaw", color = c.subtext, fontSize = 12.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = manager::signInWithBrowser, colors = ButtonDefaults.buttonColors(containerColor = c.text, contentColor = c.bg)) { Text("Sign in with ChatGPT") }
+                        OutlinedButton(onClick = manager::signInWithDeviceCode, border = androidx.compose.foundation.BorderStroke(0.8.dp, c.border)) { Text("Use device code", color = c.text) }
+                    }
+                }
+                ChatGptAuthState.SigningIn -> Text("Starting secure sign-in…", color = c.subtext, fontSize = 12.sp)
+                is ChatGptAuthState.AwaitingBrowser -> {
+                    Text("Waiting for ChatGPT sign-in…", color = c.text, fontWeight = FontWeight.Medium)
+                    Text(current.message, color = c.subtext, fontSize = 12.sp)
+                    OutlinedButton(onClick = manager::cancelLogin) { Text("Cancel", color = c.text) }
+                }
+                is ChatGptAuthState.AwaitingDeviceCode -> {
+                    Text("Enter this code:", color = c.subtext, fontSize = 12.sp)
+                    SelectionContainer { Text(current.userCode, color = c.text, fontWeight = FontWeight.Bold, fontSize = 20.sp) }
+                    Text("Waiting for authorization…", color = c.subtext, fontSize = 12.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = manager::openDeviceVerificationPage, colors = ButtonDefaults.buttonColors(containerColor = c.text, contentColor = c.bg)) { Text("Open verification page") }
+                        OutlinedButton(onClick = manager::cancelLogin) { Text("Cancel", color = c.text) }
+                    }
+                }
+                is ChatGptAuthState.SignedIn -> {
+                    Text("Connected", color = c.text, fontWeight = FontWeight.Medium)
+                    current.account.email?.let { Text(it, color = c.subtext, fontSize = 12.sp) }
+                    current.account.planType?.let { Text(it.replaceFirstChar(Char::uppercase), color = c.subtext, fontSize = 12.sp) }
+                    OutlinedButton(onClick = manager::signOut) { Text("Sign out", color = c.text) }
+                }
+                is ChatGptAuthState.Refreshing -> Text("Refreshing ChatGPT session…", color = c.subtext, fontSize = 12.sp)
+                is ChatGptAuthState.Error -> {
+                    Text(current.message, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = manager::signInWithBrowser, colors = ButtonDefaults.buttonColors(containerColor = c.text, contentColor = c.bg)) { Text("Try again") }
+                        OutlinedButton(onClick = manager::signInWithDeviceCode) { Text("Use device code", color = c.text) }
+                    }
+                }
+            }
         }
     }
 }
