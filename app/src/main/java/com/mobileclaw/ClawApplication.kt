@@ -33,6 +33,9 @@ import com.mobileclaw.memory.SemanticMemory
 import com.mobileclaw.memory.UserProfileExtractor
 import com.mobileclaw.memory.db.ClawDatabase
 import com.mobileclaw.perception.VirtualDisplayManager
+import com.mobileclaw.perception.AndroidLaunchableAppProvider
+import com.mobileclaw.perception.InstalledAppCatalog
+import com.mobileclaw.perception.InstalledAppResolver
 import com.mobileclaw.permission.PermissionManager
 import com.mobileclaw.runtime.PageRuntimeCapabilities
 import com.mobileclaw.server.ConsoleServer
@@ -91,6 +94,12 @@ class ClawApplication : Application() {
         private set
 
     lateinit var virtualDisplayManager: VirtualDisplayManager
+        private set
+
+    lateinit var installedAppCatalog: InstalledAppCatalog
+        private set
+
+    lateinit var installedAppResolver: InstalledAppResolver
         private set
 
     lateinit var userConfig: UserConfig
@@ -163,6 +172,8 @@ class ClawApplication : Application() {
         userProfileExtractor = UserProfileExtractor(createLlmGateway(), semanticMemory, conversationMemory)
         webViewManager = InAppWebViewManager(this)
         virtualDisplayManager = VirtualDisplayManager(this)
+        installedAppCatalog = InstalledAppCatalog(AndroidLaunchableAppProvider(this))
+        installedAppResolver = InstalledAppResolver(installedAppCatalog)
         userConfig = UserConfig(this)
         roleManager = RoleManager(this)
         roleWorkspaceStore = RoleWorkspaceStore(this)

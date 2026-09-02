@@ -216,7 +216,7 @@ class AgentRuntime(
                     )
                 }
 
-                val deterministicPhoneLaunch = deterministicPhoneLaunchCall(taskType, goal, ctx.steps)
+                val deterministicPhoneLaunch = DeterministicPhoneLaunchRouting.next(taskType, goal, ctx.steps)
                 if (deterministicPhoneLaunch != null) {
                     val (skillId, params, finalAfterSuccess, deterministicThought) = deterministicPhoneLaunch
                     emit(AgentEvent.SkillCalling(skillId, params))
@@ -255,7 +255,7 @@ class AgentRuntime(
                         )
                     )
                     if (finalAfterSuccess && skillResult.success) {
-                        val appName = extractRequestedAppName(goal).orEmpty()
+                        val appName = DeterministicPhoneLaunchRouting.requestedAppName(goal).orEmpty()
                         val summary = if (appName.isNotBlank()) "Opened $appName." else "Opened the target app."
                         emit(AgentEvent.Completed(summary))
                         onWorkspaceUpdate?.invoke(
@@ -763,62 +763,6 @@ This note is for your own next step, so be direct and operational.
             steps().forEach { copy.push(it.copy()) }
         }
 
-    private data class DeterministicToolCall(
-        val skillId: String,
-        val params: Map<String, Any>,
-        val finalAfterSuccess: Boolean = false,
-        val thought: String = "",
-    )
-
-    private fun deterministicPhoneLaunchCall(
-        taskType: TaskType,
-        goal: String,
-        steps: List<AgentStep>,
-    ): DeterministicToolCall? {
-        if (taskType != TaskType.PHONE_CONTROL) return null
-        val requestedApp = extractRequestedAppName(goal) ?: return null
-        if (steps.none { it.skillId == "list_apps" }) {
-            return DeterministicToolCall("list_apps", emptyMap(), thought = "Deterministic phone app discovery")
-        }
-        val appList = steps.lastOrNull { it.skillId == "list_apps" && !it.isError }?.observation.orEmpty()
-        val packageName = resolvePackageNameFromListApps(appList, requestedApp) ?: return null
-        val lastLaunchIndex = steps.indexOfLast {
-            it.skillId == "navigate" &&
-                it.skillParams?.get("action") == "launch" &&
-                it.skillParams["package_name"] == packageName &&
-                !it.isError
-        }
-        val foregroundPackage = latestForegroundPackage(steps)
-        if (lastLaunchIndex >= 0 && foregroundPackage == packageName) return null
-        if (lastLaunchIndex >= 0 && foregroundPackage.isBlank()) return null
-        if (lastLaunchIndex >= 0 && foregroundPackage != packageName) {
-            return DeterministicToolCall(
-                skillId = "navigate",
-                params = mapOf("action" to "launch", "package_name" to packageName, "foreground" to true),
-                finalAfterSuccess = false,
-                thought = "Deterministic target app foreground recovery",
-            )
-        }
-        return DeterministicToolCall(
-            skillId = "navigate",
-            params = mapOf("action" to "launch", "package_name" to packageName, "foreground" to true),
-            finalAfterSuccess = isLaunchOnlyPhoneGoal(goal),
-            thought = "Deterministic phone app launch",
-        )
-    }
-
-    private fun latestForegroundPackage(steps: List<AgentStep>): String {
-        val regex = Regex("""Foreground app:\s*package=([^,\s]+)""")
-        return steps.asReversed()
-            .firstNotNullOfOrNull { step ->
-                regex.find(step.observation)
-                    ?.groupValues
-                    ?.getOrNull(1)
-                    ?.takeIf { it.isNotBlank() && it != "unknown" }
-            }
-            .orEmpty()
-    }
-
     private data class ArtifactPatchContract(
         val artifactType: String,
         val targetId: String,
@@ -934,70 +878,6 @@ This note is for your own next step, so be direct and operational.
             }
         }
         return null
-    }
-
-    private fun extractRequestedAppName(goal: String): String? {
-        val text = goal.lineSequence().firstOrNull().orEmpty().trim()
-        val match = Regex("""(?i)^(?:please\s+)?(?:open|launch|start)\s+([^,.!?\n]+)""").find(text) ?: return null
-        val rawName = match.groupValues.getOrNull(1)
-            ?: return null
-        val normalizedName = rawName
-            ?.replace(Regex("""(?i)\s+app$"""), "")
-            ?.trim()
-            .orEmpty()
-        val appName = normalizedName.substringBeforeAny(
-            " and ", " then ", " search ", " find ", " tap ", " click ", " select ", " type ",
-        ).trim()
-        if (appName.isBlank()) return null
-        if (listOf("website", "web page", "link", "file").any { appName.equals(it, ignoreCase = true) }) return null
-        return appName.take(40)
-    }
-
-    private fun isLaunchOnlyPhoneGoal(goal: String): Boolean {
-        val text = goal.lineSequence().firstOrNull().orEmpty().trim()
-        val afterLaunchVerb = Regex("""(?i)^(?:please\s+)?(?:open|launch|start)\s+([^,.!?\n]+)""")
-            .find(text)
-            ?.groupValues
-            ?.getOrNull(1)
-            .orEmpty()
-        if (afterLaunchVerb.isBlank()) return false
-        val continuationSignals = listOf(
-            " and ", " then ", " search ", " find ", " tap ", " click ", " select ", " type ",
-            " scroll ", " filter ",
-        )
-        return continuationSignals.none { afterLaunchVerb.contains(it) }
-    }
-
-    private fun resolvePackageNameFromListApps(appList: String, requestedApp: String): String? {
-        val normalizedRequest = requestedApp.normalizeAppNameForMatch()
-        val candidates = appList.lineSequence().mapNotNull { line ->
-            val appName = line.substringBefore(':', "").trim()
-            val packageName = line.substringAfter(':', "").trim()
-            if (appName.isBlank() || packageName.isBlank()) return@mapNotNull null
-            val normalizedApp = appName.normalizeAppNameForMatch()
-            val score = when {
-                normalizedApp == normalizedRequest -> 100
-                normalizedApp.contains(normalizedRequest) -> 80
-                normalizedRequest.contains(normalizedApp) -> 70
-                appName.contains(requestedApp, ignoreCase = true) -> 60
-                else -> 0
-            }
-            if (score <= 0) null else score to packageName
-        }.toList()
-        return candidates.maxByOrNull { it.first }?.second
-    }
-
-    private fun String.normalizeAppNameForMatch(): String =
-        lowercase()
-            .replace(Regex("""[\s·._-]+"""), "")
-            .removeSuffix("app")
-
-    private fun String.substringBeforeAny(vararg delimiters: String): String {
-        val firstIndex = delimiters
-            .mapNotNull { delimiter -> indexOf(delimiter).takeIf { it >= 0 } }
-            .minOrNull()
-            ?: return this
-        return substring(0, firstIndex)
     }
 
     private fun unresolvedArtifactValidationIssue(

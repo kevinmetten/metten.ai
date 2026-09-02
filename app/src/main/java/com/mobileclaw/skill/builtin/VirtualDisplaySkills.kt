@@ -2,6 +2,8 @@ package com.mobileclaw.skill.builtin
 
 import android.os.Build
 import com.mobileclaw.perception.VirtualDisplayManager
+import com.mobileclaw.perception.AppResolution
+import com.mobileclaw.perception.InstalledAppResolver
 import com.mobileclaw.skill.Skill
 import com.mobileclaw.skill.SkillMeta
 import com.mobileclaw.skill.SkillParam
@@ -9,7 +11,10 @@ import com.mobileclaw.skill.SkillResult
 import com.mobileclaw.skill.SkillType
 import com.mobileclaw.skill.SkillToolCategory
 
-class BgLaunchSkill(private val manager: VirtualDisplayManager) : Skill {
+class BgLaunchSkill(
+    private val manager: VirtualDisplayManager,
+    private val resolver: InstalledAppResolver,
+) : Skill {
     override val meta = SkillMeta(
         id = "bg_launch",
         name = "Launch App on Virtual Display",
@@ -17,7 +22,8 @@ class BgLaunchSkill(private val manager: VirtualDisplayManager) : Skill {
             "After this, use bg_read_screen (XML tree) or bg_screenshot (visual) to observe the app, " +
             "and tap/scroll/input_text with node_id to interact — node-based actions work cross-display.",
         parameters = listOf(
-            SkillParam("package_name", "string", "Package name of the app to launch"),
+            SkillParam("package_name", "string", "Exact package name; takes precedence over app_name", required = false),
+            SkillParam("app_name", "string", "Human-facing installed app name; resolved locally", required = false),
             SkillParam("width", "number", "Virtual display width in pixels (default 1080)", required = false),
             SkillParam("height", "number", "Virtual display height in pixels (default 1920)", required = false),
         ),
@@ -28,7 +34,20 @@ class BgLaunchSkill(private val manager: VirtualDisplayManager) : Skill {
     )
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
-        val pkg = params["package_name"] as? String ?: return SkillResult(false, "package_name is required")
+        val packageName = (params["package_name"] as? String)?.trim().orEmpty()
+        val appName = (params["app_name"] as? String)?.trim().orEmpty()
+        if (packageName.isEmpty() && appName.isEmpty()) return SkillResult(false, "package_name or app_name is required")
+        val resolution = if (packageName.isNotEmpty()) resolver.resolvePackage(packageName) else resolver.resolveName(appName)
+        val pkg = when (resolution) {
+            is AppResolution.Resolved -> resolution.app.packageName
+            is AppResolution.Ambiguous -> return SkillResult(
+                false,
+                "Multiple installed apps match \"${resolution.query}\": " +
+                    resolution.candidates.take(5).joinToString { "${it.displayName} (${it.packageName})" } + ". Choose one.",
+            )
+            is AppResolution.NotInstalled -> return SkillResult(false, "No launchable installed app matched \"${resolution.query}\".")
+            is AppResolution.InvalidPackage -> return SkillResult(false, "Package is not installed or is not launchable: ${resolution.packageName}")
+        }
         val width = (params["width"] as? Number)?.toInt() ?: 1080
         val height = (params["height"] as? Number)?.toInt() ?: 1920
         return runCatching {

@@ -44,7 +44,6 @@ class ClawAccessibilityService : AccessibilityService() {
         suspend fun goHome() = instance!!.actionController.goHome()
         suspend fun goBack() = instance!!.actionController.goBack()
         suspend fun launchApp(packageName: String) = instance!!.actionController.launchApp(packageName)
-        fun listInstalledApps() = instance!!.actionController.listInstalledApps()
     }
 
     override fun onServiceConnected() {

@@ -151,7 +151,7 @@ internal fun userFacingSkillStart(stageText: String, skillId: String, params: Ma
         "scroll" -> "Scrolling to look for the target content"
         "input_text" -> p("text").takeIf { it.isNotBlank() }?.let { "Entering the required text: ${it.take(24)}" }
         "navigate" -> when {
-            p("package_name").isNotBlank() -> "Opening the target app to an actionable screen"
+            p("package_name").isNotBlank() || p("app_name").isNotBlank() -> "Opening the target app to an actionable screen"
             p("action") == "back" -> "Going back one level to verify the path"
             p("action") == "home" -> "Returning home to restart from the right entry"
             else -> "Switching the current screen to continue"
@@ -218,7 +218,7 @@ internal fun friendlySkillDescription(skillId: String, params: Map<String, Any>)
         "navigate" -> when {
             p("action") == "back" -> "Go back one level and continue on the right path"
             p("action") == "home" -> "Return home and reopen the target app"
-            p("package_name").isNotBlank() -> "Open the target app and enter the actionable screen"
+            p("package_name").isNotBlank() || p("app_name").isNotBlank() -> "Open the target app and enter the actionable screen"
             else -> "Switch screens and continue the task"
         }
         "list_apps" -> "Check whether the target app is installed"
@@ -229,7 +229,7 @@ internal fun friendlySkillDescription(skillId: String, params: Map<String, Any>)
         "fetch_url", "web_browse" -> "Open the relevant page and verify its information"
         "web_content" -> "Read the page and extract useful content"
         "web_js" -> "Let the page finish loading so it can be read"
-        "bg_launch" -> if (p("package_name").isNotBlank()) "Open the target app in the background" else "Prepare the background app environment"
+        "bg_launch" -> if (p("package_name").isNotBlank() || p("app_name").isNotBlank()) "Open the target app in the background" else "Prepare the background app environment"
         "bg_stop" -> "Stop the background app environment"
         "vd_setup" -> "Check whether the background environment is available"
         "memory" -> when (p("action")) {

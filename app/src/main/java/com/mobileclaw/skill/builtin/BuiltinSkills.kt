@@ -297,6 +297,7 @@ class InputTextSkill : Skill {
 
 class NavigateSkill(
     private val virtualDisplayManager: com.mobileclaw.perception.VirtualDisplayManager? = null,
+    private val installedAppResolver: com.mobileclaw.perception.InstalledAppResolver,
 ) : Skill {
     override val meta = SkillMeta(
         id = "navigate",
@@ -309,7 +310,8 @@ class NavigateSkill(
             "Set foreground=true to launch on the main display instead (use see_screen + tap(x,y) afterwards).",
         parameters = listOf(
             SkillParam("action", "string", "'home' | 'back' | 'launch'"),
-            SkillParam("package_name", "string", "App package name (required when action=launch)", required = false),
+            SkillParam("package_name", "string", "Exact app package name; takes precedence over app_name", required = false),
+            SkillParam("app_name", "string", "Human-facing installed app name; resolved locally", required = false),
             SkillParam("foreground", "boolean", "Launch on main display instead of virtual display (default false)", required = false),
         ),
         type = SkillType.NATIVE,
@@ -319,37 +321,34 @@ class NavigateSkill(
     )
     override suspend fun execute(params: Map<String, Any>): SkillResult {
         if (!ClawAccessibilityService.isEnabled()) return accessibilityNotAvailable(meta.name)
+        AppLaunchRouting.execute(params, installedAppResolver, ::launchResolvedApp)?.let { return it }
         return when (val action = params["action"] as? String) {
             "home" -> { ClawAccessibilityService.goHome(); SkillResult(true, "Went home.\n${foregroundStatus()}") }
             "back" -> { ClawAccessibilityService.goBack(); SkillResult(true, "Went back.\n${foregroundStatus()}") }
-            "launch" -> {
-                val pkg = params["package_name"] as? String
-                    ?: return SkillResult(false, "package_name required for launch")
-                val foreground = params["foreground"] as? Boolean ?: false
-                if (!foreground && virtualDisplayManager != null) {
-                    return runCatching {
-                        val id = virtualDisplayManager?.start()
-                        virtualDisplayManager?.launchApp(pkg)
-                        SkillResult(
-                            true,
-                            "Launched $pkg on virtual display (displayId=$id). " +
-                                "Wait ~2s for it to load, then use bg_read_screen to inspect the UI or bg_screenshot for visual analysis. " +
-                                "Interact with tap(node_id=...) using IDs from bg_read_screen.",
-                        )
-                    }.getOrElse {
-                        // Virtual display failed — fall back to foreground
-                        val launchStatus = ClawAccessibilityService.launchApp(pkg)
-                        SkillResult(
-                            true,
-                            "Launched $pkg on main display (virtual display failed: ${it.message}). $launchStatus Use see_screen + tap(x,y).\n${foregroundStatus()}",
-                        )
-                    }
-                }
-                val launchStatus = ClawAccessibilityService.launchApp(pkg)
-                SkillResult(true, "Launched $pkg on main display. $launchStatus Use see_screen then tap(x=..., y=...) to interact.\n${foregroundStatus()}")
-            }
+            "launch" -> error("launch routing returned no result")
             else -> SkillResult(false, "Unknown action: $action. Use home, back, or launch.")
         }
+    }
+
+    private suspend fun launchResolvedApp(pkg: String, foreground: Boolean): SkillResult {
+        val manager = virtualDisplayManager
+        if (!foreground && manager != null) {
+            return runCatching {
+                val id = manager.start()
+                manager.launchApp(pkg)
+                SkillResult(
+                    true,
+                    "Launched $pkg on virtual display (displayId=$id). " +
+                        "Wait ~2s for it to load, then use bg_read_screen to inspect the UI or bg_screenshot for visual analysis. " +
+                        "Interact with tap(node_id=...) using IDs from bg_read_screen.",
+                )
+            }.getOrElse {
+                val launchStatus = ClawAccessibilityService.launchApp(pkg)
+                SkillResult(true, "Launched $pkg on main display (virtual display failed: ${it.message}). $launchStatus Use see_screen + tap(x,y).\n${foregroundStatus()}")
+            }
+        }
+        val launchStatus = ClawAccessibilityService.launchApp(pkg)
+        return SkillResult(true, "Launched $pkg on main display. $launchStatus Use see_screen then tap(x=..., y=...) to interact.\n${foregroundStatus()}")
     }
 }
 
@@ -497,11 +496,11 @@ class PhoneStatusSkill : Skill {
     }
 }
 
-class ListAppsSkill : Skill {
+class ListAppsSkill(private val catalog: com.mobileclaw.perception.InstalledAppCatalog) : Skill {
     override val meta = SkillMeta(
         id = "list_apps",
         name = "List Installed Apps",
-        description = "Returns all installed apps with their package names and display names. Use this before navigate(launch) to find the correct package_name.",
+        description = "Returns launchable installed apps with package names and display names for broad app discovery.",
         type = SkillType.NATIVE,
         injectionLevel = 1,
         categories = listOf(SkillToolCategory.PHONE, SkillToolCategory.SYSTEM),
@@ -510,8 +509,8 @@ class ListAppsSkill : Skill {
 
     override suspend fun execute(params: Map<String, Any>): SkillResult {
         if (!ClawAccessibilityService.isEnabled()) return accessibilityNotAvailable(meta.name)
-        val apps = runCatching { ClawAccessibilityService.listInstalledApps() }
+        val apps = runCatching { catalog.apps() }
             .getOrElse { return SkillResult(false, "Failed to list apps: ${it.message}") }
-        return SkillResult(true, apps.joinToString("\n") { "${it.appName}: ${it.packageName}" })
+        return SkillResult(true, apps.joinToString("\n") { "${it.displayName}: ${it.packageName}" })
     }
 }
