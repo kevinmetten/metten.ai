@@ -85,9 +85,9 @@ class InstalledAppResolver(private val catalog: InstalledAppCatalog) {
         if (exact.size == 1) return AppResolution.Resolved(exact.single())
         if (exact.size > 1) return AppResolution.Ambiguous(query, exact)
 
+        val queryComponents = normalizedQuery.components()
         val partial = apps.filter {
-            val label = normalizeAppLabel(it.displayName)
-            label.contains(normalizedQuery) || normalizedQuery.contains(label)
+            normalizeAppLabel(it.displayName).components().containsContiguousSequence(queryComponents)
         }.sortedWith(LaunchableAppOrdering)
         return when (partial.size) {
             1 -> AppResolution.Resolved(partial.single())
@@ -95,6 +95,13 @@ class InstalledAppResolver(private val catalog: InstalledAppCatalog) {
             else -> AppResolution.Ambiguous(query, partial)
         }
     }
+}
+
+private fun String.components(): List<String> = split(' ').filter { it.isNotEmpty() }
+
+private fun List<String>.containsContiguousSequence(query: List<String>): Boolean {
+    if (query.isEmpty() || query.size > size) return false
+    return windowed(query.size).any { it == query }
 }
 
 internal val LaunchableAppOrdering = compareBy<LaunchableApp>(

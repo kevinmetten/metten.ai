@@ -52,4 +52,19 @@ class AppLaunchRoutingTest {
     @Test fun `non launch action does not require app arguments`() = runBlocking {
         assertNull(AppLaunchRouting.execute(mapOf("action" to "home"), resolver) { _, _ -> SkillResult(true, "bad") })
     }
+
+    @Test fun `longer missing app name never launches shorter installed app`() = runBlocking {
+        val googleOnlyResolver = InstalledAppResolver(InstalledAppCatalog(LaunchableAppProvider {
+            listOf(LaunchableApp("google.pkg", "Google"))
+        }))
+        var launchCalls = 0
+
+        val result = AppLaunchRouting.execute(
+            mapOf("action" to "launch", "app_name" to "Google Maps"),
+            googleOnlyResolver,
+        ) { _, _ -> launchCalls++; SkillResult(true, "unexpected") }
+
+        assertFalse(result!!.success)
+        assertEquals(0, launchCalls)
+    }
 }

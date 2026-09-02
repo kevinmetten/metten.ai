@@ -35,6 +35,16 @@ class InstalledAppResolverTest {
         assertResolved(resolver(app("Google Maps", "maps.pkg"), app("Calendar", "cal.pkg")).resolveName("Maps"), "maps.pkg")
     }
 
+    @Test fun `longer requested identity does not collapse to shorter installed label`() {
+        val result = resolver(app("Google", "google.pkg")).resolveName("Google Maps")
+        assertTrue(result is AppResolution.NotInstalled)
+    }
+
+    @Test fun `arbitrary internal substring is not a partial label match`() {
+        val result = resolver(app("YouTube", "youtube.pkg"), app("Roadmap", "roadmap.pkg")).resolveName("Tube")
+        assertTrue(result is AppResolution.NotInstalled)
+    }
+
     @Test fun `ambiguous partial label is stable regardless of provider order`() {
         val apps = listOf(app("YouTube Music", "yt.pkg"), app("Amazon Music", "amazon.pkg"), app("Samsung Music", "samsung.pkg"))
         val first = resolver(*apps.toTypedArray()).resolveName("Music") as AppResolution.Ambiguous
@@ -70,6 +80,16 @@ class InstalledAppResolverTest {
         assertResolved(resolver.resolveName("A"), "a.pkg")
         provider.apps = listOf(app("A", "a.pkg"), app("B", "b.pkg"))
         assertResolved(resolver.resolveName("B"), "b.pkg")
+        assertEquals(2, provider.calls)
+    }
+
+    @Test fun `stale shorter label does not suppress refresh for newly installed full label`() {
+        val provider = MutableProvider(listOf(app("Google", "google.pkg")))
+        val resolver = InstalledAppResolver(InstalledAppCatalog(provider))
+        assertResolved(resolver.resolveName("Google"), "google.pkg")
+        provider.apps = listOf(app("Google", "google.pkg"), app("Google Maps", "maps.pkg"))
+
+        assertResolved(resolver.resolveName("Google Maps"), "maps.pkg")
         assertEquals(2, provider.calls)
     }
 
