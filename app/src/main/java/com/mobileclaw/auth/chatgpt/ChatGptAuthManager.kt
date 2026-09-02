@@ -28,7 +28,7 @@ class ChatGptAuthManager(private val context: Context) {
 
     fun signInWithBrowser() = startLogin { generation ->
         val callbackServer = ChatGptLoopbackCallbackServer.open(diagnostic = ::recordCallbackDiagnostic)
-        Log.i("ChatGptAuth", "browser_callback_listener host=${callbackServer.listenerHost} port=${callbackServer.port}")
+        Log.i("ChatGptAuth", "browser_callback_listener addresses=${callbackServer.boundLoopbackAddresses.joinToString(",")} port=${callbackServer.port}")
         synchronized(this) {
             if (!loginGate.isCurrent(generation)) { callbackServer.close(); throw CancellationException() }
             listener = generation to callbackServer
@@ -38,11 +38,12 @@ class ChatGptAuthManager(private val context: Context) {
         val oauthState = ChatGptOAuthProtocol.generateState()
         _state.value = ChatGptAuthState.AwaitingBrowser()
         openBrowser(ChatGptOAuthProtocol.authorizationUrl(redirect, pkce, oauthState))
+        recordCallbackDiagnostic(CallbackDiagnostic.BROWSER_OPENED)
         val callback = withTimeout(5 * 60 * 1000L) { callbackServer.awaitCallback(CallbackValidator(oauthState)) }
         BrowserCallbackCompletion.complete(callback) {
-            Log.i("ChatGptAuth", "browser_callback_stage=token_exchange_started")
+            recordCallbackDiagnostic(CallbackDiagnostic.TOKEN_EXCHANGE_STARTED)
             completeLogin(generation, api.exchange(callback.authorizationCode, redirect, pkce.verifier))
-            Log.i("ChatGptAuth", "browser_callback_stage=credentials_committed")
+            recordCallbackDiagnostic(CallbackDiagnostic.CREDENTIALS_COMMITTED)
         }
     }
 
@@ -87,7 +88,10 @@ class ChatGptAuthManager(private val context: Context) {
         val job = scope.launch {
                 _state.value = ChatGptAuthState.SigningIn
                 try { block(generation) }
-                catch (_: TimeoutCancellationException) { _state.value = ChatGptAuthState.Error("Timed out waiting for the browser sign-in callback.") }
+                catch (_: TimeoutCancellationException) {
+                    recordCallbackDiagnostic(CallbackDiagnostic.OVERALL_TIMEOUT)
+                    _state.value = ChatGptAuthState.Error("Timed out waiting for the browser sign-in callback.")
+                }
                 catch (_: CancellationException) { }
                 catch (e: ChatGptCallbackException) { _state.value = ChatGptAuthState.Error(e.message ?: "Could not receive the browser sign-in callback.") }
                 catch (e: ChatGptAuthException) { _state.value = ChatGptAuthState.Error(e.message ?: "Could not complete ChatGPT sign-in.") }

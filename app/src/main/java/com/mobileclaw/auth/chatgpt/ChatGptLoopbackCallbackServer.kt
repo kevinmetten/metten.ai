@@ -16,39 +16,62 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 internal enum class CallbackDiagnostic {
-    LISTENER_STARTED, CONNECTION_RECEIVED, IRRELEVANT_ROUTE, MALFORMED_CONNECTION,
-    CONNECTION_READ_TIMEOUT, CALLBACK_VALIDATED, CALLBACK_REJECTED, LISTENER_CLOSED,
+    LISTENER_STARTED, IPV4_LISTENER_STARTED, IPV6_LISTENER_STARTED, IPV6_UNAVAILABLE,
+    BROWSER_OPENED, CONNECTION_IPV4, CONNECTION_IPV6, IRRELEVANT_ROUTE, MALFORMED_REQUEST,
+    CLIENT_TIMEOUT, OAUTH_CALLBACK_RECEIVED, STATE_VALID, CALLBACK_REJECTED,
+    TOKEN_EXCHANGE_STARTED, CREDENTIALS_COMMITTED, LISTENER_CLOSED, OVERALL_TIMEOUT,
 }
 
 internal class ChatGptCallbackException(message: String) : ChatGptAuthException(message)
 
-/** Loopback-only HTTP callback server. The advertised host is exactly the bound address. */
+/** One logical localhost HTTP server backed exclusively by available loopback families. */
 internal class ChatGptLoopbackCallbackServer private constructor(
-    private val server: ServerSocket,
-    val listenerHost: String,
+    private val servers: List<ServerSocket>,
     private val connectionReadTimeoutMs: Int,
+    private val queuePollTimeoutMs: Long,
     private val diagnostic: (CallbackDiagnostic) -> Unit,
 ) : AutoCloseable {
-    val port: Int get() = server.localPort
-    val redirectUri: String get() = "http://$listenerHost:$port/auth/callback"
-    val isLoopbackOnly: Boolean get() = server.inetAddress.isLoopbackAddress
+    val port: Int = servers.first().localPort
+    val redirectUri: String = "http://localhost:$port/auth/callback"
+    val boundLoopbackAddresses: List<String> = servers.map { it.inetAddress.hostAddress }
+    val isLoopbackOnly: Boolean get() = servers.isNotEmpty() && servers.all { it.inetAddress.isLoopbackAddress }
     private val clients = Collections.synchronizedSet(mutableSetOf<Socket>())
+    private val accepted = java.util.concurrent.LinkedBlockingQueue<Socket>()
+    @Volatile private var closed = false
+    private val workers = servers.map { listener ->
+        Thread({ acceptLoop(listener) }, "chatgpt-callback-${listener.inetAddress.hostAddress}").apply {
+            isDaemon = true
+        }
+    }
+
+    init {
+        workers.forEach(Thread::start)
+    }
 
     suspend fun awaitCallback(validator: CallbackValidator): BrowserCallbackResponder = withContext(Dispatchers.IO) {
         while (true) {
             ensureActive()
-            val client = try { server.accept() } catch (_: SocketTimeoutException) {
-                continue
-            } catch (failure: Throwable) {
-                if (server.isClosed) throw CancellationException("Browser callback listener closed.").also { it.initCause(failure) }
-                throw ChatGptCallbackException("Could not receive the browser sign-in callback.")
-            }
+            if (closed) throw CancellationException("Browser callback listener closed.")
+            val client = accepted.poll(queuePollTimeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS) ?: continue
             clients += client
-            diagnostic(CallbackDiagnostic.CONNECTION_RECEIVED)
+            diagnostic(if (client.localAddress is java.net.Inet6Address) CallbackDiagnostic.CONNECTION_IPV6 else CallbackDiagnostic.CONNECTION_IPV4)
             val result = handle(client, validator)
             if (result != null) return@withContext result
         }
         @Suppress("UNREACHABLE_CODE") throw CancellationException()
+    }
+
+    private fun acceptLoop(listener: ServerSocket) {
+        while (!closed && !listener.isClosed) {
+            try {
+                val client = listener.accept()
+                if (closed) client.close() else accepted.put(client)
+            } catch (_: SocketTimeoutException) {
+                // Periodically observe close without blocking another address family.
+            } catch (_: Throwable) {
+                if (!closed) close()
+            }
+        }
     }
 
     private fun handle(client: Socket, validator: CallbackValidator): BrowserCallbackResponder? {
@@ -56,7 +79,7 @@ internal class ChatGptLoopbackCallbackServer private constructor(
             client.soTimeout = connectionReadTimeoutMs
             val line = BufferedReader(InputStreamReader(client.getInputStream())).readLine()
             val request = parseRequestLine(line) ?: run {
-                diagnostic(CallbackDiagnostic.MALFORMED_CONNECTION)
+                diagnostic(CallbackDiagnostic.MALFORMED_REQUEST)
                 respondAndClose(client, 400, BrowserCallbackPages.INVALID_REQUEST)
                 return null
             }
@@ -65,31 +88,36 @@ internal class ChatGptLoopbackCallbackServer private constructor(
                 respondAndClose(client, 404, BrowserCallbackPages.NOT_FOUND)
                 return null
             }
+            diagnostic(CallbackDiagnostic.OAUTH_CALLBACK_RECEIVED)
             val code = try {
-                validator.validate(request.path, request.parameters)
+                validator.validate(request.path, request.parameters).also { diagnostic(CallbackDiagnostic.STATE_VALID) }
             } catch (failure: Throwable) {
                 diagnostic(CallbackDiagnostic.CALLBACK_REJECTED)
                 runCatching { SocketBrowserCallback(client, "", ::clientFinished).failure() }
                 throw failure
             }
-            diagnostic(CallbackDiagnostic.CALLBACK_VALIDATED)
             return SocketBrowserCallback(client, code, ::clientFinished)
         } catch (_: SocketTimeoutException) {
-            diagnostic(CallbackDiagnostic.CONNECTION_READ_TIMEOUT)
+            diagnostic(CallbackDiagnostic.CLIENT_TIMEOUT)
             clientFinished(client)
             return null
         } catch (failure: ChatGptAuthException) {
             throw failure
         } catch (_: Throwable) {
-            diagnostic(CallbackDiagnostic.MALFORMED_CONNECTION)
+            diagnostic(CallbackDiagnostic.MALFORMED_REQUEST)
             clientFinished(client)
             return null
         }
     }
 
     override fun close() {
-        runCatching { server.close() }
+        if (closed) return
+        closed = true
+        servers.forEach { runCatching { it.close() } }
+        accepted.toList().forEach { runCatching { it.close() } }
+        accepted.clear()
         synchronized(clients) { clients.toList().forEach { runCatching { it.close() } }; clients.clear() }
+        workers.forEach { it.interrupt() }
         diagnostic(CallbackDiagnostic.LISTENER_CLOSED)
     }
 
@@ -120,22 +148,38 @@ internal class ChatGptLoopbackCallbackServer private constructor(
     companion object {
         fun open(
             ports: IntArray = ChatGptOAuth.CALLBACK_PORTS,
-            listenerHost: String = ChatGptOAuth.LOOPBACK_ADDRESS,
             connectionReadTimeoutMs: Int = 1_500,
             acceptPollTimeoutMs: Int = 500,
             diagnostic: (CallbackDiagnostic) -> Unit = {},
         ): ChatGptLoopbackCallbackServer {
-            val address = InetAddress.getByName(listenerHost)
-            require(address.isLoopbackAddress) { "OAuth callback address must be loopback-only." }
-            for (port in ports) {
-                val socket = runCatching { ServerSocket(port, 8, address) }.getOrNull() ?: continue
-                socket.soTimeout = acceptPollTimeoutMs
-                return ChatGptLoopbackCallbackServer(socket, address.hostAddress, connectionReadTimeoutMs, diagnostic).also {
-                    diagnostic(CallbackDiagnostic.LISTENER_STARTED)
+            for (candidate in ports) {
+                val listeners = mutableListOf<ServerSocket>()
+                val ipv4 = bind("127.0.0.1", candidate, acceptPollTimeoutMs)
+                if (ipv4 != null) {
+                    listeners += ipv4
+                    diagnostic(CallbackDiagnostic.IPV4_LISTENER_STARTED)
+                }
+                val logicalPort = ipv4?.localPort ?: candidate
+                val ipv6 = bind("::1", logicalPort, acceptPollTimeoutMs)
+                if (ipv6 != null) {
+                    listeners += ipv6
+                    diagnostic(CallbackDiagnostic.IPV6_LISTENER_STARTED)
+                } else diagnostic(CallbackDiagnostic.IPV6_UNAVAILABLE)
+                if (listeners.isNotEmpty()) {
+                    require(listeners.all { it.inetAddress.isLoopbackAddress })
+                    return ChatGptLoopbackCallbackServer(listeners, connectionReadTimeoutMs, 100, diagnostic).also {
+                        diagnostic(CallbackDiagnostic.LISTENER_STARTED)
+                    }
                 }
             }
             throw ChatGptCallbackException("Could not start the secure browser sign-in callback.")
         }
+
+        private fun bind(host: String, port: Int, timeoutMs: Int): ServerSocket? = runCatching {
+            val address = InetAddress.getByName(host)
+            require(address.isLoopbackAddress)
+            ServerSocket(port, 8, address).apply { soTimeout = timeoutMs }
+        }.getOrNull()
     }
 }
 
