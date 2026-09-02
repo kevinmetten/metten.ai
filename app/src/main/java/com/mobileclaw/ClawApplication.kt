@@ -5,6 +5,7 @@ import android.app.Application
 import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import com.mobileclaw.agent.RoleManager
+import com.mobileclaw.agent.AgentTaskController
 import com.mobileclaw.auth.chatgpt.ChatGptAuthManager
 import com.mobileclaw.agent.RoleWorkspaceStore
 import com.mobileclaw.agent.TaskRecipeStore
@@ -50,9 +51,18 @@ import com.mobileclaw.ui.MiniAppValidationOverlayManager
 import com.mobileclaw.ui.aipage.AiPageStore
 import com.mobileclaw.workspace.WorkspaceStore
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import java.util.UUID
 
 class ClawApplication : Application() {
+
+    val agentExecutionScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    lateinit var agentTaskController: AgentTaskController
+        private set
 
     lateinit var chatGptAuthManager: ChatGptAuthManager
         private set
@@ -156,6 +166,7 @@ class ClawApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        agentTaskController = AgentTaskController()
         chatGptAuthManager = ChatGptAuthManager(this)
         chatGptModelService = ChatGptModelService(chatGptAuthManager)
         registerForegroundCallbacks()
@@ -222,6 +233,14 @@ class ClawApplication : Application() {
         consoleServer.start()
         aiPageStore = AiPageStore(filesDir)
         agentTownStore = AgentTownStore(this)
+    }
+
+    override fun onTerminate() {
+        agentTaskController.activeTasks.value.forEach {
+            agentTaskController.cancelTask(it.taskId, com.mobileclaw.agent.AgentCancellationReason.APP_SHUTDOWN)
+        }
+        agentExecutionScope.cancel()
+        super.onTerminate()
     }
 
     fun providerReadiness(snapshot: com.mobileclaw.config.ConfigSnapshot = agentConfig.snapshot()) = snapshot.let {

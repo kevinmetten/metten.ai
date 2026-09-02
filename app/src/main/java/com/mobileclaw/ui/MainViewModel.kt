@@ -29,6 +29,8 @@ import com.mobileclaw.agent.AiIntentRouter
 import com.mobileclaw.agent.AiToolSelector
 import com.mobileclaw.agent.IntentContextPack
 import com.mobileclaw.agent.AgentRuntime
+import com.mobileclaw.agent.AgentCancellationReason
+import com.mobileclaw.agent.AgentExecutionForegroundService
 import com.mobileclaw.agent.AgentWorkspaceUpdate
 import com.mobileclaw.agent.ChatBubbleStyle
 import com.mobileclaw.agent.ChannelType
@@ -210,6 +212,7 @@ import com.mobileclaw.ui.workspace.WorkspaceRuntimeRecorder
 import com.mobileclaw.ui.workspace.WorkspacePresentationSemantics
 import com.mobileclaw.vpn.AppHttpProxy
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -465,7 +468,6 @@ class MainViewModel : ViewModel() {
 
     // Per-session task management (multiple sessions can run simultaneously)
     private val taskJobs = mutableMapOf<String, Job>()
-    private val runtimes = mutableMapOf<String, AgentRuntime>()
     private val pendingConfirmedRoutes = mutableMapOf<String, TaskRoute>()
     private var videoTaskAutoRefreshJob: Job? = null
 
@@ -1938,9 +1940,9 @@ class MainViewModel : ViewModel() {
     }
 
     private fun stopCurrentRunForNewUserTurn(sessionId: String) {
+        app.agentTaskController.cancelSession(sessionId, AgentCancellationReason.SUPERSEDED_BY_NEW_TURN)
         taskJobs[sessionId]?.cancel()
         taskJobs.remove(sessionId)
-        runtimes.remove(sessionId)
         overlay.hide()
         auroraOverlay.hide()
         val salvaged = salvageInterruptedRunMessages(sessionId)
@@ -2134,8 +2136,15 @@ class MainViewModel : ViewModel() {
         val startedRuntime = startAgentRuntime(prepared, execution)
         val rt = startedRuntime.runtime
         val phoneAuroraOverlayShown = startedRuntime.phoneAuroraOverlayShown
+        val registration = app.agentTaskController.register(
+            sessionId = prepared.sessionIdAtStart,
+            taskType = execution.executionTaskType,
+            foregroundRequested = isPhoneControlTask,
+        )
 
-        val newJob = viewModelScope.launch {
+        val newJob = app.agentExecutionScope.launch(start = CoroutineStart.LAZY) {
+          try {
+            app.agentTaskController.markRunning(registration)
             val prelude = buildAgentRunPrelude(
                 prepared = prepared,
                 route = route,
@@ -2166,21 +2175,23 @@ class MainViewModel : ViewModel() {
                 runtimePlan = runtimePlan,
             )
 
-            val runContext = buildAgentRunContext(execution)
-
-            val result = runAgentModelWithRetry(
-                runtime = rt,
-                route = route,
-                prepared = prepared,
-                execution = execution,
-                runtimePlan = runtimePlan,
-                resolvedSessionId = resolvedSessionId,
-                episodicContext = episodicContext,
-                userProfileContext = runContext.userProfileContext,
-                roleWorkspaceContext = runContext.roleWorkspaceContext,
-            )
-            networkTraceJob.cancel()
-            runtimeEventJob.cancel()
+            val result = try {
+                val runContext = buildAgentRunContext(execution)
+                runAgentModelWithRetry(
+                    runtime = rt,
+                    route = route,
+                    prepared = prepared,
+                    execution = execution,
+                    runtimePlan = runtimePlan,
+                    resolvedSessionId = resolvedSessionId,
+                    episodicContext = episodicContext,
+                    userProfileContext = runContext.userProfileContext,
+                    roleWorkspaceContext = runContext.roleWorkspaceContext,
+                )
+            } finally {
+                networkTraceJob.cancel()
+                runtimeEventJob.cancel()
+            }
             if (handleAgentCancellation(result, prepared, resolvedSessionId, isPhoneControlTask)) return@launch
 
             if (isPhoneControlTask) auroraOverlay.endTask()
@@ -2198,13 +2209,22 @@ class MainViewModel : ViewModel() {
                 userMessageVisible = userMessageVisible,
                 userMessagePersistedEarly = userMessagePersistedEarly,
             )
+          } finally {
+              app.agentTaskController.complete(registration)
+              if (app.agentTaskController.sessionTask(prepared.sessionIdAtStart) == null) {
+                  overlay.hide()
+                  auroraOverlay.hide()
+              }
+          }
+        }
+        if (!app.agentTaskController.attachJob(registration, newJob)) {
+            newJob.cancel()
+            return
         }
         if (isPhoneControlTask) {
-            newJob.invokeOnCompletion {
-                auroraOverlay.hide()
-            }
+            AgentExecutionForegroundService.requestProtection(app, registration.taskId)
         }
-        taskJobs[sessionIdAtStart] = newJob
+        newJob.start()
     }
 
     private suspend fun CoroutineScope.buildAgentRunPrelude(
@@ -3189,7 +3209,6 @@ class MainViewModel : ViewModel() {
     ): StartedAgentRuntime {
         val llm = app.createLlmGateway()
         val runtime = AgentRuntime(llm, registry, app.semanticMemory, memoryContextBuilder)
-        runtimes[prepared.sessionIdAtStart] = runtime
         overlay.show(execution.visibleGoalLabel)
         val phoneAuroraOverlayShown = if (execution.isPhoneControlTask) {
             auroraOverlay.beginTask()
@@ -3868,10 +3887,8 @@ For pure conversational replies, greetings, explanations, and simple factual ans
 
     private fun clearRuntimeHandles(sessionIdAtStart: String, resolvedSessionId: String) {
         taskJobs.remove(resolvedSessionId)
-        runtimes.remove(resolvedSessionId)
         if (sessionIdAtStart != resolvedSessionId) {
             taskJobs.remove(sessionIdAtStart)
-            runtimes.remove(sessionIdAtStart)
         }
     }
 
@@ -4188,9 +4205,9 @@ For pure conversational replies, greetings, explanations, and simple factual ans
     fun stopTask() {
         val sessionId = _uiState.value.currentSessionId
         val shouldStopDesktopCodex = _uiState.value.codexDesktopMode || sessionId in _uiState.value.codexDesktopSessionIds
+        app.agentTaskController.cancelSession(sessionId, AgentCancellationReason.USER_REQUEST)
         taskJobs[sessionId]?.cancel()
         taskJobs.remove(sessionId)
-        runtimes.remove(sessionId)
         if (shouldStopDesktopCodex) {
             viewModelScope.launch(Dispatchers.IO) {
                 runCatching {

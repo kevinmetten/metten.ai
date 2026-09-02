@@ -13,6 +13,7 @@
     <!-- Foreground service for Agent runtime -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <!-- Overlay for visual feedback -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
@@ -28,7 +29,6 @@
 
     <!-- VPN -->
     <uses-permission android:name="android.permission.BIND_VPN_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <!-- External storage — legacy (API ≤ 29) -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
@@ -130,6 +130,15 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="VPN" />
+        </service>
+
+        <service
+            android:name=".agent.AgentExecutionForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="user_initiated_ai_agent_device_operation" />
         </service>
 
         <!-- FileProvider for sharing app-internal files with external apps -->
