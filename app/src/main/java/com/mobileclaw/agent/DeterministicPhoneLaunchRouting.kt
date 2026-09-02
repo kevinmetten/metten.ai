@@ -11,13 +11,12 @@ internal object DeterministicPhoneLaunchRouting {
     fun next(taskType: TaskType, goal: String, steps: List<AgentStep>): DeterministicToolCall? {
         if (taskType != TaskType.PHONE_CONTROL) return null
         val requestedApp = requestedAppName(goal) ?: return null
-        val alreadyLaunched = steps.any {
+        val alreadyAttempted = steps.any {
             it.skillId == "navigate" &&
                 it.skillParams?.get("action") == "launch" &&
-                it.skillParams["app_name"] == requestedApp &&
-                !it.isError
+                it.skillParams["app_name"] == requestedApp
         }
-        if (alreadyLaunched) return null
+        if (alreadyAttempted) return null
         return DeterministicToolCall(
             skillId = "navigate",
             params = mapOf("action" to "launch", "app_name" to requestedApp, "foreground" to true),

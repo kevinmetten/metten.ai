@@ -331,10 +331,11 @@ class NavigateSkill(
     }
 
     private suspend fun launchResolvedApp(pkg: String, foreground: Boolean): SkillResult {
-        if (!foreground && virtualDisplayManager != null) {
+        val manager = virtualDisplayManager
+        if (!foreground && manager != null) {
             return runCatching {
-                val id = virtualDisplayManager.start()
-                virtualDisplayManager.launchApp(pkg)
+                val id = manager.start()
+                manager.launchApp(pkg)
                 SkillResult(
                     true,
                     "Launched $pkg on virtual display (displayId=$id). " +

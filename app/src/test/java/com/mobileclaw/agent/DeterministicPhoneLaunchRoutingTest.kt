@@ -27,6 +27,25 @@ class DeterministicPhoneLaunchRoutingTest {
         assertNull(DeterministicPhoneLaunchRouting.next(TaskType.PHONE_CONTROL, "Open Spotify and search for Daft Punk", listOf(completedLaunch)))
     }
 
+    @Test fun `failed deterministic launch is not automatically retried`() {
+        val goal = "Open FakeApp"
+        val firstCall = DeterministicPhoneLaunchRouting.next(TaskType.PHONE_CONTROL, goal, emptyList())!!
+        assertEquals("navigate", firstCall.skillId)
+        assertEquals("FakeApp", firstCall.params["app_name"])
+
+        val failedLaunch = AgentStep(
+            index = 0,
+            thought = "Deterministic phone app launch",
+            toolCallId = "deterministic-phone-0",
+            skillId = "navigate",
+            skillParams = firstCall.params,
+            observation = "launch failed",
+            isError = true,
+        )
+
+        assertNull(DeterministicPhoneLaunchRouting.next(TaskType.PHONE_CONTROL, goal, listOf(failedLaunch)))
+    }
+
     @Test fun `non phone work does not route deterministic launch`() {
         assertNull(DeterministicPhoneLaunchRouting.next(TaskType.GENERAL, "Open Spotify", emptyList()))
     }
