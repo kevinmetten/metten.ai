@@ -2669,10 +2669,9 @@ class MainViewModel : ViewModel() {
             runtimePlan = runtimePlan,
             resolvedSessionId = resolvedSessionId,
         )
-        var result: Result<com.mobileclaw.agent.AgentResult> =
-            Result.failure(IllegalStateException("LLM did not start."))
-        repeat(LLM_RETRY_MAX_ATTEMPTS) { attemptIndex ->
-            result = runCatching {
+        return runRetryLoop(
+            maxAttempts = LLM_RETRY_MAX_ATTEMPTS,
+            attempt = { _ ->
                 val snap = config.snapshot()
                 runtime.run(
                     goal = execution.contextualGoal,
@@ -2710,18 +2709,19 @@ class MainViewModel : ViewModel() {
                         )
                     },
                 )
-            }
-            val shouldRetry = attemptIndex < LLM_RETRY_MAX_ATTEMPTS - 1 &&
+            },
+            shouldRetry = { result ->
                 shouldRetryAfterAgentRun(result.getOrNull(), result.exceptionOrNull())
-            if (!shouldRetry) return@repeat
-            appendRetryLogLine(
-                resolvedSessionId,
-                if (attemptIndex == 0) "The model returned an invalid result for this step; retrying automatically"
-                else "The model remains unstable; restructuring the request and trying again",
-            )
-            delay(700L * (attemptIndex + 1))
-        }
-        return result
+            },
+            beforeRetry = { attemptIndex ->
+                appendRetryLogLine(
+                    resolvedSessionId,
+                    if (attemptIndex == 0) "The model returned an invalid result for this step; retrying automatically"
+                    else "The model remains unstable; restructuring the request and trying again",
+                )
+                delay(700L * (attemptIndex + 1))
+            },
+        )
     }
 
     private suspend fun selectToolsForRun(
@@ -3646,9 +3646,9 @@ For pure conversational replies, greetings, explanations, and simple factual ans
                 imageBase64 = imageBase64,
             )
 
-            var result: Result<com.mobileclaw.llm.ChatResponse> = Result.failure(IllegalStateException("LLM did not start."))
-            repeat(LLM_RETRY_MAX_ATTEMPTS) { attemptIndex ->
-                result = runCatching {
+            val result = runRetryLoop(
+                maxAttempts = LLM_RETRY_MAX_ATTEMPTS,
+                attempt = { _ ->
                     llm.chat(ChatRequest(
                         messages = chatMessages,
                         tools = emptyList(),
@@ -3661,20 +3661,23 @@ For pure conversational replies, greetings, explanations, and simple factual ans
                         },
                         callOptions = roleLlmCallOptions(currentRole),
                     ))
-                }
-                Log.d(
-                    TAG,
-                    "Direct chat request finished. session=$resolvedSessionId attempt=${attemptIndex + 1} success=${result.isSuccess} contentLength=${result.getOrNull()?.content?.length ?: 0} error=${result.exceptionOrNull()?.message?.take(160).orEmpty()}"
-                )
-                val shouldRetry = attemptIndex < LLM_RETRY_MAX_ATTEMPTS - 1 && shouldRetryDirectChat(result.exceptionOrNull())
-                if (!shouldRetry) return@repeat
-                appendRetryLogLine(
-                    resolvedSessionId,
-                    if (attemptIndex == 0) "The response was malformed; regenerating it"
-                    else "The response remains malformed; retrying with a more stable request",
-                )
-                delay(500L * (attemptIndex + 1))
-            }
+                },
+                shouldRetry = { attemptResult ->
+                    Log.d(
+                        TAG,
+                        "Direct chat request finished. session=$resolvedSessionId success=${attemptResult.isSuccess} contentLength=${attemptResult.getOrNull()?.content?.length ?: 0} error=${attemptResult.exceptionOrNull()?.message?.take(160).orEmpty()}"
+                    )
+                    shouldRetryDirectChat(attemptResult.exceptionOrNull())
+                },
+                beforeRetry = { attemptIndex ->
+                    appendRetryLogLine(
+                        resolvedSessionId,
+                        if (attemptIndex == 0) "The response was malformed; regenerating it"
+                        else "The response remains malformed; retrying with a more stable request",
+                    )
+                    delay(500L * (attemptIndex + 1))
+                },
+            )
 
             val summary = (result.getOrNull()?.content
                 ?: _uiState.value.sessionStates[resolvedSessionId]?.streamingToken?.ifBlank { null }

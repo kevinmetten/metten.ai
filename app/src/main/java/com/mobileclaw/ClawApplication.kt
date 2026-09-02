@@ -235,14 +235,6 @@ class ClawApplication : Application() {
         agentTownStore = AgentTownStore(this)
     }
 
-    override fun onTerminate() {
-        agentTaskController.activeTasks.value.forEach {
-            agentTaskController.cancelTask(it.taskId, com.mobileclaw.agent.AgentCancellationReason.APP_SHUTDOWN)
-        }
-        agentExecutionScope.cancel()
-        super.onTerminate()
-    }
-
     fun providerReadiness(snapshot: com.mobileclaw.config.ConfigSnapshot = agentConfig.snapshot()) = snapshot.let {
         CloudProviderResolver.readiness(
             it.cloudProviderPreference,
@@ -290,9 +282,14 @@ class ClawApplication : Application() {
     }
 
     override fun onTerminate() {
-        super.onTerminate()
+        // Best-effort cleanup for emulated processes; Android does not call this reliably in production.
+        agentTaskController.activeTasks.value.forEach {
+            agentTaskController.cancelTask(it.taskId, com.mobileclaw.agent.AgentCancellationReason.APP_SHUTDOWN)
+        }
+        agentExecutionScope.cancel()
         localApiServer.stop()
         consoleServer.stop()
+        super.onTerminate()
     }
 
     private fun registerForegroundCallbacks() {
