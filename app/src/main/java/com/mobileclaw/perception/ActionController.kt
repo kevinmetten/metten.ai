@@ -6,7 +6,6 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.graphics.Path
 import android.graphics.Point
 import android.os.Bundle
@@ -148,14 +147,6 @@ class ActionController(private val service: ClawAccessibilityService) {
         return false
     }
 
-    fun listInstalledApps(): List<AppInfo> {
-        return service.packageManager
-            .getInstalledApplications(PackageManager.GET_META_DATA)
-            .filter { service.packageManager.getLaunchIntentForPackage(it.packageName) != null }
-            .map { AppInfo(it.packageName, it.loadLabel(service.packageManager).toString()) }
-            .sortedBy { it.appName }
-    }
-
     fun copyToClipboard(text: String) {
         val cm = service.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         cm.setPrimaryClip(ClipData.newPlainText("claw", text))
@@ -213,5 +204,3 @@ class ActionController(private val service: ClawAccessibilityService) {
             throw RuntimeException("Global action $action failed")
     }
 }
-
-data class AppInfo(val packageName: String, val appName: String)

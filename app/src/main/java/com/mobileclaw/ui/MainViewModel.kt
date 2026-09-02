@@ -5705,8 +5705,8 @@ For example: "Create an expense-tracker MiniAPP", "Open Settings and change the 
             LongClickSkill(),
             ScrollSkill(),
             InputTextSkill(),
-            NavigateSkill(app.virtualDisplayManager),
-            ListAppsSkill(),
+            NavigateSkill(app.virtualDisplayManager, app.installedAppResolver),
+            ListAppsSkill(app.installedAppCatalog),
             PhoneStatusSkill(),
             // Web
             WebSearchSkill(app.webViewManager),
@@ -5724,7 +5724,7 @@ For example: "Create an expense-tracker MiniAPP", "Open Settings and change the 
             ListFilesSkill(app),
             CreateHtmlSkill(app),
             // Virtual display (background execution)
-            BgLaunchSkill(app.virtualDisplayManager),
+            BgLaunchSkill(app.virtualDisplayManager, app.installedAppResolver),
             BgReadScreenSkill(app.virtualDisplayManager),
             BgScreenshotSkill(app.virtualDisplayManager),
             BgStopSkill(app.virtualDisplayManager),

@@ -170,7 +170,7 @@ $skillList
 ## Screen Interaction — Two Modes
 
 ### Mode A: Background (default — user's screen is not disturbed)
-Used when you open an app with `navigate(action=launch, package_name=...)` or `bg_launch(...)`.
+Used when you open an app with `navigate(action=launch, app_name=...)` or `bg_launch(...)`.
 The app runs on a hidden virtual display.
 **ALWAYS use the visual approach — do NOT rely on node_id for background apps.**
 1. `bg_screenshot` → visual screenshot; use x/y coordinates to interact (works on ALL app types including Flutter, games, WebView)
@@ -198,8 +198,8 @@ Used when the task requires the user to see what the agent is doing.
 
 ## Other Rules
 - For information tasks: use web_browse + web_content for dynamic pages, or web_search + fetch_url for static ones.
-- Before launching an app: use list_apps to find the correct package_name.
-- Use memory(action=set) to store discovered package names or device facts for future tasks.
+- To launch a known app by its human-facing name, use `navigate(action=launch, app_name=...)`; MobileClaw resolves the installed package locally.
+- Use `list_apps` only when the user asks to inspect installed apps or the app identity is genuinely unknown or ambiguous.
 
 ## Building Pages and Apps — MANDATORY ROUTING
 Never output raw code, HTML, JSON page definitions, or "here is the code" when a creation tool can create the artifact.
