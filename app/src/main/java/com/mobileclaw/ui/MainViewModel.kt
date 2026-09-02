@@ -48,6 +48,9 @@ import com.mobileclaw.agent.ToolSelectionInput
 import com.mobileclaw.agent.TaskClassifier
 import com.mobileclaw.agent.TaskToolPolicy
 import com.mobileclaw.agent.TaskType
+import com.mobileclaw.permission.DeviceCapability
+import com.mobileclaw.permission.ReadinessLevel
+import com.mobileclaw.permission.runIfDeviceReady
 import com.mobileclaw.config.ConfigEntry
 import com.mobileclaw.config.ConfigSnapshot
 import com.mobileclaw.config.GatewayConfig
@@ -2124,6 +2127,15 @@ class MainViewModel : ViewModel() {
             executionMode = executionMode,
         )
         val isPhoneControlTask = execution.isPhoneControlTask
+
+        if (isPhoneControlTask) {
+            val readiness = app.deviceReadinessEngine.evaluate(DeviceCapability.LONG_RUNNING_PHONE_CONTROL)
+            val allowed = runIfDeviceReady(readiness) { }
+            if (!allowed) {
+                requestTaskExecutionConfirmation(goal, TaskType.PHONE_CONTROL)
+                return
+            }
+        }
 
         startRunUiState(prepared, pendingTurn, showUserMessage)
         appendRoleControlLogLine(
@@ -5392,7 +5404,7 @@ For example: "Create an expense-tracker MiniAPP", "Open Settings and change the 
 
     private fun isRecentContinuationRoute(route: TaskRoute, goal: String): Boolean {
         if (route.source != TaskRouteSource.RECENT_CONTEXT) return false
-        if (route.taskType == TaskType.PHONE_CONTROL && !ClawAccessibilityService.isEnabled()) return false
+        if (route.taskType == TaskType.PHONE_CONTROL && !isPhoneControlReady()) return false
         return MainExecutionSemantics.isRecentContinuationCommand(goal)
     }
 
@@ -5405,7 +5417,7 @@ For example: "Create an expense-tracker MiniAPP", "Open Settings and change the 
     }
 
     private fun requestTaskExecutionConfirmation(goal: String, taskType: TaskType, confirmedRoute: TaskRoute? = null) {
-        if (taskType == TaskType.PHONE_CONTROL && !ClawAccessibilityService.isEnabled()) {
+        if (taskType == TaskType.PHONE_CONTROL && !isPhoneControlReady()) {
             pendingAccessibilityTaskGoal = goal
             appendConfirmationExchange(
                 goal,
@@ -5428,6 +5440,9 @@ For example: "Create an expense-tracker MiniAPP", "Open Settings and change the 
             ),
         )
     }
+
+    private fun isPhoneControlReady(): Boolean =
+        app.deviceReadinessEngine.evaluate(DeviceCapability.PHONE_CONTROL).level != ReadinessLevel.BLOCKED
 
     private fun requestRoleSwitchConfirmation(goal: String, role: Role) {
         pendingRoleSwitchTaskGoal = goal

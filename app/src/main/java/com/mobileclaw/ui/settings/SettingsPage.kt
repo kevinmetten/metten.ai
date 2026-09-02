@@ -3039,7 +3039,9 @@ private fun themePresetSubtitle(name: String): String = when (name) {
 private fun PermissionsSubPage(c: ClawColors, onBack: () -> Unit) {
     val ctx = LocalContext.current
     val storageManager = remember { com.mobileclaw.config.UserStorageManager(ctx) }
-    val permissionManager = remember { com.mobileclaw.permission.PermissionManager(ctx) }
+    val permissionManager = remember {
+        (ctx.applicationContext as com.mobileclaw.ClawApplication).permissionManager
+    }
     var hasFileAccess by remember { mutableStateOf(storageManager.hasAllFilesAccess()) }
     val fileAccessLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
@@ -3057,7 +3059,7 @@ private fun PermissionsSubPage(c: ClawColors, onBack: () -> Unit) {
             PermissionStatusRow("accessibility", stringResource(R.string.perm_accessibility_title), stringResource(R.string.perm_accessibility_desc), permissionManager.isAccessibilityEnabled(), true, c) {
                 activityLauncher.launch(permissionManager.openAccessibilitySettings())
             }
-            PermissionStatusRow("overlay", stringResource(R.string.perm_overlay_title), stringResource(R.string.perm_overlay_desc), permissionManager.isOverlayEnabled(), true, c) {
+            PermissionStatusRow("overlay", stringResource(R.string.perm_overlay_title), stringResource(R.string.perm_overlay_desc), permissionManager.isOverlayEnabled(), false, c) {
                 activityLauncher.launch(permissionManager.openOverlaySettings())
             }
             PermissionStatusRow("folder", stringResource(R.string.settings_bc417e), stringResource(R.string.settings_tap_2), hasFileAccess, false, c) {
@@ -3072,7 +3074,7 @@ private fun PermissionsSubPage(c: ClawColors, onBack: () -> Unit) {
             permissionManager.pendingPermissions()
                 .filter { it.id.startsWith("rom_") }
                 .forEach { item ->
-                    PermissionStatusRow(item.icon, item.title, item.description, false, item.isBlocking, c) {
+                    PermissionStatusRow(item.icon, item.title, item.description, false, false, c) {
                         activityLauncher.launch(permissionManager.openRomSettingFor(item))
                     }
                 }
