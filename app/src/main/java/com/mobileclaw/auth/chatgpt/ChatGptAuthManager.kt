@@ -3,15 +3,11 @@ package com.mobileclaw.auth.chatgpt
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.net.InetAddress
-import java.net.ServerSocket
-import java.net.Socket
 
 class ChatGptAuthManager(private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -22,7 +18,7 @@ class ChatGptAuthManager(private val context: Context) {
     private val refreshCoordinator: ChatGptRefreshCoordinator
     private val loginGate = LoginAttemptGate()
     private var loginJob: Job? = null
-    private var listener: Pair<Long, ServerSocket>? = null
+    private var listener: Pair<Long, ChatGptLoopbackCallbackServer>? = null
 
     init {
         val restored = store.load()
@@ -31,19 +27,23 @@ class ChatGptAuthManager(private val context: Context) {
     }
 
     fun signInWithBrowser() = startLogin { generation ->
-        val socket = bindLoopback()
+        val callbackServer = ChatGptLoopbackCallbackServer.open(diagnostic = ::recordCallbackDiagnostic)
+        Log.i("ChatGptAuth", "browser_callback_listener addresses=${callbackServer.boundLoopbackAddresses.joinToString(",")} port=${callbackServer.port}")
         synchronized(this) {
-            if (!loginGate.isCurrent(generation)) { socket.close(); throw CancellationException() }
-            listener = generation to socket
+            if (!loginGate.isCurrent(generation)) { callbackServer.close(); throw CancellationException() }
+            listener = generation to callbackServer
         }
-        val redirect = "http://localhost:${socket.localPort}/auth/callback"
+        val redirect = callbackServer.redirectUri
         val pkce = ChatGptPkce.generate()
         val oauthState = ChatGptOAuthProtocol.generateState()
         _state.value = ChatGptAuthState.AwaitingBrowser()
         openBrowser(ChatGptOAuthProtocol.authorizationUrl(redirect, pkce, oauthState))
-        val callback = withTimeout(5 * 60 * 1000L) { receiveCallback(socket, CallbackValidator(oauthState)) }
+        recordCallbackDiagnostic(CallbackDiagnostic.BROWSER_OPENED)
+        val callback = withTimeout(5 * 60 * 1000L) { callbackServer.awaitCallback(CallbackValidator(oauthState)) }
         BrowserCallbackCompletion.complete(callback) {
+            recordCallbackDiagnostic(CallbackDiagnostic.TOKEN_EXCHANGE_STARTED)
             completeLogin(generation, api.exchange(callback.authorizationCode, redirect, pkce.verifier))
+            recordCallbackDiagnostic(CallbackDiagnostic.CREDENTIALS_COMMITTED)
         }
     }
 
@@ -79,14 +79,21 @@ class ChatGptAuthManager(private val context: Context) {
 
     suspend fun getValidBackendCredentials(): ChatGptBackendCredentials = refreshCoordinator.credentials()
 
+    /** Non-secret readiness snapshot; remains true while a saved session is refreshing. */
+    fun hasUsableSession(): Boolean = refreshCoordinator.snapshot() != null
+
     @Synchronized private fun startLogin(block: suspend (Long) -> Unit) {
         if (loginJob?.isActive == true) return
         val generation = loginGate.begin()
         val job = scope.launch {
                 _state.value = ChatGptAuthState.SigningIn
                 try { block(generation) }
-                catch (_: TimeoutCancellationException) { _state.value = ChatGptAuthState.Error("ChatGPT sign-in timed out.") }
+                catch (_: TimeoutCancellationException) {
+                    recordCallbackDiagnostic(CallbackDiagnostic.OVERALL_TIMEOUT)
+                    _state.value = ChatGptAuthState.Error("Timed out waiting for the browser sign-in callback.")
+                }
                 catch (_: CancellationException) { }
+                catch (e: ChatGptCallbackException) { _state.value = ChatGptAuthState.Error(e.message ?: "Could not receive the browser sign-in callback.") }
                 catch (e: ChatGptAuthException) { _state.value = ChatGptAuthState.Error(e.message ?: "Could not complete ChatGPT sign-in.") }
                 catch (_: Throwable) { _state.value = ChatGptAuthState.Error("Could not reach the ChatGPT authentication service.") }
                 finally { synchronized(this@ChatGptAuthManager) {
@@ -99,31 +106,6 @@ class ChatGptAuthManager(private val context: Context) {
         loginJob = job
     }
 
-    private fun bindLoopback(): ServerSocket {
-        for (port in ChatGptOAuth.CALLBACK_PORTS) runCatching {
-            return ServerSocket(port, 1, InetAddress.getByName(ChatGptOAuth.LOOPBACK_ADDRESS))
-        }
-        throw ChatGptAuthException("Could not start the secure sign-in callback.")
-    }
-
-    private suspend fun receiveCallback(server: ServerSocket, validator: CallbackValidator): BrowserCallbackResponder = withContext(Dispatchers.IO) {
-        val client = server.accept()
-        try {
-            val line = BufferedReader(InputStreamReader(client.getInputStream())).readLine().orEmpty()
-            val target = line.split(' ').getOrNull(1).orEmpty()
-            val uri = Uri.parse(target)
-            val params = uri.queryParameterNames.associateWith { uri.getQueryParameter(it).orEmpty() }
-            val code = try { validator.validate(uri.path.orEmpty(), params) } catch (failure: Throwable) {
-                SocketBrowserCallback(client, "").failure()
-                throw failure
-            }
-            SocketBrowserCallback(client, code)
-        } catch (failure: Throwable) {
-            runCatching { client.close() }
-            throw failure
-        }
-    }
-
     private fun completeLogin(generation: Long, response: TokenResponse) = loginGate.runIfCurrent(generation) {
         val access = response.accessToken?.takeIf(String::isNotBlank) ?: throw ChatGptAuthException("Could not complete ChatGPT sign-in.")
         val refresh = response.refreshToken?.takeIf(String::isNotBlank) ?: throw ChatGptAuthException("Could not complete ChatGPT sign-in.")
@@ -134,21 +116,8 @@ class ChatGptAuthManager(private val context: Context) {
     }
 
     private fun openBrowser(url: String) = context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-}
 
-private class SocketBrowserCallback(
-    private val socket: Socket,
-    override val authorizationCode: String,
-) : BrowserCallbackResponder {
-    override fun success() = respond(200, BrowserCallbackPages.SUCCESS)
-    override fun failure() = respond(400, BrowserCallbackPages.FAILURE)
-
-    private fun respond(status: Int, message: String) {
-        socket.use {
-            val bytes = "<html><body><h2>$message</h2></body></html>".toByteArray()
-            it.getOutputStream().write(
-                "HTTP/1.1 $status ${if (status == 200) "OK" else "Bad Request"}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n".toByteArray() + bytes,
-            )
-        }
+    private fun recordCallbackDiagnostic(stage: CallbackDiagnostic) {
+        Log.i("ChatGptAuth", "browser_callback_stage=${stage.name.lowercase()}")
     }
 }

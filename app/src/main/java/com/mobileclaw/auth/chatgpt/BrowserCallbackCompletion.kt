@@ -23,4 +23,6 @@ internal object BrowserCallbackCompletion {
 internal object BrowserCallbackPages {
     const val SUCCESS = "ChatGPT sign-in complete. You can close this page and return to MobileClaw."
     const val FAILURE = "ChatGPT sign-in could not be completed. Return to MobileClaw and try again."
+    const val NOT_FOUND = "This local page is not part of the ChatGPT sign-in callback."
+    const val INVALID_REQUEST = "The local browser request could not be understood."
 }

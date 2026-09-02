@@ -55,12 +55,14 @@ import com.mobileclaw.auth.chatgpt.ChatGptAuthState
 import com.mobileclaw.config.CacheCategory
 import com.mobileclaw.config.CacheCleaner
 import com.mobileclaw.config.ConfigSnapshot
+import com.mobileclaw.config.CloudProviderPreference
 import com.mobileclaw.config.GatewayCapabilityConfig
 import com.mobileclaw.config.GatewayConfig
 import com.mobileclaw.config.capabilityModel
 import com.mobileclaw.config.supportsCapabilityMultimodal
 import com.mobileclaw.llm.LocalModelInfo
 import com.mobileclaw.llm.OpenAiGateway
+import com.mobileclaw.llm.ChatGptModel
 import com.mobileclaw.memory.db.VideoGenerationTaskEntity
 import com.mobileclaw.perception.VirtualDisplayManager
 import com.mobileclaw.ui.ClawColors
@@ -483,6 +485,7 @@ fun SettingsPage(
                     userConfigEntries[CODEX_DESKTOP_TOKEN_KEY]?.value.orEmpty().isNotBlank()
                 val roleRuntimeDryRunEnabled = userConfigEntries[ROLE_RUNTIME_DRY_RUN_TRACE_KEY]?.value == "true"
 
+                CloudProviderCard((context.applicationContext as ClawApplication), snapshot, onSave, c)
                 ChatGptAccountCard((context.applicationContext as ClawApplication), c)
 
                 SettingsHubCard(c) {
@@ -731,6 +734,57 @@ private fun ChatGptAccountCard(app: ClawApplication, c: ClawColors) {
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun CloudProviderCard(app: ClawApplication, snapshot: ConfigSnapshot, onSave: (ConfigSnapshot) -> Unit, c: ClawColors) {
+    val authState by app.chatGptAuthManager.state.collectAsState()
+    var models by remember { mutableStateOf<List<ChatGptModel>>(emptyList()) }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val signedIn = app.chatGptAuthManager.hasUsableSession()
+    fun refresh() {
+        if (!signedIn || loading) return
+        scope.launch {
+            loading = true; error = null
+            try {
+                val catalog = app.chatGptModelService.fetchModels()
+                models = app.chatGptModelService.pickerModels(catalog)
+                if (snapshot.chatGptModel.isBlank()) models.firstOrNull()?.let { onSave(snapshot.copy(chatGptModel = it.slug)) }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Throwable) {
+                error = failure.message ?: "Could not load ChatGPT models."
+            }
+            loading = false
+        }
+    }
+    LaunchedEffect(authState) { if (signedIn) refresh() else models = emptyList() }
+    SettingsHubCard(c) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Cloud provider", color = c.text, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                CloudProviderPreference.entries.forEach { preference ->
+                    val label = when (preference) { CloudProviderPreference.AUTO -> "Automatic"; CloudProviderPreference.CHATGPT_ACCOUNT -> "ChatGPT Account"; CloudProviderPreference.API_GATEWAY -> "API Gateway" }
+                    FilterChip(selected = snapshot.cloudProviderPreference == preference, onClick = { onSave(snapshot.copy(cloudProviderPreference = preference)) }, label = { Text(label) })
+                }
+            }
+            if (signedIn) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("ChatGPT model", color = c.subtext, fontSize = 12.sp)
+                    TextButton(onClick = ::refresh, enabled = !loading) { Text(if (loading) "Loading…" else "Refresh", color = c.text) }
+                }
+                if (models.isNotEmpty()) LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(models, key = { it.slug }) { model ->
+                        FilterChip(selected = snapshot.chatGptModel == model.slug, onClick = { onSave(snapshot.copy(chatGptModel = model.slug)) }, label = { Text(model.displayName) })
+                    }
+                }
+                snapshot.chatGptModel.takeIf { it.isNotBlank() && models.none { model -> model.slug == it } }?.let { Text("Selected: $it", color = c.subtext, fontSize = 12.sp) }
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+            } else Text("Sign in below to discover subscription models.", color = c.subtext, fontSize = 12.sp)
         }
     }
 }

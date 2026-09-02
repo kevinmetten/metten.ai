@@ -35,6 +35,8 @@ data class GatewayCapabilityConfig(
     val apiKey: String = "",
 )
 
+enum class CloudProviderPreference { AUTO, CHATGPT_ACCOUNT, API_GATEWAY }
+
 class AgentConfig(private val context: Context) {
 
     private object Keys {
@@ -49,6 +51,8 @@ class AgentConfig(private val context: Context) {
         val LOCAL_MODEL_ID = stringPreferencesKey("local_model_id")
         val LOCAL_NATIVE_ONLY = stringPreferencesKey("local_native_only")
         val LOCAL_TOOL_CALLING_ENABLED = stringPreferencesKey("local_tool_calling_enabled")
+        val CLOUD_PROVIDER = stringPreferencesKey("cloud_provider_preference")
+        val CHATGPT_MODEL = stringPreferencesKey("chatgpt_model")
         // Legacy single-gateway keys (read-only for migration)
         val ENDPOINT = stringPreferencesKey("llm_endpoint")
         val API_KEY = stringPreferencesKey("llm_api_key")
@@ -70,6 +74,10 @@ class AgentConfig(private val context: Context) {
             localModelId = prefs[Keys.LOCAL_MODEL_ID]?.takeIf { it.isNotBlank() } ?: "gemma4-e2b-litert",
             localNativeOnly = (prefs[Keys.LOCAL_NATIVE_ONLY] ?: "false") == "true",
             localToolCallingEnabled = (prefs[Keys.LOCAL_TOOL_CALLING_ENABLED] ?: "false") == "true",
+            cloudProviderPreference = runCatching {
+                CloudProviderPreference.valueOf(prefs[Keys.CLOUD_PROVIDER] ?: CloudProviderPreference.AUTO.name)
+            }.getOrDefault(CloudProviderPreference.AUTO),
+            chatGptModel = prefs[Keys.CHATGPT_MODEL].orEmpty(),
         )
     }
 
@@ -93,9 +101,16 @@ class AgentConfig(private val context: Context) {
             prefs[Keys.LOCAL_MODEL_ID] = snapshot.localModelId
             prefs[Keys.LOCAL_NATIVE_ONLY] = snapshot.localNativeOnly.toString()
             prefs[Keys.LOCAL_TOOL_CALLING_ENABLED] = snapshot.localToolCallingEnabled.toString()
+            prefs[Keys.CLOUD_PROVIDER] = snapshot.cloudProviderPreference.name
+            prefs[Keys.CHATGPT_MODEL] = snapshot.chatGptModel
         }
     }
 
+    suspend fun updateChatGptModel(model: String) {
+        context.dataStore.edit { it[Keys.CHATGPT_MODEL] = model }
+    }
+
+    /** API-Gateway-only readiness. Overall LLM readiness belongs to ClawApplication.providerReadiness(). */
     fun isConfigured() = snapshot().let { it.endpoint.isNotBlank() && it.apiKey.isNotBlank() }
 
     fun snapshot(): ConfigSnapshot = runBlocking { configFlow.first() }
@@ -147,6 +162,8 @@ data class ConfigSnapshot(
     val localModelId: String = "gemma4-e2b-litert",
     val localNativeOnly: Boolean = false,
     val localToolCallingEnabled: Boolean = false,
+    val cloudProviderPreference: CloudProviderPreference = CloudProviderPreference.AUTO,
+    val chatGptModel: String = "",
 ) {
     val activeGateway: GatewayConfig?
         get() = gateways.find { it.id == activeGatewayId } ?: gateways.firstOrNull()
