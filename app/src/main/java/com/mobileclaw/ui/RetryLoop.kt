@@ -1,5 +1,14 @@
 package com.mobileclaw.ui
 
+import kotlinx.coroutines.CancellationException
+
+/** Treat coroutine cancellation as control flow while leaving ordinary failures inspectable. */
+internal fun <T> Result<T>.rethrowCancellation(): Result<T> {
+    val error = exceptionOrNull()
+    if (error is CancellationException) throw error
+    return this
+}
+
 /** Small shared retry loop that returns as soon as the current result is terminal. */
 internal suspend fun <T> runRetryLoop(
     maxAttempts: Int,

@@ -3677,7 +3677,7 @@ For pure conversational replies, greetings, explanations, and simple factual ans
                     )
                     delay(500L * (attemptIndex + 1))
                 },
-            )
+            ).rethrowCancellation()
 
             val summary = (result.getOrNull()?.content
                 ?: _uiState.value.sessionStates[resolvedSessionId]?.streamingToken?.ifBlank { null }
