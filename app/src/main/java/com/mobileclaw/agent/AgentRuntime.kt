@@ -17,11 +17,14 @@ import com.mobileclaw.skill.SkillAttachment
 import com.mobileclaw.skill.SkillRegistry
 import com.mobileclaw.skill.SkillResult
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlin.coroutines.coroutineContext
 import java.util.UUID
 
@@ -87,6 +90,7 @@ class AgentRuntime(
         val foundationalMemoryContext = try {
             memoryContextBuilder?.build(goal, taskType)?.toPrompt().orEmpty()
         } catch (t: Throwable) {
+            if (t is CancellationException) throw t
             Log.e(TAG, "Failed to build foundational memory context for taskType=$taskType", t)
             ""
         }
@@ -126,6 +130,7 @@ class AgentRuntime(
             try {
                 semanticMemory?.toPromptContext() ?: ""
             } catch (t: Throwable) {
+                if (t is CancellationException) throw t
                 Log.e(TAG, "Failed to build semantic prompt context for taskType=$taskType", t)
                 ""
             }
@@ -179,14 +184,17 @@ class AgentRuntime(
             return result
         }
         while (completedSegments < MAX_SEGMENTS) {
+            currentCoroutineContext().ensureActive()
             val segmentActionStart = actionStepCount(ctx.steps)
 
             while (actionStepCount(ctx.steps) - segmentActionStart < ctx.maxSteps) {
+                currentCoroutineContext().ensureActive()
                 val readyReview = pendingReview?.takeIf { it.isCompleted }
                 if (readyReview != null) {
                     val review = try {
                         readyReview.await()
                     } catch (t: Throwable) {
+                        if (t is CancellationException) throw t
                         Log.w(TAG, "Background five-step review failed for taskId=${ctx.taskId}", t)
                         ""
                     }
@@ -218,6 +226,7 @@ class AgentRuntime(
 
                 val deterministicPhoneLaunch = DeterministicPhoneLaunchRouting.next(taskType, goal, ctx.steps)
                 if (deterministicPhoneLaunch != null) {
+                    currentCoroutineContext().ensureActive()
                     val (skillId, params, finalAfterSuccess, deterministicThought) = deterministicPhoneLaunch
                     emit(AgentEvent.SkillCalling(skillId, params))
                     val skillResult = executeSkillWithDiagnostics(
@@ -290,6 +299,7 @@ class AgentRuntime(
 
                 val deterministicArtifactPatch = deterministicArtifactPatchCall(taskType, artifactPatchContract, ctx.steps)
                 if (deterministicArtifactPatch != null) {
+                    currentCoroutineContext().ensureActive()
                     val (skillId, params, _, thought) = deterministicArtifactPatch
                     emit(AgentEvent.SkillCalling(skillId, params))
                     val skillResult = executeSkillWithDiagnostics(
@@ -392,7 +402,8 @@ class AgentRuntime(
 
                 emit(AgentEvent.Thinking)
 
-                val response = runCatching {
+                currentCoroutineContext().ensureActive()
+                val response = try {
                     llm.chat(ChatRequest(
                         messages = messages,
                         tools = tools,
@@ -401,7 +412,8 @@ class AgentRuntime(
                         onThinkToken = onThinkToken,
                         callOptions = callOptions,
                     ))
-                }.getOrElse { e ->
+                } catch (e: Throwable) {
+                    if (e is CancellationException) throw e
                     val msg = "LLM error: ${e.message}"
                     emit(AgentEvent.Error(msg))
                     onWorkspaceUpdate?.invoke(
@@ -416,6 +428,8 @@ class AgentRuntime(
                     )
                     return finish(AgentResult(success = false, summary = msg, context = ctx))
                 }
+
+                currentCoroutineContext().ensureActive()
 
                 val unresolvedArtifactValidation = unresolvedArtifactValidationIssue(taskType, ctx.steps, artifactRepairAttempts)
                 val unresolvedArtifactDraft = unresolvedArtifactDraftIssue(taskType, ctx.steps, artifactRepairAttempts)
@@ -514,6 +528,7 @@ class AgentRuntime(
                 if (thought.isNotBlank()) emit(AgentEvent.ThinkingComplete(thought))
 
                 val tc = response.toolCall
+                currentCoroutineContext().ensureActive()
                 emit(AgentEvent.SkillCalling(tc.skillId, tc.params))
 
                 val skillResult = executeSkillWithDiagnostics(
@@ -630,6 +645,7 @@ class AgentRuntime(
 
         val finalSummary = try {
             pendingReview?.cancelAndJoin()
+            currentCoroutineContext().ensureActive()
             llm.chat(ChatRequest(
                 messages = ctx.toMessages(
                     systemPrompt + "\n\nYou have reached the internal action budget. Do not call tools. Summarize the useful progress and current state for the user, and say what remains only if it is genuinely unresolved.",
@@ -640,6 +656,7 @@ class AgentRuntime(
                 callOptions = callOptions,
             )).content.orEmpty()
         } catch (t: Throwable) {
+            if (t is CancellationException) throw t
             Log.e(TAG, "Final summary generation failed for taskId=${ctx.taskId}", t)
             ""
         }
@@ -678,8 +695,10 @@ class AgentRuntime(
             return SkillResult(success = false, output = message)
         }
         return try {
+            currentCoroutineContext().ensureActive()
             skill.execute(params)
         } catch (t: Throwable) {
+            if (t is CancellationException) throw t
             val message = "Error executing $skillId: ${t.message ?: t::class.java.simpleName}"
             Log.e(
                 TAG,
@@ -698,6 +717,7 @@ class AgentRuntime(
         callOptions: LlmCallOptions,
     ): String {
         val review = try {
+            currentCoroutineContext().ensureActive()
             llm.chat(ChatRequest(
                 messages = ctx.toMessages(
                     systemPrompt + """
@@ -718,6 +738,7 @@ This note is for your own next step, so be direct and operational.
                 callOptions = callOptions,
             )).content.orEmpty()
         } catch (t: Throwable) {
+            if (t is CancellationException) throw t
             Log.e(TAG, "Five-step review generation failed for taskId=${ctx.taskId}", t)
             ""
         }
@@ -734,6 +755,7 @@ This note is for your own next step, so be direct and operational.
         callOptions: LlmCallOptions,
     ): String {
         val summary = try {
+            currentCoroutineContext().ensureActive()
             llm.chat(ChatRequest(
                 messages = ctx.toMessages(
                     systemPrompt + "\n\nYou are at an internal 20-step checkpoint. Do not call tools. Summarize the useful progress, current screen/state, blockers if any, and write a direct self-instruction for the next segment. This is internal context for yourself, not a final answer to the user.",
@@ -744,6 +766,7 @@ This note is for your own next step, so be direct and operational.
                 callOptions = callOptions,
             )).content.orEmpty()
         } catch (t: Throwable) {
+            if (t is CancellationException) throw t
             Log.e(TAG, "Continuation checkpoint generation failed for taskId=${ctx.taskId}", t)
             ""
         }
