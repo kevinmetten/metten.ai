@@ -30,10 +30,10 @@ internal class CallbackValidator(private val expectedState: String) {
         if (path != "/auth/callback") throw ChatGptAuthException("Unrelated callback route.")
         if (completed) throw ChatGptAuthException("This sign-in response was already handled.")
         completed = true
-        val state = parameters["state"] ?: throw ChatGptAuthException("The sign-in response was missing state.")
+        val state = parameters["state"]?.takeIf(String::isNotBlank) ?: throw ChatGptAuthException("The sign-in response was missing state.")
         if (state != expectedState) throw ChatGptAuthException("The sign-in response did not match this request. Please try again.")
         parameters["error"]?.let { throw ChatGptAuthException(parameters["error_description"] ?: "Sign-in was cancelled.") }
-        return parameters["code"] ?: throw ChatGptAuthException("The sign-in response was missing a code.")
+        return parameters["code"]?.takeIf(String::isNotBlank) ?: throw ChatGptAuthException("The sign-in response was missing a code.")
     }
 }
 
