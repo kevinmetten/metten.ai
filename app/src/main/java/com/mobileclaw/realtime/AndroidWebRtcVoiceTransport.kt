@@ -37,6 +37,7 @@ class AndroidWebRtcVoiceTransport(
     private var disconnectCallback: ((RealtimeVoiceException?) -> Unit)? = null
     private var factory: PeerConnectionFactory? = null
     private var peer: PeerConnection? = null
+    private var eventsChannel: DataChannel? = null
     private var source: AudioSource? = null
     private var localAudio: AudioTrack? = null
     private var focusRequest: AudioFocusRequest? = null
@@ -71,6 +72,11 @@ class AndroidWebRtcVoiceTransport(
                 ?: throw RealtimeVoiceException(RealtimeVoiceDiagnostic.NETWORK_FAILED, "This device could not create a WebRTC audio connection.")
             peer = currentPeer
             currentPeer.addTrack(currentAudio, listOf("metten_voice_stream"))
+            // Current Codex WebRTC startup requires the SDP offer to advertise the standard
+            // realtime events channel. Voice V1 does not send tools or persist events through it.
+            eventsChannel = currentPeer.createDataChannel(REALTIME_EVENTS_CHANNEL, DataChannel.Init()).also {
+                it.registerObserver(eventsObserver(it))
+            }
             val offer = currentPeer.createOfferAwait().also { currentPeer.setDescriptionAwait(it, local = true) }
             val completeOffer = currentPeer.awaitIceGathering(offer)
             val answer = calls.createCall(completeOffer.description)
@@ -102,12 +108,16 @@ class AndroidWebRtcVoiceTransport(
         }
         iceGatheringComplete.cancel()
         connectionReady.cancel()
+        eventsChannel?.close()
+        eventsChannel?.unregisterObserver()
+        eventsChannel?.dispose()
         peer?.close()
         peer?.dispose()
         localAudio?.dispose()
         source?.dispose()
         factory?.dispose()
         peer = null
+        eventsChannel = null
         localAudio = null
         source = null
         factory = null
@@ -149,6 +159,21 @@ class AndroidWebRtcVoiceTransport(
                 else -> Unit
             }
         }
+    }
+
+    private fun eventsObserver(channel: DataChannel) = object : DataChannel.Observer {
+        override fun onBufferedAmountChange(previousAmount: Long) = Unit
+
+        override fun onStateChange() {
+            if (channel.state() == DataChannel.State.CLOSED) {
+                disconnectCallback?.invoke(
+                    RealtimeVoiceException(RealtimeVoiceDiagnostic.REMOTE_CLOSED, "The remote Live Voice session ended."),
+                )
+            }
+        }
+
+        // Session events can contain transcripts. V1 intentionally consumes and discards them.
+        override fun onMessage(buffer: DataChannel.Buffer) = Unit
     }
 
     private suspend fun PeerConnection.createOfferAwait(): SessionDescription = suspendCancellableCoroutine { continuation ->
@@ -220,5 +245,6 @@ class AndroidWebRtcVoiceTransport(
         const val TAG = "LiveVoice"
         const val ICE_GATHERING_TIMEOUT_MS = 10_000L
         const val CONNECTION_TIMEOUT_MS = 20_000L
+        const val REALTIME_EVENTS_CHANNEL = "oai-events"
     }
 }
