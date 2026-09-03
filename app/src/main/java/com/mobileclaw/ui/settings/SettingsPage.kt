@@ -1,5 +1,7 @@
 package com.mobileclaw.ui.settings
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Build
 import android.widget.Toast
 import com.google.gson.Gson
@@ -39,6 +41,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -65,6 +68,7 @@ import com.mobileclaw.llm.OpenAiGateway
 import com.mobileclaw.llm.ChatGptModel
 import com.mobileclaw.memory.db.VideoGenerationTaskEntity
 import com.mobileclaw.perception.VirtualDisplayManager
+import com.mobileclaw.realtime.RealtimeVoicePhase
 import com.mobileclaw.ui.ClawColors
 import com.mobileclaw.ui.ClawIconTile
 import com.mobileclaw.ui.ClawPageHeader
@@ -693,6 +697,11 @@ fun SettingsPage(
 private fun ChatGptAccountCard(app: ClawApplication, c: ClawColors) {
     val manager = app.chatGptAuthManager
     val state by manager.state.collectAsState()
+    val voiceState by app.realtimeVoiceController.state.collectAsState()
+    val context = LocalContext.current
+    val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) app.realtimeVoiceController.start() else app.realtimeVoiceController.microphonePermissionMissing()
+    }
     SettingsHubCard(c) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("ChatGPT Account", color = c.text, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
@@ -723,7 +732,46 @@ private fun ChatGptAccountCard(app: ClawApplication, c: ClawColors) {
                     Text("Connected", color = c.text, fontWeight = FontWeight.Medium)
                     current.account.email?.let { Text(it, color = c.subtext, fontSize = 12.sp) }
                     current.account.planType?.let { Text(it.replaceFirstChar(Char::uppercase), color = c.subtext, fontSize = 12.sp) }
-                    OutlinedButton(onClick = manager::signOut) { Text("Sign out", color = c.text) }
+                    Text(
+                        when (voiceState.phase) {
+                            RealtimeVoicePhase.IDLE -> "Manual full-duplex voice test"
+                            RealtimeVoicePhase.CONNECTING -> "Connecting…"
+                            RealtimeVoicePhase.CONNECTED -> "Live"
+                            RealtimeVoicePhase.MUTED -> "Muted"
+                            RealtimeVoicePhase.ENDING -> "Ending…"
+                            RealtimeVoicePhase.FAILED -> voiceState.message ?: "Live Voice failed."
+                        },
+                        color = if (voiceState.phase == RealtimeVoicePhase.FAILED) MaterialTheme.colorScheme.error else c.subtext,
+                        fontSize = 12.sp,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (voiceState.phase in setOf(RealtimeVoicePhase.IDLE, RealtimeVoicePhase.FAILED)) {
+                            Button(
+                                onClick = {
+                                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                                        app.realtimeVoiceController.start()
+                                    } else {
+                                        microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = c.text, contentColor = c.bg),
+                            ) { Text("Start Live Voice") }
+                        } else {
+                            OutlinedButton(onClick = app.realtimeVoiceController::stop, border = androidx.compose.foundation.BorderStroke(0.8.dp, c.border)) {
+                                Text("End", color = c.text)
+                            }
+                            if (voiceState.phase in setOf(RealtimeVoicePhase.CONNECTED, RealtimeVoicePhase.MUTED)) {
+                                OutlinedButton(
+                                    onClick = { app.realtimeVoiceController.setMuted(voiceState.phase != RealtimeVoicePhase.MUTED) },
+                                    border = androidx.compose.foundation.BorderStroke(0.8.dp, c.border),
+                                ) { Text(if (voiceState.phase == RealtimeVoicePhase.MUTED) "Unmute" else "Mute", color = c.text) }
+                            }
+                        }
+                    }
+                    OutlinedButton(onClick = {
+                        app.realtimeVoiceController.stop()
+                        manager.signOut()
+                    }) { Text("Sign out", color = c.text) }
                 }
                 is ChatGptAuthState.Refreshing -> Text("Refreshing ChatGPT session…", color = c.subtext, fontSize = 12.sp)
                 is ChatGptAuthState.Error -> {

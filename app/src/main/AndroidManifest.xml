@@ -5,6 +5,8 @@
     <!-- Network -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Live Voice starts capture only after an explicit user action and runtime grant. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <!-- App enumeration for Skill execution -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"

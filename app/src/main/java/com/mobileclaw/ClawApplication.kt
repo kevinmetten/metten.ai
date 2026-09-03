@@ -41,6 +41,9 @@ import com.mobileclaw.permission.PermissionManager
 import com.mobileclaw.permission.AndroidDeviceReadinessSignalsProvider
 import com.mobileclaw.permission.DeviceReadinessEngine
 import com.mobileclaw.permission.detectRom
+import com.mobileclaw.realtime.AndroidWebRtcVoiceTransport
+import com.mobileclaw.realtime.ChatGptRealtimeCallClient
+import com.mobileclaw.realtime.ChatGptRealtimeSessionController
 import com.mobileclaw.runtime.PageRuntimeCapabilities
 import com.mobileclaw.server.ConsoleServer
 import com.mobileclaw.server.LocalApiServer
@@ -71,6 +74,9 @@ class ClawApplication : Application() {
         private set
 
     lateinit var chatGptModelService: ChatGptModelService
+        private set
+
+    lateinit var realtimeVoiceController: ChatGptRealtimeSessionController
         private set
 
     lateinit var database: ClawDatabase
@@ -175,6 +181,10 @@ class ClawApplication : Application() {
         agentTaskController = AgentTaskController()
         chatGptAuthManager = ChatGptAuthManager(this)
         chatGptModelService = ChatGptModelService(chatGptAuthManager)
+        val realtimeCalls = ChatGptRealtimeCallClient(chatGptAuthManager)
+        realtimeVoiceController = ChatGptRealtimeSessionController(agentExecutionScope) {
+            AndroidWebRtcVoiceTransport(this, realtimeCalls)
+        }
         registerForegroundCallbacks()
         database = ClawDatabase.getInstance(this)
         agentConfig = AgentConfig(this)
@@ -297,6 +307,7 @@ class ClawApplication : Application() {
             agentTaskController.cancelTask(it.taskId, com.mobileclaw.agent.AgentCancellationReason.APP_SHUTDOWN)
         }
         agentExecutionScope.cancel()
+        realtimeVoiceController.stop()
         localApiServer.stop()
         consoleServer.stop()
         super.onTerminate()
