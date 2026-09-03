@@ -59,7 +59,7 @@ fun ClassicShellContent(
                 gatewayOnline = uiState.isConfigured || uiState.privServerConnected,
                 onUserInfo = { vm.navigate(AppPage.USER_INFO) },
                 onRoles = { vm.navigate(AppPage.ROLES) },
-                onAiBasicSettings = { vm.navigate(AppPage.AI_BASIC_SETTINGS) },
+                onAiBasicSettings = { vm.navigate(classicMeAiBasicsDestination()) },
                 onGeneralSettings = { vm.navigate(AppPage.GENERAL_SETTINGS) },
                 onToolsSettings = { vm.navigate(AppPage.TOOLS_SETTINGS) },
                 onMemorySettings = { vm.navigate(AppPage.MEMORY_SETTINGS) },
@@ -70,3 +70,4 @@ fun ClassicShellContent(
         }
     }
 }
+internal fun classicMeAiBasicsDestination(): AppPage = AppPage.AI_BASIC_SETTINGS
