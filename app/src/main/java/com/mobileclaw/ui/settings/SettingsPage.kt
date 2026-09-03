@@ -431,6 +431,8 @@ fun SettingsPage(
     vdTestResult: String?,
     privServerConnected: Boolean,
     onSave: (ConfigSnapshot) -> Unit,
+    onCloudProviderChange: (CloudProviderPreference) -> Unit,
+    onChatGptModelChange: (String) -> Unit,
     onBack: () -> Unit,
     onOpenHelp: () -> Unit,
     onOpenWorkspace: () -> Unit,
@@ -510,7 +512,7 @@ fun SettingsPage(
                     userConfigEntries[CODEX_DESKTOP_TOKEN_KEY]?.value.orEmpty().isNotBlank()
                 val roleRuntimeDryRunEnabled = userConfigEntries[ROLE_RUNTIME_DRY_RUN_TRACE_KEY]?.value == "true"
 
-                CloudProviderCard((context.applicationContext as ClawApplication), snapshot, onSave, c)
+                CloudProviderCard((context.applicationContext as ClawApplication), snapshot, onCloudProviderChange, onChatGptModelChange, c)
                 ChatGptAccountCard((context.applicationContext as ClawApplication), c)
 
                 SettingsHubCard(c) {
@@ -817,7 +819,13 @@ private fun ChatGptAccountCard(app: ClawApplication, c: ClawColors) {
 }
 
 @Composable
-private fun CloudProviderCard(app: ClawApplication, snapshot: ConfigSnapshot, onSave: (ConfigSnapshot) -> Unit, c: ClawColors) {
+private fun CloudProviderCard(
+    app: ClawApplication,
+    snapshot: ConfigSnapshot,
+    onProviderChange: (CloudProviderPreference) -> Unit,
+    onChatGptModelChange: (String) -> Unit,
+    c: ClawColors,
+) {
     val authState by app.chatGptAuthManager.state.collectAsState()
     var models by remember { mutableStateOf<List<ChatGptModel>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
@@ -846,7 +854,7 @@ private fun CloudProviderCard(app: ClawApplication, snapshot: ConfigSnapshot, on
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 CloudProviderPreference.entries.forEach { preference ->
                     val label = when (preference) { CloudProviderPreference.AUTO -> "Automatic"; CloudProviderPreference.CHATGPT_ACCOUNT -> "ChatGPT Account"; CloudProviderPreference.API_GATEWAY -> "API Gateway" }
-                    FilterChip(selected = snapshot.cloudProviderPreference == preference, onClick = { onSave(snapshot.copy(cloudProviderPreference = preference)) }, label = { Text(label) })
+                    FilterChip(selected = snapshot.cloudProviderPreference == preference, onClick = { onProviderChange(preference) }, label = { Text(label) })
                 }
             }
             if (signedIn) {
@@ -856,7 +864,7 @@ private fun CloudProviderCard(app: ClawApplication, snapshot: ConfigSnapshot, on
                 }
                 if (models.isNotEmpty()) LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(models, key = { it.slug }) { model ->
-                        FilterChip(selected = snapshot.chatGptModel == model.slug, onClick = { onSave(snapshot.copy(chatGptModel = model.slug)) }, label = { Text(model.displayName) })
+                        FilterChip(selected = snapshot.chatGptModel == model.slug, onClick = { onChatGptModelChange(model.slug) }, label = { Text(model.displayName) })
                     }
                 }
                 snapshot.chatGptModel.takeIf { it.isNotBlank() && models.none { model -> model.slug == it } }?.let { Text("Selected: $it", color = c.subtext, fontSize = 12.sp) }
@@ -870,6 +878,8 @@ private fun CloudProviderCard(app: ClawApplication, snapshot: ConfigSnapshot, on
 fun AiBasicSettingsPage(
     config: Flow<ConfigSnapshot>,
     onSave: (ConfigSnapshot) -> Unit,
+    onCloudProviderChange: (CloudProviderPreference) -> Unit,
+    onChatGptModelChange: (String) -> Unit,
     onBack: () -> Unit,
     localModels: List<LocalModelInfo>,
     onLocalModelEnabled: (Boolean) -> Unit,
@@ -931,7 +941,8 @@ fun AiBasicSettingsPage(
                         AiBasicsRootSection.CLOUD_PROVIDER -> CloudProviderCard(
                             context.applicationContext as ClawApplication,
                             snapshot,
-                            onSave,
+                            onCloudProviderChange,
+                            onChatGptModelChange,
                             c,
                         )
                         AiBasicsRootSection.CHATGPT_ACCOUNT -> ChatGptAccountCard(

@@ -5068,10 +5068,24 @@ For pure conversational replies, greetings, explanations, and simple factual ans
         }
     }
 
+    fun setCloudProviderPreference(preference: com.mobileclaw.config.CloudProviderPreference) {
+        viewModelScope.launch { config.updateCloudProviderPreference(preference) }
+    }
+
+    fun setChatGptModel(model: String) {
+        viewModelScope.launch { config.updateChatGptModel(model) }
+    }
+
     fun setModel(model: String) {
         viewModelScope.launch {
             val snap = config.snapshot()
-            val updated = com.mobileclaw.llm.ChatModelPolicy.select(snap, model, app.providerReadiness(snap).effectiveCloudProvider)
+            val provider = app.providerReadiness(snap).effectiveCloudProvider
+            if (!model.startsWith("local:") && provider == com.mobileclaw.llm.EffectiveCloudProvider.CHATGPT_ACCOUNT) {
+                config.updateChatGptModel(model)
+                _uiState.update { it.copy(currentModel = model) }
+                return@launch
+            }
+            val updated = com.mobileclaw.llm.ChatModelPolicy.select(snap, model, provider)
             if (updated != snap) config.update(updated)
             _uiState.update { it.copy(currentModel = if (model.startsWith("local:")) model else app.effectiveModel(updated)) }
         }

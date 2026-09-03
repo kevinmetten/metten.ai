@@ -3,6 +3,8 @@ package com.mobileclaw.llm
 import com.mobileclaw.config.ConfigSnapshot
 import com.mobileclaw.config.GatewayCapabilityConfig
 import com.mobileclaw.config.GatewayConfig
+import com.mobileclaw.config.CloudProviderPreference
+import com.mobileclaw.config.TargetedConfigMutation
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -36,10 +38,30 @@ class ChatModelPolicyTest {
     }
 
     @Test fun `ChatGPT selection changes only ChatGPT model`() {
-        val updated = ChatModelPolicy.select(snapshot, "sol", EffectiveCloudProvider.CHATGPT_ACCOUNT)
+        val configured = snapshot.copy(cloudProviderPreference = CloudProviderPreference.CHATGPT_ACCOUNT)
+        val updated = TargetedConfigMutation.ChatGptModel("sol").applyTo(configured)
         assertEquals("sol", updated.chatGptModel)
         assertEquals("gateway-old", updated.chatModel)
+        assertEquals(CloudProviderPreference.CHATGPT_ACCOUNT, updated.cloudProviderPreference)
         assertFalse(updated.localModelEnabled)
+    }
+
+    @Test fun `provider selection preserves Terra`() {
+        val automatic = snapshot.copy(cloudProviderPreference = CloudProviderPreference.AUTO, chatGptModel = "terra")
+        val updated = TargetedConfigMutation.CloudProvider(CloudProviderPreference.CHATGPT_ACCOUNT).applyTo(automatic)
+        assertEquals(CloudProviderPreference.CHATGPT_ACCOUNT, updated.cloudProviderPreference)
+        assertEquals("terra", updated.chatGptModel)
+    }
+
+    @Test fun `separate provider and model mutations compose without stale snapshot replacement`() {
+        val initial = snapshot.copy(cloudProviderPreference = CloudProviderPreference.AUTO, chatGptModel = "sol")
+        val mutations = listOf(
+            TargetedConfigMutation.CloudProvider(CloudProviderPreference.CHATGPT_ACCOUNT),
+            TargetedConfigMutation.ChatGptModel("terra"),
+        )
+        val updated = mutations.fold(initial) { current, mutation -> mutation.applyTo(current) }
+        assertEquals(CloudProviderPreference.CHATGPT_ACCOUNT, updated.cloudProviderPreference)
+        assertEquals("terra", updated.chatGptModel)
     }
 
     @Test fun `gateway selection changes active gateway and preserves ChatGPT selection`() {

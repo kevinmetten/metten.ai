@@ -3,8 +3,6 @@ package com.mobileclaw.realtime
 import android.content.Context
 import android.media.AudioFocusRequest
 import android.media.AudioManager
-import android.media.AudioDeviceInfo
-import android.os.Build
 import android.util.Log
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CompletableDeferred
@@ -50,8 +48,6 @@ class AndroidWebRtcVoiceTransport(
     private val iceGatheringComplete = CompletableDeferred<Unit>()
     private val remoteAudioTracks = mutableListOf<AudioTrack>()
     private var previousMode = AudioManager.MODE_NORMAL
-    private var previousSpeakerphone = false
-    private var explicitCommunicationRoute = false
 
     override suspend fun connect(onDisconnected: (RealtimeVoiceException?) -> Unit) {
         try {
@@ -223,38 +219,19 @@ class AndroidWebRtcVoiceTransport(
 
     private fun acquireAudioRoute() {
         previousMode = audioManager.mode
-        previousSpeakerphone = audioManager.isSpeakerphoneOn
         val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
             .setAudioAttributes(VoiceAudioPolicy.playbackAttributes).build()
         if (audioManager.requestAudioFocus(request) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
             throw RealtimeVoiceException(RealtimeVoiceDiagnostic.AUDIO_PLAYBACK_FAILURE, "Audio focus is unavailable for Live Voice.")
         }
         focusRequest = request
-        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val available = audioManager.availableCommunicationDevices
-            val selectedType = audioManager.communicationDevice?.type
-            if (VoiceAudioPolicy.routeAction(selectedType, available.map(AudioDeviceInfo::getType).toSet()) == VoiceAudioPolicy.RouteAction.SELECT_SPEAKER) {
-                available.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }?.let {
-                    explicitCommunicationRoute = audioManager.setCommunicationDevice(it)
-                }
-            }
-        } else {
-            audioManager.isSpeakerphoneOn = true
-        }
+        val playbackPlan = VoiceAudioPolicy.builtInAssistantPlaybackPlan()
+        audioManager.mode = playbackPlan.audioMode
     }
 
     private fun releaseAudioRoute() {
         focusRequest?.let(audioManager::abandonAudioFocusRequest)
         focusRequest = null
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (VoiceAudioPolicy.cleanupAction(explicitCommunicationRoute) == VoiceAudioPolicy.CleanupAction.CLEAR_EXPLICIT_ROUTE) {
-                audioManager.clearCommunicationDevice()
-            }
-            explicitCommunicationRoute = false
-        } else {
-            audioManager.isSpeakerphoneOn = previousSpeakerphone
-        }
         audioManager.mode = previousMode
     }
 
