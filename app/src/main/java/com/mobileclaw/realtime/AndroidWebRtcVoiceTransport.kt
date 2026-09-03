@@ -7,7 +7,10 @@ import android.media.AudioManager
 import android.util.Log
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeout
 import org.webrtc.AudioSource
 import org.webrtc.AudioTrack
 import org.webrtc.DataChannel
@@ -17,12 +20,13 @@ import org.webrtc.MediaStream
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
 import org.webrtc.RtpReceiver
+import org.webrtc.MediaStreamTrack
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-/** Audio-only WebRTC V3 transport. No transcript, audio, SDP, ICE secret, or call id is logged/persisted. */
+/** Audio-only WebRTC transport for Codex's AVAS realtime V1 adapter. */
 class AndroidWebRtcVoiceTransport(
     context: Context,
     private val calls: ChatGptRealtimeCallClient,
@@ -37,37 +41,51 @@ class AndroidWebRtcVoiceTransport(
     private var localAudio: AudioTrack? = null
     private var focusRequest: AudioFocusRequest? = null
     private val connectionReady = CompletableDeferred<Unit>()
+    private val iceGatheringComplete = CompletableDeferred<Unit>()
+    private val remoteAudioTracks = mutableListOf<AudioTrack>()
     private var previousMode = AudioManager.MODE_NORMAL
     private var previousSpeakerphone = false
 
     override suspend fun connect(onDisconnected: (RealtimeVoiceException?) -> Unit) {
-        check(!closed.get())
-        disconnectCallback = onDisconnected
-        acquireAudioRoute()
-        PeerConnectionFactory.initialize(
-            PeerConnectionFactory.InitializationOptions.builder(appContext).createInitializationOptions(),
-        )
-        val currentFactory = PeerConnectionFactory.builder().createPeerConnectionFactory()
-        factory = currentFactory
-        val currentSource = currentFactory.createAudioSource(MediaConstraints())
-        source = currentSource
-        val currentAudio = currentFactory.createAudioTrack("metten_voice_audio", currentSource).apply { setEnabled(true) }
-        localAudio = currentAudio
-        val configuration = PeerConnection.RTCConfiguration(
-            listOf(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()),
-        ).apply { sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN }
-        val currentPeer = currentFactory.createPeerConnection(configuration, observer())
-            ?: throw RealtimeVoiceException(RealtimeVoiceDiagnostic.UNKNOWN_FAILURE, "This device could not create a WebRTC audio connection.")
-        peer = currentPeer
-        currentPeer.addTrack(currentAudio, listOf("metten_voice_stream"))
-        val offer = currentPeer.createOfferAwait().also { currentPeer.setDescriptionAwait(it, local = true) }
-        val completeOffer = currentPeer.awaitIceGathering(offer)
-        val answer = calls.createCall(completeOffer.description)
-        if (closed.get()) return
-        currentPeer.setDescriptionAwait(SessionDescription(SessionDescription.Type.ANSWER, answer.sdp), local = false)
-        connectionReady.await()
-        // Basic speech is carried by the negotiated media transceivers. V1 deliberately omits
-        // the experimental orchestration sideband; its absence cannot expose tools or fail audio.
+        try {
+            check(!closed.get())
+            disconnectCallback = onDisconnected
+            acquireAudioRoute()
+            PeerConnectionFactory.initialize(
+                PeerConnectionFactory.InitializationOptions.builder(appContext).createInitializationOptions(),
+            )
+            val currentFactory = PeerConnectionFactory.builder().createPeerConnectionFactory()
+            factory = currentFactory
+            val currentSource = try {
+                currentFactory.createAudioSource(MediaConstraints())
+            } catch (_: SecurityException) {
+                throw RealtimeVoiceException(RealtimeVoiceDiagnostic.MIC_FAILURE, "The microphone could not be opened.")
+            }
+            source = currentSource
+            val currentAudio = currentFactory.createAudioTrack("metten_voice_audio", currentSource).apply { setEnabled(true) }
+            localAudio = currentAudio
+            val configuration = PeerConnection.RTCConfiguration(
+                listOf(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()),
+            ).apply { sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN }
+            val currentPeer = currentFactory.createPeerConnection(configuration, observer())
+                ?: throw RealtimeVoiceException(RealtimeVoiceDiagnostic.NETWORK_FAILED, "This device could not create a WebRTC audio connection.")
+            peer = currentPeer
+            currentPeer.addTrack(currentAudio, listOf("metten_voice_stream"))
+            val offer = currentPeer.createOfferAwait().also { currentPeer.setDescriptionAwait(it, local = true) }
+            val completeOffer = currentPeer.awaitIceGathering(offer)
+            val answer = calls.createCall(completeOffer.description)
+            if (closed.get()) throw CancellationException("Voice session stopped.")
+            currentPeer.setDescriptionAwait(SessionDescription(SessionDescription.Type.ANSWER, answer.sdp), local = false)
+            withTimeout(CONNECTION_TIMEOUT_MS) { connectionReady.await() }
+            // WebRTC's native AudioDeviceModule renders enabled remote AudioTracks. No PCM bridge
+            // is needed. The V1 media conversation does not require Codex's agent sideband.
+        } catch (_: TimeoutCancellationException) {
+            close()
+            throw RealtimeVoiceException(RealtimeVoiceDiagnostic.NETWORK_FAILED, "The Live Voice connection timed out.")
+        } catch (failure: Throwable) {
+            close()
+            throw failure
+        }
     }
 
     override fun setMuted(muted: Boolean) {
@@ -78,6 +96,12 @@ class AndroidWebRtcVoiceTransport(
         if (!closed.compareAndSet(false, true)) return
         disconnectCallback = null
         localAudio?.setEnabled(false)
+        synchronized(remoteAudioTracks) {
+            remoteAudioTracks.forEach { it.setEnabled(false) }
+            remoteAudioTracks.clear()
+        }
+        iceGatheringComplete.cancel()
+        connectionReady.cancel()
         peer?.close()
         peer?.dispose()
         localAudio?.dispose()
@@ -94,22 +118,34 @@ class AndroidWebRtcVoiceTransport(
         override fun onSignalingChange(state: PeerConnection.SignalingState?) = Unit
         override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) = Unit
         override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
-        override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) = Unit
+        override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {
+            if (state == PeerConnection.IceGatheringState.COMPLETE) iceGatheringComplete.complete(Unit)
+        }
         override fun onIceCandidate(candidate: IceCandidate?) = Unit
         override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>?) = Unit
         override fun onAddStream(stream: MediaStream?) = Unit
         override fun onRemoveStream(stream: MediaStream?) = Unit
         override fun onDataChannel(channel: DataChannel?) = Unit
         override fun onRenegotiationNeeded() = Unit
-        override fun onAddTrack(receiver: RtpReceiver?, streams: Array<out MediaStream>?) = Unit
+        override fun onAddTrack(receiver: RtpReceiver?, streams: Array<out MediaStream>?) {
+            val track = receiver?.track()
+            if (track?.kind() == MediaStreamTrack.AUDIO_TRACK_KIND && track is AudioTrack) {
+                track.setEnabled(true)
+                synchronized(remoteAudioTracks) { remoteAudioTracks += track }
+            }
+        }
         override fun onConnectionChange(state: PeerConnection.PeerConnectionState?) {
             Log.i(TAG, "WebRTC connection state: $state")
             when (state) {
                 PeerConnection.PeerConnectionState.CONNECTED -> connectionReady.complete(Unit)
-                PeerConnection.PeerConnectionState.FAILED -> disconnectCallback?.invoke(
-                    RealtimeVoiceException(RealtimeVoiceDiagnostic.NETWORK_FAILED, "Live Voice lost its WebRTC connection."),
-                ).also { connectionReady.completeExceptionally(protocolFailure()) }
-                PeerConnection.PeerConnectionState.CLOSED -> disconnectCallback?.invoke(null)
+                PeerConnection.PeerConnectionState.FAILED -> {
+                    val failure = RealtimeVoiceException(RealtimeVoiceDiagnostic.NETWORK_FAILED, "Live Voice lost its WebRTC connection.")
+                    connectionReady.completeExceptionally(failure)
+                    disconnectCallback?.invoke(failure)
+                }
+                PeerConnection.PeerConnectionState.CLOSED -> disconnectCallback?.invoke(
+                    RealtimeVoiceException(RealtimeVoiceDiagnostic.REMOTE_CLOSED, "The remote Live Voice session ended."),
+                )
                 else -> Unit
             }
         }
@@ -139,24 +175,11 @@ class AndroidWebRtcVoiceTransport(
         }
 
     private suspend fun PeerConnection.awaitIceGathering(fallback: SessionDescription): SessionDescription =
-        suspendCancellableCoroutine { continuation ->
-            if (iceGatheringState() == PeerConnection.IceGatheringState.COMPLETE) {
-                continuation.resume(localDescription ?: fallback)
-                return@suspendCancellableCoroutine
-            }
-            val timer = Thread {
-                repeat(100) {
-                    if (!continuation.isActive) return@Thread
-                    if (iceGatheringState() == PeerConnection.IceGatheringState.COMPLETE) {
-                        continuation.resume(localDescription ?: fallback)
-                        return@Thread
-                    }
-                    Thread.sleep(50)
-                }
-                if (continuation.isActive) continuation.resume(localDescription ?: fallback)
-            }
-            timer.name = "voice-ice-gathering"
-            timer.start()
+        if (iceGatheringState() == PeerConnection.IceGatheringState.COMPLETE) {
+            localDescription ?: fallback
+        } else {
+            withTimeout(ICE_GATHERING_TIMEOUT_MS) { iceGatheringComplete.await() }
+            localDescription ?: fallback
         }
 
     private fun acquireAudioRoute() {
@@ -164,8 +187,12 @@ class AndroidWebRtcVoiceTransport(
         previousSpeakerphone = audioManager.isSpeakerphoneOn
         val attributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
-        focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-            .setAudioAttributes(attributes).build().also(audioManager::requestAudioFocus)
+        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+            .setAudioAttributes(attributes).build()
+        if (audioManager.requestAudioFocus(request) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+            throw RealtimeVoiceException(RealtimeVoiceDiagnostic.AUDIO_PLAYBACK_FAILURE, "Audio focus is unavailable for Live Voice.")
+        }
+        focusRequest = request
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
         audioManager.isSpeakerphoneOn = true
     }
@@ -189,5 +216,9 @@ class AndroidWebRtcVoiceTransport(
         override fun onSetFailure(error: String?) = Unit
     }
 
-    private companion object { const val TAG = "LiveVoice" }
+    private companion object {
+        const val TAG = "LiveVoice"
+        const val ICE_GATHERING_TIMEOUT_MS = 10_000L
+        const val CONNECTION_TIMEOUT_MS = 20_000L
+    }
 }

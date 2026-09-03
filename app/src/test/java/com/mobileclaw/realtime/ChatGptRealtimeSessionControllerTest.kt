@@ -55,6 +55,28 @@ class ChatGptRealtimeSessionControllerTest {
         assertEquals(RealtimeVoicePhase.CONNECTED, harness.controller.state.value.phase)
     }
 
+    @Test fun `remote close is truthful and transport is closed once`() {
+        val harness = Harness()
+        harness.controller.start()
+        harness.scope.advanceUntilIdle()
+        harness.last.callback?.invoke(null)
+        assertEquals(RealtimeVoicePhase.FAILED, harness.controller.state.value.phase)
+        assertEquals(RealtimeVoiceDiagnostic.REMOTE_CLOSED, harness.controller.state.value.diagnostic)
+        assertEquals(1, harness.last.closeCount)
+    }
+
+    @Test fun `completion after stop cannot publish connected`() {
+        val gate = CompletableDeferred<Unit>()
+        val harness = Harness { gate.await() }
+        harness.controller.start()
+        harness.scope.runCurrent()
+        harness.controller.stop()
+        gate.complete(Unit)
+        harness.scope.advanceUntilIdle()
+        assertEquals(RealtimeVoicePhase.IDLE, harness.controller.state.value.phase)
+        assertEquals(1, harness.last.closeCount)
+    }
+
     private class Harness(initial: suspend () -> Unit = {}) {
         val scope = TestScope(StandardTestDispatcher())
         var behavior = initial
@@ -66,11 +88,12 @@ class ChatGptRealtimeSessionControllerTest {
     }
 
     private class FakeTransport(private val behavior: suspend () -> Unit) : RealtimeVoiceTransport {
-        var closed = false
+        var closeCount = 0
+        val closed get() = closeCount > 0
         var muted = false
         var callback: ((RealtimeVoiceException?) -> Unit)? = null
         override suspend fun connect(onDisconnected: (RealtimeVoiceException?) -> Unit) { callback = onDisconnected; behavior() }
         override fun setMuted(muted: Boolean) { this.muted = muted }
-        override fun close() { closed = true }
+        override fun close() { closeCount++ }
     }
 }

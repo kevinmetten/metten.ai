@@ -1,12 +1,11 @@
 package com.mobileclaw.realtime
 
-import com.google.gson.JsonObject
 import com.mobileclaw.auth.chatgpt.ChatGptAuthManager
 import com.mobileclaw.auth.chatgpt.ChatGptBackendCredentials
+import com.mobileclaw.auth.chatgpt.ChatGptRefreshException
 import com.mobileclaw.llm.CHATGPT_BACKEND_ROOT
 import com.mobileclaw.llm.chatGptHeaders
 import java.io.IOException
-import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
@@ -29,11 +28,13 @@ class ChatGptRealtimeCallClient internal constructor(
     private val credentials: RealtimeCredentialProvider,
     private val client: OkHttpClient,
     private val root: String,
+    private val sessionConfig: CodexRealtimeSessionConfig,
 ) {
     constructor(auth: ChatGptAuthManager) : this(
         RealtimeCredentialProvider { auth.getValidBackendCredentials() },
         OkHttpClient(),
         CHATGPT_BACKEND_ROOT,
+        CodexRealtimeSessionConfig(),
     )
 
     suspend fun createCall(offerSdp: String): RealtimeCallAnswer {
@@ -41,8 +42,12 @@ class ChatGptRealtimeCallClient internal constructor(
             credentials.credentials()
         } catch (cancelled: CancellationException) {
             throw cancelled
+        } catch (_: ChatGptRefreshException.Permanent) {
+            throw RealtimeVoiceException(RealtimeVoiceDiagnostic.NOT_SIGNED_IN, "Your ChatGPT session expired. Sign in again.")
+        } catch (_: ChatGptRefreshException.Transient) {
+            throw RealtimeVoiceException(RealtimeVoiceDiagnostic.AUTH_REFRESH_FAILED, "Could not refresh the ChatGPT session. Try again.")
         } catch (_: Throwable) {
-            throw RealtimeVoiceException(RealtimeVoiceDiagnostic.NOT_SIGNED_IN, "Sign in to ChatGPT to use Live Voice.")
+            throw RealtimeVoiceException(RealtimeVoiceDiagnostic.AUTH_REFRESH_FAILED, "Could not prepare the ChatGPT session. Try again.")
         }
         val request = buildRequest(offerSdp, credential)
         return client.newCall(request).awaitRealtimeResponse()
@@ -51,27 +56,11 @@ class ChatGptRealtimeCallClient internal constructor(
     internal fun buildRequest(offerSdp: String, credential: ChatGptBackendCredentials): Request {
         val url = root.toHttpUrl().newBuilder()
             .addPathSegments("realtime/calls")
-            .addQueryParameter("intent", "quicksilver")
-            .addQueryParameter("architecture", "avas")
-            .build()
-        val session = JsonObject().apply {
-            addProperty("type", "realtime")
-            addProperty("model", REALTIME_MODEL)
-            add("output_modalities", com.google.gson.JsonArray().apply { add("audio") })
-            add("audio", JsonObject().apply {
-                add("input", JsonObject().apply {
-                    add("turn_detection", JsonObject().apply {
-                        addProperty("type", "server_vad")
-                        addProperty("create_response", true)
-                        addProperty("interrupt_response", true)
-                    })
-                })
-            })
-        }
-        val body = JsonObject().apply {
-            addProperty("sdp", offerSdp)
-            add("session", session)
-        }.toString()
+            .apply {
+                sessionConfig.protocol.intent?.let { addQueryParameter("intent", it) }
+                sessionConfig.protocol.architecture?.let { addQueryParameter("architecture", it) }
+            }.build()
+        val body = CodexRealtimeProtocolMapper.callBody(offerSdp, sessionConfig).toString()
         return Request.Builder().url(url)
             .chatGptHeaders(credential)
             .post(body.toRequestBody(JSON_MEDIA_TYPE))
@@ -116,14 +105,16 @@ class ChatGptRealtimeCallClient internal constructor(
         }
 
     companion object {
-        const val REALTIME_MODEL = "gpt-live-1-codex"
         private val JSON_MEDIA_TYPE = "application/json".toMediaType()
         internal fun looksLikeSdp(value: String) = value.lineSequence().firstOrNull()?.trim() == "v=0"
 
         internal fun parseCallId(location: String?): String? {
-            val segment = location?.substringBefore('?')?.trimEnd('/')?.substringAfterLast('/')?.takeIf(String::isNotBlank)
+            val clean = location?.trim()?.takeIf { it.isNotEmpty() && !it.any(Char::isWhitespace) } ?: return null
+            val path = clean.substringBefore('#').substringBefore('?')
+            if (path.endsWith('/')) return null
+            val segment = path.substringAfterLast('/').takeIf(String::isNotBlank)
                 ?: return null
-            return segment.takeIf { it.startsWith("rtc_") || runCatching { UUID.fromString(it) }.isSuccess }
+            return segment
         }
 
         internal fun classifyStatus(status: Int): RealtimeVoiceException = when (status) {

@@ -4,6 +4,7 @@ enum class RealtimeVoicePhase { IDLE, CONNECTING, CONNECTED, MUTED, ENDING, FAIL
 
 enum class RealtimeVoiceDiagnostic {
     NOT_SIGNED_IN,
+    AUTH_REFRESH_FAILED,
     MIC_PERMISSION_MISSING,
     CONNECTING,
     CALL_CREATED,
@@ -14,6 +15,10 @@ enum class RealtimeVoiceDiagnostic {
     PROTOCOL_REJECTED,
     SIDEBAND_FAILED,
     NETWORK_FAILED,
+    MIC_FAILURE,
+    AUDIO_PLAYBACK_FAILURE,
+    REMOTE_CLOSED,
+    USER_STOPPED,
     UNKNOWN_FAILURE,
 }
 

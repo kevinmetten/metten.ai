@@ -28,7 +28,25 @@ class ChatGptRealtimeCallClientTest {
         assertEquals("eu", request.header(RESIDENCY_HEADER))
         val json = JsonParser.parseString(request.bodyString()).asJsonObject
         assertEquals("v=0\r\no=offer", json["sdp"].asString)
-        assertEquals(ChatGptRealtimeCallClient.REALTIME_MODEL, json["session"].asJsonObject["model"].asString)
+        val session = json["session"].asJsonObject
+        assertFalse(session.has("type"))
+        assertEquals("gpt-realtime-1.5", session["model"].asString)
+        assertEquals(listOf("audio"), session["output_modalities"].asJsonArray.map { it.asString })
+        val audio = session["audio"].asJsonObject
+        assertEquals("audio/pcm", audio["input"].asJsonObject["format"].asJsonObject["type"].asString)
+        assertEquals(24_000, audio["input"].asJsonObject["format"].asJsonObject["rate"].asInt)
+        assertEquals("gpt-4o-mini-transcribe", audio["input"].asJsonObject["transcription"].asJsonObject["model"].asString)
+        assertEquals("near_field", audio["input"].asJsonObject["noise_reduction"].asJsonObject["type"].asString)
+        val vad = audio["input"].asJsonObject["turn_detection"].asJsonObject
+        assertEquals("server_vad", vad["type"].asString)
+        assertEquals(500, vad["silence_duration_ms"].asInt)
+        assertTrue(vad["create_response"].asBoolean)
+        assertTrue(vad["interrupt_response"].asBoolean)
+        assertEquals("sage", audio["output"].asJsonObject["voice"].asString)
+        assertEquals("audio/pcm", audio["output"].asJsonObject["format"].asJsonObject["type"].asString)
+        // Regression guard: these belong to other adapters/older experimental payloads.
+        assertFalse(request.bodyString().contains("gpt-live-1-codex"))
+        assertFalse(request.bodyString().contains("semantic_vad"))
         assertFalse(request.bodyString().contains("secret-access-token"))
         assertFalse(request.bodyString().contains("account-123"))
     }
@@ -39,11 +57,13 @@ class ChatGptRealtimeCallClientTest {
         assertNull(request.header(RESIDENCY_HEADER))
     }
 
-    @Test fun `call id accepts rtc and uuid but not arbitrary or missing location`() {
+    @Test fun `call id accepts upstream opaque final location segment`() {
         assertEquals("rtc_test", ChatGptRealtimeCallClient.parseCallId("https://chatgpt.com/realtime/calls/rtc_test"))
         val uuid = "123e4567-e89b-12d3-a456-426614174000"
         assertEquals(uuid, ChatGptRealtimeCallClient.parseCallId("/calls/$uuid?x=1"))
-        assertNull(ChatGptRealtimeCallClient.parseCallId("/calls/not-a-call"))
+        assertEquals("not-a-call", ChatGptRealtimeCallClient.parseCallId("/calls/not-a-call"))
+        assertNull(ChatGptRealtimeCallClient.parseCallId("/calls/"))
+        assertNull(ChatGptRealtimeCallClient.parseCallId("not a location"))
         assertNull(ChatGptRealtimeCallClient.parseCallId(null))
     }
 
@@ -87,7 +107,25 @@ class ChatGptRealtimeCallClientTest {
         assertEquals(RealtimeVoiceDiagnostic.PROTOCOL_REJECTED, (thrown as RealtimeVoiceException).diagnostic)
     }
 
-    private fun client(root: String) = ChatGptRealtimeCallClient(RealtimeCredentialProvider { credential }, OkHttpClient(), root)
+    @Test fun `refresh failures remain distinct from signed out`() {
+        val permanent = ChatGptRealtimeCallClient(
+            RealtimeCredentialProvider { throw com.mobileclaw.auth.chatgpt.ChatGptRefreshException.Permanent() },
+            OkHttpClient(), "https://example.test", CodexRealtimeSessionConfig(),
+        )
+        val transient = ChatGptRealtimeCallClient(
+            RealtimeCredentialProvider { throw com.mobileclaw.auth.chatgpt.ChatGptRefreshException.Transient() },
+            OkHttpClient(), "https://example.test", CodexRealtimeSessionConfig(),
+        )
+        assertEquals(RealtimeVoiceDiagnostic.NOT_SIGNED_IN, voiceFailure(permanent).diagnostic)
+        assertEquals(RealtimeVoiceDiagnostic.AUTH_REFRESH_FAILED, voiceFailure(transient).diagnostic)
+    }
+
+    private fun voiceFailure(client: ChatGptRealtimeCallClient) =
+        runCatching { runBlocking { client.createCall("v=0") } }.exceptionOrNull() as RealtimeVoiceException
+
+    private fun client(root: String) = ChatGptRealtimeCallClient(
+        RealtimeCredentialProvider { credential }, OkHttpClient(), root, CodexRealtimeSessionConfig(),
+    )
     private fun okhttp3.Request.bodyString(): String {
         val buffer = okio.Buffer(); body!!.writeTo(buffer); return buffer.readUtf8()
     }

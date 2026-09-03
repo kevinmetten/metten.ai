@@ -78,8 +78,11 @@ class ChatGptRealtimeSessionController(
         source.close()
         transport = null
         connectJob = null
-        _state.value = failure?.let { RealtimeVoiceState(RealtimeVoicePhase.FAILED, it.diagnostic, it.message) }
-            ?: RealtimeVoiceState(RealtimeVoicePhase.FAILED, RealtimeVoiceDiagnostic.NETWORK_FAILED, "Live Voice disconnected.")
+        val reason = failure ?: RealtimeVoiceException(
+            RealtimeVoiceDiagnostic.REMOTE_CLOSED,
+            "The remote Live Voice session ended.",
+        )
+        _state.value = RealtimeVoiceState(RealtimeVoicePhase.FAILED, reason.diagnostic, reason.message)
     }
 
     @Synchronized private fun fail(id: Long, source: RealtimeVoiceTransport, failure: RealtimeVoiceException) {

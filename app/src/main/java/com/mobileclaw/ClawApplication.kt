@@ -306,8 +306,8 @@ class ClawApplication : Application() {
         agentTaskController.activeTasks.value.forEach {
             agentTaskController.cancelTask(it.taskId, com.mobileclaw.agent.AgentCancellationReason.APP_SHUTDOWN)
         }
-        agentExecutionScope.cancel()
         realtimeVoiceController.stop()
+        agentExecutionScope.cancel()
         localApiServer.stop()
         consoleServer.stop()
         super.onTerminate()
