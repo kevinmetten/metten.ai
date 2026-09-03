@@ -831,7 +831,6 @@ private fun CloudProviderCard(app: ClawApplication, snapshot: ConfigSnapshot, on
             try {
                 val catalog = app.chatGptModelService.fetchModels()
                 models = app.chatGptModelService.pickerModels(catalog)
-                if (snapshot.chatGptModel.isBlank()) models.firstOrNull()?.let { onSave(snapshot.copy(chatGptModel = it.slug)) }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (failure: Throwable) {

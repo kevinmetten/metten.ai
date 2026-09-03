@@ -33,6 +33,8 @@ import com.mobileclaw.ui.shell.rememberClassicShellController
 import java.util.Locale
 import com.mobileclaw.R
 import com.mobileclaw.str
+import com.mobileclaw.realtime.VoiceAudioPolicy
+import com.mobileclaw.realtime.RealtimeVoicePhase
 
 class MainActivity : ComponentActivity() {
 
@@ -41,6 +43,18 @@ class MainActivity : ComponentActivity() {
     ) { }
     private var debugPageRequest by mutableStateOf<String?>(null)
     private var debugGoalRequest by mutableStateOf<String?>(null)
+    private var voicePhase = RealtimeVoicePhase.IDLE
+
+    override fun onResume() {
+        super.onResume()
+        voicePhase = (application as ClawApplication).realtimeVoiceController.state.value.phase
+        volumeControlStream = VoiceAudioPolicy.volumeStreamFor(voicePhase)
+    }
+
+    override fun onPause() {
+        volumeControlStream = android.media.AudioManager.USE_DEFAULT_STREAM_TYPE
+        super.onPause()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,6 +66,14 @@ class MainActivity : ComponentActivity() {
         setContent {
             val vm: MainViewModel = viewModel()
             val uiState by vm.uiState.collectAsState()
+            val voiceState by ClawApplication.instance.realtimeVoiceController.state.collectAsState()
+
+            LaunchedEffect(voiceState.phase) {
+                voicePhase = voiceState.phase
+                if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+                    volumeControlStream = VoiceAudioPolicy.volumeStreamFor(voicePhase)
+                }
+            }
 
             LaunchedEffect(debugPageRequest) {
                 debugPageRequest?.let { pageName ->
