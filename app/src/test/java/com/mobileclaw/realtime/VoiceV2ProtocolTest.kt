@@ -17,6 +17,8 @@ class VoiceV2ProtocolTest {
         assertNull(FramelessDelegationProtocol.parse("""{"type":"delegation.created","item":{"type":"delegation","target":"server","id":"d","content":[]}}""", 1))
         assertNull(FramelessDelegationProtocol.parse("""{"type":"delegation.created","item":{"type":"message","target":"client","id":"d","content":[]}}""", 1))
         assertNull(FramelessDelegationProtocol.parse("not json", 1))
+        assertNull(FramelessDelegationProtocol.parse("""{"type":"delegation.created","item":{"type":"delegation","target":"client","content":[]}}""", 1))
+        assertNull(FramelessDelegationProtocol.parse("""{"type":"delegation.created","item":{"type":"delegation","target":"client","id":" ","content":[]}}""", 1))
     }
 
     @Test fun `context append preserves id channel and chunks unicode safely`() {
@@ -38,6 +40,28 @@ class VoiceV2ProtocolTest {
         assertEquals("https://api.openai.com/v1/live/rtc_existing", request.url.toString())
         assertEquals("Bearer secret", request.header("Authorization"))
         assertEquals("account", request.header("ChatGPT-Account-Id"))
-        assertEquals("realtime=v1", request.header("OpenAI-Beta"))
+        assertEquals("metten_ai_android", request.header("originator"))
+        assertNull(request.header("OpenAI-Beta"))
+    }
+
+    @Test fun `reconnect policy is bounded generation scoped and disabled by close`() {
+        val policy = SidebandReconnectPolicy()
+        policy.begin(4)
+        assertNull(policy.nextDelay(3))
+        assertEquals(500L, policy.nextDelay(4))
+        assertEquals(1_500L, policy.nextDelay(4))
+        assertEquals(4_000L, policy.nextDelay(4))
+        assertNull(policy.nextDelay(4))
+        policy.begin(5)
+        policy.close()
+        assertNull(policy.nextDelay(5))
+    }
+
+    @Test fun `closed client rejects stale and current generation sends without exposing credential`() {
+        val client = ChatGptRealtimeSidebandClient(TestScope(), RealtimeCredentialProvider { error("token must not be requested") })
+        assertFalse(client.send(RealtimeDelegationUpdate(1, "d", "safe", RealtimeDelegationChannel.COMMENTARY)))
+        client.close()
+        assertFalse(client.send(RealtimeDelegationUpdate(2, "d", "safe", RealtimeDelegationChannel.SPEAKABLE)))
+        assertFalse(client.toString().contains("token must not be requested"))
     }
 }

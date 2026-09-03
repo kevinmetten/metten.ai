@@ -24,6 +24,11 @@ sealed interface AgentTaskCompletion<out T> {
 
 data class AgentTaskHandle<T>(val taskId: String, val completion: Deferred<AgentTaskCompletion<T>>)
 
+sealed interface ExclusiveSubmissionResult<out T> {
+    data class Accepted<T>(val handle: AgentTaskHandle<T>) : ExclusiveSubmissionResult<T>
+    data class Busy(val conflictingTaskId: String) : ExclusiveSubmissionResult<Nothing>
+}
+
 /** The single application-level register/attach/run/complete lifecycle used by UI and Voice. */
 class AgentTaskSubmissionService(
     private val controller: AgentTaskController,
@@ -36,6 +41,23 @@ class AgentTaskSubmissionService(
 
     fun <T> submit(request: AgentTaskSubmissionRequest<T>): AgentTaskHandle<T> {
         val registration = controller.register(request.sessionId, request.taskType, request.foregroundRequested)
+        return launchRegistered(registration, request)
+    }
+
+    fun <T> trySubmitExclusive(request: AgentTaskSubmissionRequest<T>): ExclusiveSubmissionResult<T> {
+        val registration = when (val attempt = controller.tryRegisterExclusiveTaskType(
+            request.sessionId, request.taskType, request.foregroundRequested,
+        )) {
+            is AgentTaskController.RegistrationAttempt.Busy -> return ExclusiveSubmissionResult.Busy(attempt.conflictingTaskId)
+            is AgentTaskController.RegistrationAttempt.Registered -> attempt.registration
+        }
+        return ExclusiveSubmissionResult.Accepted(launchRegistered(registration, request))
+    }
+
+    private fun <T> launchRegistered(
+        registration: AgentTaskController.Registration,
+        request: AgentTaskSubmissionRequest<T>,
+    ): AgentTaskHandle<T> {
         val completion = CompletableDeferred<AgentTaskCompletion<T>>()
         val job: Job = scope.launch(start = CoroutineStart.LAZY) {
             var outcome: AgentTaskCompletion<T>? = null

@@ -31,6 +31,8 @@ import com.mobileclaw.agent.IntentContextPack
 import com.mobileclaw.agent.AgentRuntime
 import com.mobileclaw.agent.AgentCancellationReason
 import com.mobileclaw.agent.AgentTaskSubmissionRequest
+import com.mobileclaw.agent.AgentTaskCompletion
+import com.mobileclaw.agent.ExclusiveSubmissionResult
 import com.mobileclaw.agent.AgentWorkspaceUpdate
 import com.mobileclaw.agent.ChatBubbleStyle
 import com.mobileclaw.agent.ChannelType
@@ -2147,7 +2149,8 @@ class MainViewModel : ViewModel() {
         val startedRuntime = startAgentRuntime(prepared, execution)
         val rt = startedRuntime.runtime
         val phoneAuroraOverlayShown = startedRuntime.phoneAuroraOverlayShown
-        val taskHandle = app.agentTaskSubmissionService.submit(AgentTaskSubmissionRequest(
+        var submittedResolvedSessionId: String? = null
+        val submissionRequest = AgentTaskSubmissionRequest(
             sessionId = prepared.sessionIdAtStart,
             taskType = execution.executionTaskType,
             foregroundRequested = isPhoneControlTask,
@@ -2160,6 +2163,7 @@ class MainViewModel : ViewModel() {
                 phoneAuroraOverlayShown = phoneAuroraOverlayShown,
             )
             val resolvedSessionId = prelude.resolvedSessionId
+            submittedResolvedSessionId = resolvedSessionId
             val episodicContext = prelude.episodicContext
             maybeStartRoleRuntimeDryRunTrace(
                 prepared = prepared,
@@ -2216,14 +2220,45 @@ class MainViewModel : ViewModel() {
                 userMessageVisible = userMessageVisible,
                 userMessagePersistedEarly = userMessagePersistedEarly,
             )
-        })
+        }
+        val taskHandle = if (isPhoneControlTask) {
+            when (val admission = app.agentTaskSubmissionService.trySubmitExclusive(submissionRequest)) {
+                is ExclusiveSubmissionResult.Accepted -> admission.handle
+                is ExclusiveSubmissionResult.Busy -> {
+                    reconcileSubmissionFailure(prepared.sessionIdAtStart, summary = "Another phone task is already active.")
+                    return
+                }
+            }
+        } else {
+            app.agentTaskSubmissionService.submit(submissionRequest)
+        }
         app.agentExecutionScope.launch {
-            taskHandle.completion.await()
+            when (val completion = taskHandle.completion.await()) {
+                is AgentTaskCompletion.Failed -> reconcileSubmissionFailure(prepared.sessionIdAtStart, submittedResolvedSessionId, completion.message)
+                AgentTaskCompletion.Cancelled -> reconcileSubmissionFailure(prepared.sessionIdAtStart, submittedResolvedSessionId, "Task cancelled.")
+                is AgentTaskCompletion.Succeeded -> Unit
+            }
             if (app.agentTaskController.sessionTask(prepared.sessionIdAtStart) == null) {
                 overlay.hide()
                 auroraOverlay.hide()
             }
         }
+    }
+
+    private fun reconcileSubmissionFailure(sessionId: String, resolvedSessionId: String? = null, summary: String) {
+        updateSession(sessionId) { state ->
+            if (!state.isRunning) state else state.copy(
+                isRunning = false,
+                runStartedAt = 0L,
+                streamingToken = "",
+                streamingThought = "",
+                activeLogLines = state.activeLogLines.finishLatestRunningLine() +
+                    LogLine(type = LogType.ERROR, text = summary.take(240)),
+            )
+        }
+        clearRuntimeHandles(sessionId, resolvedSessionId ?: sessionId)
+        overlay.hide()
+        auroraOverlay.hide()
     }
 
     private suspend fun CoroutineScope.buildAgentRunPrelude(

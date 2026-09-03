@@ -57,6 +57,18 @@ object FramelessDelegationProtocol {
     }
 }
 
+internal class SidebandReconnectPolicy(private val maximumAttempts: Int = 3) {
+    private var generation = -1L
+    private var attempts = 0
+    private var active = false
+    fun begin(value: Long) { generation = value; attempts = 0; active = true }
+    fun close() { active = false }
+    fun nextDelay(value: Long): Long? {
+        if (!active || generation != value || attempts >= maximumAttempts) return null
+        return longArrayOf(500, 1_500, 4_000)[attempts++].coerceAtMost(4_000)
+    }
+}
+
 /** Control-only WebSocket attached to the exact WebRTC call; it never owns media. */
 class ChatGptRealtimeSidebandClient internal constructor(
     private val scope: CoroutineScope,
@@ -71,7 +83,7 @@ class ChatGptRealtimeSidebandClient internal constructor(
     private var listener: ((RealtimeDelegationRequest) -> Unit)? = null
     private var socket: WebSocket? = null
     private var reconnect: Job? = null
-    private var attempts = 0
+    private val reconnectPolicy = SidebandReconnectPolicy()
 
     fun connect(callId: String, generation: Long, listener: (RealtimeDelegationRequest) -> Unit) {
         require(callId.isNotBlank() && !callId.any(Char::isWhitespace))
@@ -79,7 +91,7 @@ class ChatGptRealtimeSidebandClient internal constructor(
         this.callId = callId
         this.generation = generation
         this.listener = listener
-        attempts = 0
+        reconnectPolicy.begin(generation)
         active.set(true)
         open(generation)
     }
@@ -92,6 +104,7 @@ class ChatGptRealtimeSidebandClient internal constructor(
 
     fun close() {
         active.set(false)
+        reconnectPolicy.close()
         reconnect?.cancel(); reconnect = null
         socket?.close(1000, "Voice session ended"); socket = null
         listener = null; callId = null
@@ -99,7 +112,7 @@ class ChatGptRealtimeSidebandClient internal constructor(
 
     internal fun request(callId: String, credential: ChatGptBackendCredentials): Request {
         val url = baseUrl.newBuilder().addPathSegment("live").addPathSegment(callId).build()
-        return Request.Builder().url(url).chatGptHeaders(credential).header("OpenAI-Beta", "realtime=v1").build()
+        return Request.Builder().url(url).chatGptHeaders(credential).build()
     }
 
     private fun open(expected: Long) {
@@ -108,7 +121,7 @@ class ChatGptRealtimeSidebandClient internal constructor(
             val credential = runCatching { credentials.credentials() }.getOrNull() ?: return@launch retry(expected)
             if (!active.get() || generation != expected) return@launch
             socket = http.newWebSocket(request(id, credential), object : WebSocketListener() {
-                override fun onOpen(webSocket: WebSocket, response: Response) { if (generation == expected) attempts = 0 else webSocket.close(1000, null) }
+                override fun onOpen(webSocket: WebSocket, response: Response) { if (generation != expected) webSocket.close(1000, null) }
                 override fun onMessage(webSocket: WebSocket, text: String) {
                     if (!active.get() || generation != expected) return
                     FramelessDelegationProtocol.parse(text, expected)?.let { listener?.invoke(it) }
@@ -120,8 +133,8 @@ class ChatGptRealtimeSidebandClient internal constructor(
     }
 
     private fun retry(expected: Long) {
-        if (!active.get() || generation != expected || attempts >= 3 || reconnect?.isActive == true) return
-        val wait = longArrayOf(500, 1_500, 4_000)[attempts++]
+        if (!active.get() || generation != expected || reconnect?.isActive == true) return
+        val wait = reconnectPolicy.nextDelay(expected) ?: return
         reconnect = scope.launch { delay(wait); if (active.get() && generation == expected) open(expected) }
     }
 }

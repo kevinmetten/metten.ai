@@ -267,7 +267,7 @@ class ClawApplication : Application() {
             agentExecutionScope,
             agentTaskController,
             agentTaskSubmissionService,
-            deviceReadinessEngine,
+            { capability -> deviceReadinessEngine.evaluate(capability).level },
         ) { goal ->
             AgentRuntime(createLlmGateway(), skillRegistry, semanticMemory, MemoryContextBuilder(semanticMemory, userConfig))
                 .run(goal = goal, taskType = TaskType.PHONE_CONTROL)
@@ -282,8 +282,9 @@ class ClawApplication : Application() {
 
     /** Called only from the foreground UI after RECORD_AUDIO is granted. */
     fun startLiveVoice(): Boolean {
-        VoiceSessionForegroundService.start(this)
-        return realtimeVoiceController.start().also { if (!it) VoiceSessionForegroundService.stop(this) }
+        val started = realtimeVoiceController.start()
+        if (started) VoiceSessionForegroundService.start(this)
+        return started
     }
 
     fun endLiveVoice() {

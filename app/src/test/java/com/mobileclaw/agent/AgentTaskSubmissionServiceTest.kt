@@ -36,4 +36,32 @@ class AgentTaskSubmissionServiceTest {
         assertEquals(AgentTaskCompletion.Cancelled, handle.completion.getCompleted())
         assertNull(controller.task(handle.taskId))
     }
+
+    @Test fun `ordinary worker failure is reported after exact registration completes`() {
+        val scope = TestScope(StandardTestDispatcher())
+        val controller = AgentTaskController()
+        val service = AgentTaskSubmissionService(controller, scope) {}
+        val handle = service.submit(AgentTaskSubmissionRequest("ui", TaskType.GENERAL) { error("worker broke") })
+        scope.advanceUntilIdle()
+        assertEquals(AgentTaskCompletion.Failed("worker broke"), handle.completion.getCompleted())
+        assertNull(controller.task(handle.taskId))
+    }
+
+    @Test fun `competing exclusive phone submissions cannot both launch`() {
+        val scope = TestScope(StandardTestDispatcher())
+        val controller = AgentTaskController()
+        val service = AgentTaskSubmissionService(controller, scope) {}
+        var launches = 0
+        val gate = CompletableDeferred<Unit>()
+        val first = service.trySubmitExclusive(AgentTaskSubmissionRequest("voice-a", TaskType.PHONE_CONTROL) { launches++; gate.await() })
+        val second = service.trySubmitExclusive(AgentTaskSubmissionRequest("voice-b", TaskType.PHONE_CONTROL) { launches++; Unit })
+        assertTrue(first is ExclusiveSubmissionResult.Accepted)
+        assertTrue(second is ExclusiveSubmissionResult.Busy)
+        scope.runCurrent()
+        assertEquals(1, launches)
+        assertEquals(1, controller.activeTasks.value.count { it.taskType == TaskType.PHONE_CONTROL })
+        val firstHandle = (first as ExclusiveSubmissionResult.Accepted).handle
+        controller.cancelTask(firstHandle.taskId, AgentCancellationReason.USER_REQUEST)
+        scope.advanceUntilIdle()
+    }
 }

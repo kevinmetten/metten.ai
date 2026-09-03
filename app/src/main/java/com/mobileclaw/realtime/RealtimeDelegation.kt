@@ -15,7 +15,7 @@ data class RealtimeDelegationUpdate(
     val channel: RealtimeDelegationChannel,
 )
 
-interface RealtimeDelegationSink {
+fun interface RealtimeDelegationSink {
     fun send(update: RealtimeDelegationUpdate): Boolean
 }
 
