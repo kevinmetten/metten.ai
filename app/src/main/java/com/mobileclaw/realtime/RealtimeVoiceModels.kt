@@ -35,6 +35,21 @@ class RealtimeVoiceException(
 
 data class RealtimeCallAnswer(val sdp: String, val callId: String)
 
+/** Ephemeral, process-memory identifiers scoped to one transport/session generation. */
+data class RealtimeRequestContext(
+    val sessionId: String,
+    val threadId: String,
+    val realtimeSessionId: String,
+) {
+    companion object {
+        fun create(): RealtimeRequestContext = RealtimeRequestContext(
+            sessionId = java.util.UUID.randomUUID().toString(),
+            threadId = java.util.UUID.randomUUID().toString(),
+            realtimeSessionId = java.util.UUID.randomUUID().toString(),
+        )
+    }
+}
+
 interface RealtimeVoiceTransport {
     suspend fun connect(onDisconnected: (RealtimeVoiceException?) -> Unit)
     fun setMuted(muted: Boolean)

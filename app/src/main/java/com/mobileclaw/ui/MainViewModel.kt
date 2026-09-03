@@ -276,6 +276,7 @@ class MainViewModel : ViewModel() {
 
     private val app = ClawApplication.instance
     private val config = app.agentConfig
+    private val configPersistence = ConfigPersistencePolicy(config::update, ::navigate)
     private val registry = app.skillRegistry
     private val loader = SkillLoader(app, registry)
     private val overlay = app.overlayManager
@@ -5058,10 +5059,13 @@ For pure conversational replies, greetings, explanations, and simple factual ans
         }
     }
 
-    fun saveConfig(snapshot: ConfigSnapshot) {
+    fun updateConfigInPlace(snapshot: ConfigSnapshot) {
+        viewModelScope.launch { configPersistence.updateInPlace(snapshot) }
+    }
+
+    fun saveConfigAndExit(snapshot: ConfigSnapshot) {
         viewModelScope.launch {
-            config.update(snapshot)
-            navigate(AppPage.HOME)
+            configPersistence.saveAndExit(snapshot)
         }
     }
 

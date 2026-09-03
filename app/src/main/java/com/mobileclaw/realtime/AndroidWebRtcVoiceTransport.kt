@@ -26,12 +26,13 @@ import org.webrtc.SessionDescription
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-/** Audio-only WebRTC transport for Codex's AVAS realtime V1 adapter. */
+/** Audio-only WebRTC transport for ChatGPT's Frameless Bidi realtime V3 adapter. */
 class AndroidWebRtcVoiceTransport(
     context: Context,
     private val calls: ChatGptRealtimeCallClient,
 ) : RealtimeVoiceTransport {
     private val appContext = context.applicationContext
+    private val requestContext = RealtimeRequestContext.create()
     private val audioManager = appContext.getSystemService(AudioManager::class.java)
     private val closed = AtomicBoolean(false)
     private var disconnectCallback: ((RealtimeVoiceException?) -> Unit)? = null
@@ -79,12 +80,12 @@ class AndroidWebRtcVoiceTransport(
             }
             val offer = currentPeer.createOfferAwait().also { currentPeer.setDescriptionAwait(it, local = true) }
             val completeOffer = currentPeer.awaitIceGathering(offer)
-            val answer = calls.createCall(completeOffer.description)
+            val answer = calls.createCall(completeOffer.description, requestContext)
             if (closed.get()) throw CancellationException("Voice session stopped.")
             currentPeer.setDescriptionAwait(SessionDescription(SessionDescription.Type.ANSWER, answer.sdp), local = false)
             withTimeout(CONNECTION_TIMEOUT_MS) { connectionReady.await() }
             // WebRTC's native AudioDeviceModule renders enabled remote AudioTracks. No PCM bridge
-            // is needed. The V1 media conversation does not require Codex's agent sideband.
+            // is needed. This V1 product milestone does not expose Codex agent-side delegation.
         } catch (_: TimeoutCancellationException) {
             close()
             throw RealtimeVoiceException(RealtimeVoiceDiagnostic.NETWORK_FAILED, "The Live Voice connection timed out.")

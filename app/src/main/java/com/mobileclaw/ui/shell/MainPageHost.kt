@@ -120,7 +120,7 @@ fun MainPageHost(
             virtualDisplayManager = ClawApplication.instance.virtualDisplayManager,
             vdTestResult = uiState.virtualDisplayTestResult,
             privServerConnected = uiState.privServerConnected,
-            onSave = { vm.saveConfig(it) },
+            onSave = { vm.saveConfigAndExit(it) },
             onBack = { vm.navigateBack() },
             onOpenHelp = { vm.navigate(AppPage.HELP) },
             onOpenWorkspace = { vm.openWorkspacePage() },
@@ -151,7 +151,7 @@ fun MainPageHost(
     ) {
         AiBasicSettingsPage(
             config = uiState.config,
-            onSave = { vm.saveConfig(it) },
+            onSave = { vm.updateConfigInPlace(it) },
             onBack = { vm.navigateBack() },
             localModels = uiState.localModels,
             onLocalModelEnabled = { vm.setLocalModelEnabled(it) },
@@ -199,7 +199,7 @@ fun MainPageHost(
             virtualDisplayManager = ClawApplication.instance.virtualDisplayManager,
             vdTestResult = uiState.virtualDisplayTestResult,
             privServerConnected = uiState.privServerConnected,
-            onSave = { vm.saveConfig(it) },
+            onSave = { vm.updateConfigInPlace(it) },
             onBack = { vm.navigateBack() },
             onOpenHelp = { vm.navigate(AppPage.HELP) },
             onTestVirtualDisplay = { vm.testVirtualDisplay() },

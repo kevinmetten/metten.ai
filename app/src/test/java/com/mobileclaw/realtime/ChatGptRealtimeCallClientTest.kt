@@ -15,10 +15,15 @@ import org.junit.Test
 
 class ChatGptRealtimeCallClientTest {
     private val credential = ChatGptBackendCredentials("secret-access-token", "account-123", "eu")
+    private val requestContext = RealtimeRequestContext(
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222",
+        "33333333-3333-4333-8333-333333333333",
+    )
 
     @Test fun `request maps backend contract and credentials only to headers`() {
         val client = client("https://example.test/backend-api/codex")
-        val request = client.buildRequest("v=0\r\no=offer", credential)
+        val request = client.buildRequest("v=0\r\no=offer", credential, requestContext)
         assertEquals("/backend-api/codex/realtime/calls", request.url.encodedPath)
         assertEquals("quicksilver", request.url.queryParameter("intent"))
         assertEquals("avas", request.url.queryParameter("architecture"))
@@ -26,35 +31,34 @@ class ChatGptRealtimeCallClientTest {
         assertEquals("account-123", request.header("ChatGPT-Account-Id"))
         assertEquals("metten_ai_android", request.header("originator"))
         assertEquals("eu", request.header(RESIDENCY_HEADER))
+        assertEquals("quicksilver=v2", request.header("openai-alpha"))
+        assertEquals(requestContext.sessionId, request.header("session-id"))
+        assertEquals(requestContext.threadId, request.header("thread-id"))
+        assertEquals(requestContext.realtimeSessionId, request.header("x-session-id"))
         val json = JsonParser.parseString(request.bodyString()).asJsonObject
         assertEquals("v=0\r\no=offer", json["sdp"].asString)
         val session = json["session"].asJsonObject
-        assertEquals(setOf("type", "model", "instructions", "audio"), session.keySet())
-        assertEquals("quicksilver", session["type"].asString)
-        assertEquals("gpt-realtime-1.5", session["model"].asString)
+        assertEquals(setOf("model", "instructions", "audio", "delegation"), session.keySet())
+        assertEquals("gpt-live-1-codex", session["model"].asString)
         assertTrue(session["instructions"].asString.isNotBlank())
         val audio = session["audio"].asJsonObject
-        assertEquals(setOf("input", "output"), audio.keySet())
-        assertEquals(setOf("format"), audio["input"].asJsonObject.keySet())
+        assertEquals(setOf("output"), audio.keySet())
         assertEquals(setOf("voice"), audio["output"].asJsonObject.keySet())
-        assertEquals("audio/pcm", audio["input"].asJsonObject["format"].asJsonObject["type"].asString)
-        assertEquals(24_000, audio["input"].asJsonObject["format"].asJsonObject["rate"].asInt)
         assertEquals("cove", audio["output"].asJsonObject["voice"].asString)
-        assertNotEquals("sage", audio["output"].asJsonObject["voice"].asString)
+        assertEquals("client", session["delegation"].asJsonObject["type"].asString)
+        assertFalse(session.has("type"))
         assertFalse(session.has("output_modalities"))
-        assertFalse(audio["input"].asJsonObject.has("transcription"))
-        assertFalse(audio["input"].asJsonObject.has("noise_reduction"))
-        assertFalse(audio["input"].asJsonObject.has("turn_detection"))
+        assertFalse(audio.has("input"))
         assertFalse(audio["output"].asJsonObject.has("format"))
         assertFalse(session.has("tools"))
         assertFalse(session.has("tool_choice"))
-        assertFalse(request.bodyString().contains("gpt-live-1-codex"))
+        assertFalse(request.bodyString().contains("gpt-realtime-1.5"))
         assertFalse(request.bodyString().contains("secret-access-token"))
         assertFalse(request.bodyString().contains("account-123"))
     }
 
     @Test fun `residency no constraint and absent account headers are omitted`() {
-        val request = client("https://example.test").buildRequest("v=0", ChatGptBackendCredentials("token", null, "no_constraint"))
+        val request = client("https://example.test").buildRequest("v=0", ChatGptBackendCredentials("token", null, "no_constraint"), requestContext)
         assertNull(request.header("ChatGPT-Account-Id"))
         assertNull(request.header(RESIDENCY_HEADER))
     }
@@ -84,7 +88,7 @@ class ChatGptRealtimeCallClientTest {
 
     @Test fun `successful response parses answer and location`() = withServer { server ->
         server.enqueue(MockResponse().setResponseCode(200).addHeader("Location", "/realtime/calls/rtc_123").setBody("v=0\r\no=answer"))
-        val answer = runBlocking { client(server.url("/backend-api/codex").toString()).createCall("v=0\r\no=offer") }
+        val answer = runBlocking { client(server.url("/backend-api/codex").toString()).createCall("v=0\r\no=offer", requestContext) }
         assertEquals("rtc_123", answer.callId)
         assertTrue(answer.sdp.startsWith("v=0"))
     }
@@ -99,7 +103,7 @@ class ChatGptRealtimeCallClientTest {
     @Test fun `cancellation cancels in flight request`() = withServer { server ->
         server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
         runBlocking {
-            val job = async { client(server.url("/backend-api/codex").toString()).createCall("v=0") }
+            val job = async { client(server.url("/backend-api/codex").toString()).createCall("v=0", requestContext) }
             assertNotNull(server.takeRequest(2, TimeUnit.SECONDS))
             job.cancel()
             runCatching { job.await() }
@@ -108,7 +112,7 @@ class ChatGptRealtimeCallClientTest {
     }
 
     private fun assertProtocolFailure(server: MockWebServer) {
-        val thrown = runCatching { runBlocking { client(server.url("/backend-api/codex").toString()).createCall("v=0") } }.exceptionOrNull()
+        val thrown = runCatching { runBlocking { client(server.url("/backend-api/codex").toString()).createCall("v=0", requestContext) } }.exceptionOrNull()
         assertEquals(RealtimeVoiceDiagnostic.PROTOCOL_REJECTED, (thrown as RealtimeVoiceException).diagnostic)
     }
 
@@ -126,7 +130,27 @@ class ChatGptRealtimeCallClientTest {
     }
 
     private fun voiceFailure(client: ChatGptRealtimeCallClient) =
-        runCatching { runBlocking { client.createCall("v=0") } }.exceptionOrNull() as RealtimeVoiceException
+        runCatching { runBlocking { client.createCall("v=0", requestContext) } }.exceptionOrNull() as RealtimeVoiceException
+
+    @Test fun `request contexts are fresh UUIDs per transport generation`() {
+        val first = RealtimeRequestContext.create()
+        val second = RealtimeRequestContext.create()
+        listOf(first.sessionId, first.threadId, first.realtimeSessionId, second.sessionId, second.threadId, second.realtimeSessionId)
+            .forEach { assertNotNull(java.util.UUID.fromString(it)) }
+        assertNotEquals(first, second)
+    }
+
+    @Test fun `400 diagnostic is bounded sanitized and credential safe`() = withServer { server ->
+        val unsafe = "Bearer ${credential.accessToken} " + "x".repeat(500)
+        server.enqueue(MockResponse().setResponseCode(400).setBody("""{"error":{"message":"$unsafe"}}"""))
+        val failure = runCatching {
+            runBlocking { client(server.url("/backend-api/codex").toString()).createCall("v=0", requestContext) }
+        }.exceptionOrNull() as RealtimeVoiceException
+        assertEquals(RealtimeVoiceDiagnostic.PROTOCOL_REJECTED, failure.diagnostic)
+        assertTrue(failure.message.orEmpty().startsWith("Realtime request rejected (HTTP 400):"))
+        assertFalse(failure.message.orEmpty().contains(credential.accessToken))
+        assertTrue(failure.message.orEmpty().length < 380)
+    }
 
     private fun client(root: String) = ChatGptRealtimeCallClient(
         RealtimeCredentialProvider { credential }, OkHttpClient(), root, CodexRealtimeSessionConfig(),
