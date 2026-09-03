@@ -107,7 +107,20 @@ class AgentConfig(private val context: Context) {
     }
 
     suspend fun updateChatGptModel(model: String) {
-        context.dataStore.edit { it[Keys.CHATGPT_MODEL] = model }
+        updateTargeted(TargetedConfigMutation.ChatGptModel(model))
+    }
+
+    suspend fun updateCloudProviderPreference(preference: CloudProviderPreference) {
+        updateTargeted(TargetedConfigMutation.CloudProvider(preference))
+    }
+
+    private suspend fun updateTargeted(mutation: TargetedConfigMutation) {
+        context.dataStore.edit { prefs ->
+            when (mutation) {
+                is TargetedConfigMutation.ChatGptModel -> prefs[Keys.CHATGPT_MODEL] = mutation.model
+                is TargetedConfigMutation.CloudProvider -> prefs[Keys.CLOUD_PROVIDER] = mutation.preference.name
+            }
+        }
     }
 
     /** API-Gateway-only readiness. Overall LLM readiness belongs to ClawApplication.providerReadiness(). */
@@ -150,6 +163,18 @@ class AgentConfig(private val context: Context) {
 
     private fun parseAccentColor(raw: String?): Long? =
         raw?.toLongOrNull()?.takeIf { it != 0L }
+}
+
+internal sealed interface TargetedConfigMutation {
+    fun applyTo(snapshot: ConfigSnapshot): ConfigSnapshot
+
+    data class ChatGptModel(val model: String) : TargetedConfigMutation {
+        override fun applyTo(snapshot: ConfigSnapshot) = snapshot.copy(chatGptModel = model)
+    }
+
+    data class CloudProvider(val preference: CloudProviderPreference) : TargetedConfigMutation {
+        override fun applyTo(snapshot: ConfigSnapshot) = snapshot.copy(cloudProviderPreference = preference)
+    }
 }
 
 data class ConfigSnapshot(

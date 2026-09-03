@@ -121,6 +121,8 @@ fun MainPageHost(
             vdTestResult = uiState.virtualDisplayTestResult,
             privServerConnected = uiState.privServerConnected,
             onSave = { vm.saveConfigAndExit(it) },
+            onCloudProviderChange = { vm.setCloudProviderPreference(it) },
+            onChatGptModelChange = { vm.setChatGptModel(it) },
             onBack = { vm.navigateBack() },
             onOpenHelp = { vm.navigate(AppPage.HELP) },
             onOpenWorkspace = { vm.openWorkspacePage() },
@@ -152,6 +154,8 @@ fun MainPageHost(
         AiBasicSettingsPage(
             config = uiState.config,
             onSave = { vm.updateConfigInPlace(it) },
+            onCloudProviderChange = { vm.setCloudProviderPreference(it) },
+            onChatGptModelChange = { vm.setChatGptModel(it) },
             onBack = { vm.navigateBack() },
             localModels = uiState.localModels,
             onLocalModelEnabled = { vm.setLocalModelEnabled(it) },

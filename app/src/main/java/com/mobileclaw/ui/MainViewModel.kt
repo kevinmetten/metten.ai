@@ -54,7 +54,6 @@ import com.mobileclaw.permission.runIfDeviceReady
 import com.mobileclaw.config.ConfigEntry
 import com.mobileclaw.config.ConfigSnapshot
 import com.mobileclaw.config.GatewayConfig
-import com.mobileclaw.config.GatewayCapabilityConfig
 import com.mobileclaw.config.capabilityApiKey
 import com.mobileclaw.config.capabilityEndpoint
 import com.mobileclaw.config.capabilityModel
@@ -5069,25 +5068,26 @@ For pure conversational replies, greetings, explanations, and simple factual ans
         }
     }
 
+    fun setCloudProviderPreference(preference: com.mobileclaw.config.CloudProviderPreference) {
+        viewModelScope.launch { config.updateCloudProviderPreference(preference) }
+    }
+
+    fun setChatGptModel(model: String) {
+        viewModelScope.launch { config.updateChatGptModel(model) }
+    }
+
     fun setModel(model: String) {
         viewModelScope.launch {
             val snap = config.snapshot()
-            if (model.startsWith("local:")) {
-                config.update(snap.copy(localModelEnabled = true, localModelId = model.removePrefix("local:")))
+            val provider = app.providerReadiness(snap).effectiveCloudProvider
+            if (!model.startsWith("local:") && provider == com.mobileclaw.llm.EffectiveCloudProvider.CHATGPT_ACCOUNT) {
+                config.updateChatGptModel(model)
                 _uiState.update { it.copy(currentModel = model) }
                 return@launch
             }
-            val updatedGateways = snap.gateways.map {
-                if (it.id == snap.activeGatewayId || (snap.activeGatewayId == null && it == snap.gateways.firstOrNull())) {
-                    val existingCapabilities = it.capabilities.filterNot { cap -> cap.type.equals("chat", ignoreCase = true) }
-                    it.copy(
-                        model = model,
-                        capabilities = existingCapabilities + GatewayCapabilityConfig(type = "chat", model = model),
-                    )
-                } else it
-            }
-            config.update(snap.copy(gateways = updatedGateways, localModelEnabled = false, localNativeOnly = false))
-            _uiState.update { it.copy(currentModel = model) }
+            val updated = com.mobileclaw.llm.ChatModelPolicy.select(snap, model, provider)
+            if (updated != snap) config.update(updated)
+            _uiState.update { it.copy(currentModel = if (model.startsWith("local:")) model else app.effectiveModel(updated)) }
         }
     }
 
@@ -5145,15 +5145,21 @@ For pure conversational replies, greetings, explanations, and simple factual ans
         _uiState.update { it.copy(modelsLoading = true) }
         viewModelScope.launch(Dispatchers.IO) {
             val snap = config.snapshot()
-            val remoteModels = if (snap.localNativeOnly) {
-                emptyList()
-            } else {
-                runCatching { OpenAiGateway.fetchModels(snap.chatEndpoint, snap.chatApiKey) }.getOrDefault(emptyList())
-            }
             val localModels = app.localModelManager.models.value
                 .filter { it.supportsChatRuntime }
                 .map { it.modelId }
-            val models = (remoteModels + localModels).distinct()
+            val models = com.mobileclaw.llm.ChatModelPolicy.discover(
+                localNativeOnly = snap.localNativeOnly,
+                provider = app.providerReadiness(snap).effectiveCloudProvider,
+                chatGptModels = {
+                    runCatching { app.chatGptModelService.pickerModels(app.chatGptModelService.fetchModels()).map { it.slug } }
+                        .getOrDefault(emptyList())
+                },
+                apiGatewayModels = {
+                    runCatching { OpenAiGateway.fetchModels(snap.chatEndpoint, snap.chatApiKey) }.getOrDefault(emptyList())
+                },
+                localModels = localModels,
+            )
             _uiState.update { it.copy(
                 availableModels = if (models.isNotEmpty()) models else it.availableModels,
                 modelsLoading = false,

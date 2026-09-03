@@ -1,7 +1,6 @@
 package com.mobileclaw.realtime
 
 import android.content.Context
-import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.util.Log
@@ -23,6 +22,8 @@ import org.webrtc.RtpReceiver
 import org.webrtc.MediaStreamTrack
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
+import org.webrtc.audio.JavaAudioDeviceModule
+import org.webrtc.audio.AudioDeviceModule
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -37,6 +38,7 @@ class AndroidWebRtcVoiceTransport(
     private val closed = AtomicBoolean(false)
     private var disconnectCallback: ((RealtimeVoiceException?) -> Unit)? = null
     private var factory: PeerConnectionFactory? = null
+    private var audioDeviceModule: AudioDeviceModule? = null
     private var peer: PeerConnection? = null
     private var eventsChannel: DataChannel? = null
     private var source: AudioSource? = null
@@ -46,7 +48,6 @@ class AndroidWebRtcVoiceTransport(
     private val iceGatheringComplete = CompletableDeferred<Unit>()
     private val remoteAudioTracks = mutableListOf<AudioTrack>()
     private var previousMode = AudioManager.MODE_NORMAL
-    private var previousSpeakerphone = false
 
     override suspend fun connect(onDisconnected: (RealtimeVoiceException?) -> Unit) {
         try {
@@ -56,7 +57,13 @@ class AndroidWebRtcVoiceTransport(
             PeerConnectionFactory.initialize(
                 PeerConnectionFactory.InitializationOptions.builder(appContext).createInitializationOptions(),
             )
-            val currentFactory = PeerConnectionFactory.builder().createPeerConnectionFactory()
+            val currentAudioDeviceModule = JavaAudioDeviceModule.builder(appContext)
+                .setAudioAttributes(VoiceAudioPolicy.playbackAttributes)
+                .createAudioDeviceModule()
+            audioDeviceModule = currentAudioDeviceModule
+            val currentFactory = PeerConnectionFactory.builder()
+                .setAudioDeviceModule(currentAudioDeviceModule)
+                .createPeerConnectionFactory()
             factory = currentFactory
             val currentSource = try {
                 currentFactory.createAudioSource(MediaConstraints())
@@ -117,11 +124,13 @@ class AndroidWebRtcVoiceTransport(
         localAudio?.dispose()
         source?.dispose()
         factory?.dispose()
+        audioDeviceModule?.release()
         peer = null
         eventsChannel = null
         localAudio = null
         source = null
         factory = null
+        audioDeviceModule = null
         releaseAudioRoute()
     }
 
@@ -210,23 +219,19 @@ class AndroidWebRtcVoiceTransport(
 
     private fun acquireAudioRoute() {
         previousMode = audioManager.mode
-        previousSpeakerphone = audioManager.isSpeakerphoneOn
-        val attributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
         val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-            .setAudioAttributes(attributes).build()
+            .setAudioAttributes(VoiceAudioPolicy.playbackAttributes).build()
         if (audioManager.requestAudioFocus(request) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
             throw RealtimeVoiceException(RealtimeVoiceDiagnostic.AUDIO_PLAYBACK_FAILURE, "Audio focus is unavailable for Live Voice.")
         }
         focusRequest = request
-        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-        audioManager.isSpeakerphoneOn = true
+        val playbackPlan = VoiceAudioPolicy.builtInAssistantPlaybackPlan()
+        audioManager.mode = playbackPlan.audioMode
     }
 
     private fun releaseAudioRoute() {
         focusRequest?.let(audioManager::abandonAudioFocusRequest)
         focusRequest = null
-        audioManager.isSpeakerphoneOn = previousSpeakerphone
         audioManager.mode = previousMode
     }
 
