@@ -1,16 +1,11 @@
 package com.mobileclaw.permission
 
-import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
-import android.os.PowerManager
 import android.provider.Settings
-import android.view.accessibility.AccessibilityManager
-import com.mobileclaw.perception.ClawAccessibilityService
-import com.mobileclaw.perception.ClawIME
 
 // ── ROM Detection ─────────────────────────────────────────────────────────────
 
@@ -24,10 +19,9 @@ enum class RomType(val displayName: String) {
     AOSP("Stock Android / Other"),
 }
 
-private fun detectRom(): RomType {
+internal fun detectRom(): RomType {
     val brand = Build.BRAND.lowercase()
     val manufacturer = Build.MANUFACTURER.lowercase()
-    val display = Build.DISPLAY.lowercase()
     return when {
         hasProp("ro.miui.ui.version.name") || brand.contains("xiaomi") || brand.contains("redmi") || brand.contains("poco") -> RomType.MIUI
         hasProp("ro.build.version.emui") || brand.contains("huawei") || brand.contains("honor") -> RomType.EMUI
@@ -52,8 +46,6 @@ sealed class PermissionItem(
     val title: String,
     val description: String,
     val icon: String,
-    /** True if this permission blocks core agent function */
-    val isBlocking: Boolean = true,
     /** True if the permission can be directly requested (vs. manual settings navigation) */
     val canDirectRequest: Boolean = false,
 ) {
@@ -62,44 +54,38 @@ sealed class PermissionItem(
         title = "Accessibility Service",
         icon = "accessibility",
         description = "Required to read screen content, detect UI elements, and perform touch actions.",
-        isBlocking = true,
     )
     object Overlay : PermissionItem(
         id = "overlay",
         title = "Display Over Other Apps",
         icon = "overlay",
         description = "Required to show the agent status overlay while running tasks on other apps.",
-        isBlocking = true,
     )
     object BatteryOptimization : PermissionItem(
         id = "battery",
         title = "Battery Optimization Exemption",
         icon = "battery",
         description = "Prevents Android from killing the agent during long-running tasks. Tap 'Grant' to allow immediately.",
-        isBlocking = false,
         canDirectRequest = true,
     )
     object Notification : PermissionItem(
         id = "notification",
         title = "Post Notifications",
         icon = "notification",
-        description = "Required to show task progress notifications (Android 13+).",
-        isBlocking = false,
+        description = "Allows task progress and the convenient notification Stop control to be visible (Android 13+).",
         canDirectRequest = true,
     )
     data class RomAutoStart(val romName: String) : PermissionItem(
         id = "rom_autostart",
         title = "Auto-start ($romName)",
         icon = "launch",
-        description = "Your ROM ($romName) requires explicit auto-start permission for apps to start in the background. Enable it to prevent the agent from being killed.",
-        isBlocking = false,
+        description = "$romName may provide an additional auto-start control that Android cannot directly report. Review it for long-running reliability.",
     )
     data class RomBackgroundPop(val romName: String) : PermissionItem(
         id = "rom_bg_pop",
         title = "Background Pop-up ($romName)",
         icon = "phone",
-        description = "Required by $romName for apps to launch UI or show overlay windows from the background.",
-        isBlocking = false,
+        description = "$romName may provide an additional background pop-up control that Android cannot directly report.",
     )
 }
 
@@ -113,29 +99,24 @@ data class PermissionDiagnosis(
 
 // ── Manager ───────────────────────────────────────────────────────────────────
 
-class PermissionManager(private val context: Context) {
+class PermissionManager(
+    private val context: Context,
+    val readinessEngine: DeviceReadinessEngine,
+) {
 
-    val romType: RomType by lazy { detectRom() }
+    val romType: RomType get() = readinessEngine.snapshot().romType
 
     // ── State checks ──────────────────────────────────────────────────────────
 
-    fun isAccessibilityEnabled(): Boolean = ClawAccessibilityService.isEnabled()
+    private fun signals() = readinessEngine.snapshot()
 
-    fun isOverlayEnabled(): Boolean = Settings.canDrawOverlays(context)
+    fun isAccessibilityEnabled(): Boolean = signals().accessibilityEnabled
 
-    fun isBatteryOptimizationExempt(): Boolean {
-        val pm = context.getSystemService(PowerManager::class.java)
-        return pm.isIgnoringBatteryOptimizations(context.packageName)
-    }
+    fun isOverlayEnabled(): Boolean = signals().overlayEnabled
 
-    fun isNotificationGranted(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
-        return context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
-            android.content.pm.PackageManager.PERMISSION_GRANTED
-    }
+    fun isBatteryOptimizationExempt(): Boolean = signals().batteryOptimizationExempt
 
-    /** Core blocking permissions — agent cannot function without these. */
-    fun allGranted() = isAccessibilityEnabled() && isOverlayEnabled()
+    fun isNotificationGranted(): Boolean = signals().notificationGranted
 
     /** All permissions including optional ones. */
     fun pendingPermissions(): List<PermissionItem> = buildList {
@@ -159,10 +140,6 @@ class PermissionManager(private val context: Context) {
         }
     }
 
-    /** Blocking permissions only, for the initial gate screen. */
-    fun pendingBlockingPermissions(): List<PermissionItem> =
-        pendingPermissions().filter { it.isBlocking }
-
     // ── Intent builders ───────────────────────────────────────────────────────
 
     fun openAccessibilitySettings(): Intent =
@@ -182,6 +159,21 @@ class PermissionManager(private val context: Context) {
         Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
             Uri.parse("package:${context.packageName}"))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    fun intentFor(action: RemediationAction): Intent = when (action) {
+        RemediationAction.OPEN_ACCESSIBILITY_SETTINGS -> openAccessibilitySettings()
+        RemediationAction.OPEN_OVERLAY_SETTINGS -> openOverlaySettings()
+        RemediationAction.REQUEST_BATTERY_OPTIMIZATION_EXEMPTION -> openBatteryOptimizationRequest()
+        RemediationAction.OPEN_NOTIFICATION_SETTINGS ->
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        RemediationAction.OPEN_BATTERY_SAVER_SETTINGS ->
+            Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        RemediationAction.OPEN_ROM_BACKGROUND_SETTINGS ->
+            romAutoStartIntent(context.packageName) ?: openAppDetails()
+        RemediationAction.OPEN_APP_DETAILS -> openAppDetails()
+    }
 
     /** Returns the best available Intent for a ROM-specific setting, with AOSP fallback. */
     fun openRomSettingFor(item: PermissionItem): Intent {
@@ -333,7 +325,7 @@ class PermissionManager(private val context: Context) {
             "background" in lower && romType != RomType.AOSP ->
                 PermissionDiagnosis(
                     permissionId = "rom_autostart",
-                    summary = "Your ROM (${romType.displayName}) is blocking background activity.",
+                    summary = "Background activity may be affected by ${romType.displayName} controls that Android cannot directly report.",
                     userAction = romAutoStartInstructions(),
                 )
             else -> null
@@ -358,51 +350,41 @@ class PermissionManager(private val context: Context) {
 
     /** Full permission status report string for the agent (PermissionSkill output). */
     fun buildStatusReport(feature: String): String {
-        val lines = mutableListOf<String>()
-        lines += "# Permission Status (ROM: ${romType.displayName})"
-        lines += ""
-        lines += "## Core permissions"
-        lines += "- Accessibility Service: ${status(isAccessibilityEnabled())}"
-        lines += "- Display Over Other Apps: ${status(isOverlayEnabled())}"
-        lines += "- Battery Optimization Exempt: ${status(isBatteryOptimizationExempt())}"
-        lines += "- Post Notifications: ${status(isNotificationGranted())}"
-        lines += ""
-
-        if (romType != RomType.AOSP) {
-            lines += "## ROM-specific (${romType.displayName})"
-            lines += romAutoStartInstructions()
-            lines += ""
-        }
-
-        lines += "## Feature diagnosis for: $feature"
-        lines += when (feature.lowercase()) {
-            "screen_read", "screenshot", "tap" ->
-                if (isAccessibilityEnabled()) "✓ Accessibility OK — screen interaction should work."
-                else "✗ Accessibility Service is DISABLED. User must enable it in Settings > Accessibility > MobileClaw."
-            "input" ->
-                buildString {
-                    append(if (isAccessibilityEnabled()) "✓ Accessibility OK. " else "✗ Accessibility Service is DISABLED. ")
-                    append("Input method status: ")
-                    append(ClawIME.statusSummary(context))
-                    append(" For WeChat and other protected input fields, the MobileClaw input method usually must be enabled and selected as the current keyboard.")
-                }
-            "overlay", "floating_window" ->
-                if (isOverlayEnabled()) "✓ Overlay OK — floating window can be shown."
-                else "✗ Overlay permission MISSING. User must grant in Settings > Special App Access > Display Over Other Apps."
-            "background", "long_task" ->
-                buildString {
-                    if (!isBatteryOptimizationExempt()) append("⚠ Battery optimization may kill the agent. ")
-                    if (romType != RomType.AOSP) append("ROM restriction (${romType.displayName}) may also block background operation. ")
-                    append(if (isBatteryOptimizationExempt()) "Battery exemption OK." else "Request battery exemption.")
-                }
-            else ->
-                "Check individual permissions above. For any permission issue, call check_permissions with the specific feature name."
-        }
-
-        lines += ""
-        lines += "To fix missing permissions: communicate the specific instruction to the user and ask them to follow the steps."
-        return lines.joinToString("\n")
+        return buildReadinessStatusReport(readinessEngine, feature)
     }
 
     private fun status(granted: Boolean) = if (granted) "✓ Granted" else "✗ Missing"
+
+    private fun buildReadinessStatusReport(engine: DeviceReadinessEngine, feature: String): String {
+        val snapshot = engine.snapshot()
+        val capabilities = listOf(
+            DeviceCapability.CHAT,
+            DeviceCapability.PHONE_CONTROL,
+            DeviceCapability.LONG_RUNNING_PHONE_CONTROL,
+            DeviceCapability.FLOATING_OVERLAY,
+            DeviceCapability.NOTIFICATION_STOP_CONTROL,
+            DeviceCapability.CHATGPT_AUTH,
+        )
+        return buildString {
+            appendLine("# Device readiness (ROM: ${snapshot.romType.displayName})")
+            appendLine()
+            appendLine("## Capability readiness")
+            capabilities.forEach { capability ->
+                val readiness = engine.evaluate(capability, snapshot)
+                appendLine("- ${capability.name}: ${readiness.level}")
+                readiness.issues.forEach { appendLine("  - [${it.id}] ${it.summary} (${it.remediation})") }
+            }
+            appendLine()
+            appendLine("## Observable Android signals")
+            appendLine("- Accessibility: ${status(snapshot.accessibilityEnabled)}")
+            appendLine("- Overlay: ${status(snapshot.overlayEnabled)}")
+            appendLine("- Battery optimization exempt: ${status(snapshot.batteryOptimizationExempt)}")
+            appendLine("- System Power Saving: ${if (snapshot.systemPowerSaveMode) "Active" else "Inactive"}")
+            appendLine("- Android background restricted: ${snapshot.backgroundRestricted}")
+            appendLine("- Notifications: ${status(snapshot.notificationGranted)}")
+            appendLine("- Vendor-specific background controls: not directly observable")
+            appendLine()
+            append("Requested feature: $feature. Error-string diagnosis is fallback guidance; direct Android signals above are authoritative.")
+        }
+    }
 }

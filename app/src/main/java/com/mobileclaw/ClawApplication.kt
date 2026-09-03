@@ -38,6 +38,9 @@ import com.mobileclaw.perception.AndroidLaunchableAppProvider
 import com.mobileclaw.perception.InstalledAppCatalog
 import com.mobileclaw.perception.InstalledAppResolver
 import com.mobileclaw.permission.PermissionManager
+import com.mobileclaw.permission.AndroidDeviceReadinessSignalsProvider
+import com.mobileclaw.permission.DeviceReadinessEngine
+import com.mobileclaw.permission.detectRom
 import com.mobileclaw.runtime.PageRuntimeCapabilities
 import com.mobileclaw.server.ConsoleServer
 import com.mobileclaw.server.LocalApiServer
@@ -89,6 +92,9 @@ class ClawApplication : Application() {
         private set
 
     lateinit var permissionManager: PermissionManager
+        private set
+
+    lateinit var deviceReadinessEngine: DeviceReadinessEngine
         private set
 
     lateinit var semanticMemory: SemanticMemory
@@ -177,7 +183,11 @@ class ClawApplication : Application() {
         overlayManager = AgentOverlayManager(this)
         auroraOverlayManager = AuroraOverlayManager(this)
         miniAppValidationOverlayManager = MiniAppValidationOverlayManager(this)
-        permissionManager = PermissionManager(this)
+        val deviceRomType = detectRom()
+        deviceReadinessEngine = DeviceReadinessEngine(
+            AndroidDeviceReadinessSignalsProvider(this) { deviceRomType },
+        )
+        permissionManager = PermissionManager(this, deviceReadinessEngine)
         semanticMemory = SemanticMemory(database.semanticDao())
         conversationMemory = ConversationMemory(database.conversationDao())
         userProfileExtractor = UserProfileExtractor(createLlmGateway(), semanticMemory, conversationMemory)
