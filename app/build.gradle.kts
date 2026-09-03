@@ -222,6 +222,8 @@ dependencies {
     implementation(libs.okhttp.sse)
     implementation(libs.gson)
     implementation(libs.jsoup)
+    // Maven Central, BSD-3-Clause: maintained Android build of the upstream WebRTC project.
+    implementation("io.github.webrtc-sdk:android:144.7559.01")
 
     // Local on-device LLM runtime for .litertlm models.
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.11.0")
@@ -233,6 +235,7 @@ dependencies {
     implementation("org.yaml:snakeyaml:2.2")
 
     testImplementation(libs.junit)
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

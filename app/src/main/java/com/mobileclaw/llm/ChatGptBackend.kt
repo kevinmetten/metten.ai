@@ -32,8 +32,8 @@ import okhttp3.Response
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-internal const val CHATGPT_BACKEND_ROOT = "https://chatgpt.com/backend-api/codex"
-internal const val RESIDENCY_HEADER = "x-openai-internal-codex-residency"
+const val CHATGPT_BACKEND_ROOT = "https://chatgpt.com/backend-api/codex"
+const val RESIDENCY_HEADER = "x-openai-internal-codex-residency"
 
 internal fun interface ChatGptBackendCredentialProvider {
     suspend fun credentials(): ChatGptBackendCredentials
@@ -42,7 +42,7 @@ internal fun interface ChatGptBackendCredentialProvider {
 internal fun ChatGptAuthManager.backendCredentialProvider() =
     ChatGptBackendCredentialProvider { getValidBackendCredentials() }
 
-internal fun Request.Builder.chatGptHeaders(credentials: ChatGptBackendCredentials): Request.Builder =
+fun Request.Builder.chatGptHeaders(credentials: ChatGptBackendCredentials): Request.Builder =
     header("Authorization", "Bearer ${credentials.accessToken}")
         .header("User-Agent", "MobileClaw/${BuildConfig.VERSION_NAME}")
         .header("originator", ChatGptOAuth.ORIGINATOR)

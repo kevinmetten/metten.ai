@@ -1,5 +1,7 @@
 package com.mobileclaw.ui.settings
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Build
 import android.widget.Toast
 import com.google.gson.Gson
@@ -39,6 +41,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -47,6 +50,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mobileclaw.R
@@ -65,6 +69,7 @@ import com.mobileclaw.llm.OpenAiGateway
 import com.mobileclaw.llm.ChatGptModel
 import com.mobileclaw.memory.db.VideoGenerationTaskEntity
 import com.mobileclaw.perception.VirtualDisplayManager
+import com.mobileclaw.realtime.RealtimeVoicePhase
 import com.mobileclaw.ui.ClawColors
 import com.mobileclaw.ui.ClawIconTile
 import com.mobileclaw.ui.ClawPageHeader
@@ -118,6 +123,26 @@ private data class ImageProviderPreset(
 private enum class GatewayPresetGroup {
     DIRECT,
     TEMPLATE,
+}
+
+internal enum class AiBasicsRootSection { CLOUD_PROVIDER, CHATGPT_ACCOUNT }
+
+/** Rendered in this order by [AiBasicSettingsPage]; kept pure for navigation reachability tests. */
+internal fun aiBasicsRootSections(): List<AiBasicsRootSection> = listOf(
+    AiBasicsRootSection.CLOUD_PROVIDER,
+    AiBasicsRootSection.CHATGPT_ACCOUNT,
+)
+
+internal enum class ChatGptAccountAction { SIGN_IN, DEVICE_CODE, START_VOICE, END_VOICE, MUTE_VOICE, SIGN_OUT }
+
+/** The action contract consumed by [ChatGptAccountCard] for its signed-out and signed-in states. */
+internal fun chatGptAccountActions(signedIn: Boolean, voicePhase: RealtimeVoicePhase): Set<ChatGptAccountAction> = when {
+    !signedIn -> setOf(ChatGptAccountAction.SIGN_IN, ChatGptAccountAction.DEVICE_CODE)
+    voicePhase in setOf(RealtimeVoicePhase.IDLE, RealtimeVoicePhase.FAILED) ->
+        setOf(ChatGptAccountAction.START_VOICE, ChatGptAccountAction.SIGN_OUT)
+    voicePhase in setOf(RealtimeVoicePhase.CONNECTED, RealtimeVoicePhase.MUTED) ->
+        setOf(ChatGptAccountAction.END_VOICE, ChatGptAccountAction.MUTE_VOICE, ChatGptAccountAction.SIGN_OUT)
+    else -> setOf(ChatGptAccountAction.END_VOICE, ChatGptAccountAction.SIGN_OUT)
 }
 
 private val GATEWAY_CAPABILITY_TYPES = listOf("chat", "embedding", "image", "video")
@@ -693,15 +718,26 @@ fun SettingsPage(
 private fun ChatGptAccountCard(app: ClawApplication, c: ClawColors) {
     val manager = app.chatGptAuthManager
     val state by manager.state.collectAsState()
-    SettingsHubCard(c) {
+    val voiceState by app.realtimeVoiceController.state.collectAsState()
+    val actions = chatGptAccountActions(state is ChatGptAuthState.SignedIn, voiceState.phase)
+    val context = LocalContext.current
+    val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) app.realtimeVoiceController.start() else app.realtimeVoiceController.microphonePermissionMissing()
+    }
+    Box(Modifier.fillMaxWidth().testTag("chatgpt_account_card")) {
+        SettingsHubCard(c) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("ChatGPT Account", color = c.text, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
             when (val current = state) {
                 ChatGptAuthState.SignedOut -> {
                     Text("Use your ChatGPT subscription with MobileClaw", color = c.subtext, fontSize = 12.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = manager::signInWithBrowser, colors = ButtonDefaults.buttonColors(containerColor = c.text, contentColor = c.bg)) { Text("Sign in with ChatGPT") }
-                        OutlinedButton(onClick = manager::signInWithDeviceCode, border = androidx.compose.foundation.BorderStroke(0.8.dp, c.border)) { Text("Use device code", color = c.text) }
+                        if (ChatGptAccountAction.SIGN_IN in actions) {
+                            Button(onClick = manager::signInWithBrowser, modifier = Modifier.testTag("chatgpt_sign_in"), colors = ButtonDefaults.buttonColors(containerColor = c.text, contentColor = c.bg)) { Text("Sign in with ChatGPT") }
+                        }
+                        if (ChatGptAccountAction.DEVICE_CODE in actions) {
+                            OutlinedButton(onClick = manager::signInWithDeviceCode, border = androidx.compose.foundation.BorderStroke(0.8.dp, c.border)) { Text("Use device code", color = c.text) }
+                        }
                     }
                 }
                 ChatGptAuthState.SigningIn -> Text("Starting secure sign-in…", color = c.subtext, fontSize = 12.sp)
@@ -723,7 +759,48 @@ private fun ChatGptAccountCard(app: ClawApplication, c: ClawColors) {
                     Text("Connected", color = c.text, fontWeight = FontWeight.Medium)
                     current.account.email?.let { Text(it, color = c.subtext, fontSize = 12.sp) }
                     current.account.planType?.let { Text(it.replaceFirstChar(Char::uppercase), color = c.subtext, fontSize = 12.sp) }
-                    OutlinedButton(onClick = manager::signOut) { Text("Sign out", color = c.text) }
+                    Text(
+                        when (voiceState.phase) {
+                            RealtimeVoicePhase.IDLE -> "Manual full-duplex voice test"
+                            RealtimeVoicePhase.CONNECTING -> "Connecting…"
+                            RealtimeVoicePhase.CONNECTED -> "Live"
+                            RealtimeVoicePhase.MUTED -> "Muted"
+                            RealtimeVoicePhase.ENDING -> "Ending…"
+                            RealtimeVoicePhase.FAILED -> voiceState.message ?: "Live Voice failed."
+                        },
+                        color = if (voiceState.phase == RealtimeVoicePhase.FAILED) MaterialTheme.colorScheme.error else c.subtext,
+                        fontSize = 12.sp,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (ChatGptAccountAction.START_VOICE in actions) {
+                            Button(
+                                onClick = {
+                                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                                        app.realtimeVoiceController.start()
+                                    } else {
+                                        microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+                                    }
+                                },
+                                modifier = Modifier.testTag("live_voice_start"),
+                                colors = ButtonDefaults.buttonColors(containerColor = c.text, contentColor = c.bg),
+                            ) { Text("Start Live Voice") }
+                        } else {
+                            OutlinedButton(onClick = app.realtimeVoiceController::stop, modifier = Modifier.testTag("live_voice_end"), border = androidx.compose.foundation.BorderStroke(0.8.dp, c.border)) {
+                                Text("End", color = c.text)
+                            }
+                            if (ChatGptAccountAction.MUTE_VOICE in actions) {
+                                OutlinedButton(
+                                    onClick = { app.realtimeVoiceController.setMuted(voiceState.phase != RealtimeVoicePhase.MUTED) },
+                                    modifier = Modifier.testTag("live_voice_mute"),
+                                    border = androidx.compose.foundation.BorderStroke(0.8.dp, c.border),
+                                ) { Text(if (voiceState.phase == RealtimeVoicePhase.MUTED) "Unmute" else "Mute", color = c.text) }
+                            }
+                        }
+                    }
+                    OutlinedButton(onClick = {
+                        app.realtimeVoiceController.stop()
+                        manager.signOut()
+                    }) { Text("Sign out", color = c.text) }
                 }
                 is ChatGptAuthState.Refreshing -> Text("Refreshing ChatGPT session…", color = c.subtext, fontSize = 12.sp)
                 is ChatGptAuthState.Error -> {
@@ -734,6 +811,7 @@ private fun ChatGptAccountCard(app: ClawApplication, c: ClawColors) {
                     }
                 }
             }
+        }
         }
     }
 }
@@ -848,6 +926,21 @@ fun AiBasicSettingsPage(
                 val hfToken = userConfigEntries["huggingface_api_key"]?.value.orEmpty()
                 val imageConfigured = imageModel.isNotBlank() &&
                     (activeGateway?.capabilityModel("image").orEmpty().isNotBlank() || imageEndpoint.isNotBlank() || hfToken.isNotBlank())
+
+                aiBasicsRootSections().forEach { section ->
+                    when (section) {
+                        AiBasicsRootSection.CLOUD_PROVIDER -> CloudProviderCard(
+                            context.applicationContext as ClawApplication,
+                            snapshot,
+                            onSave,
+                            c,
+                        )
+                        AiBasicsRootSection.CHATGPT_ACCOUNT -> ChatGptAccountCard(
+                            context.applicationContext as ClawApplication,
+                            c,
+                        )
+                    }
+                }
 
                 SettingsHubCard(c) {
                     SettingsCategoryRow(
