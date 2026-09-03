@@ -16,6 +16,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <!-- Overlay for visual feedback -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
@@ -142,6 +143,11 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="user_initiated_ai_agent_device_operation" />
         </service>
+
+        <service
+            android:name=".realtime.VoiceSessionForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
 
         <!-- FileProvider for sharing app-internal files with external apps -->
         <provider

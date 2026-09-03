@@ -31,7 +31,8 @@ import kotlin.coroutines.resumeWithException
 class AndroidWebRtcVoiceTransport(
     context: Context,
     private val calls: ChatGptRealtimeCallClient,
-) : RealtimeVoiceTransport {
+    private val sideband: ChatGptRealtimeSidebandClient? = null,
+) : RealtimeControlTransport {
     private val appContext = context.applicationContext
     private val requestContext = RealtimeRequestContext.create()
     private val audioManager = appContext.getSystemService(AudioManager::class.java)
@@ -48,6 +49,15 @@ class AndroidWebRtcVoiceTransport(
     private val iceGatheringComplete = CompletableDeferred<Unit>()
     private val remoteAudioTracks = mutableListOf<AudioTrack>()
     private var previousMode = AudioManager.MODE_NORMAL
+    private var controlGeneration = -1L
+    private var delegationListener: ((RealtimeDelegationRequest) -> Unit)? = null
+
+    override fun bindControl(generation: Long, listener: (RealtimeDelegationRequest) -> Unit) {
+        controlGeneration = generation
+        delegationListener = listener
+    }
+
+    override fun send(update: RealtimeDelegationUpdate): Boolean = sideband?.send(update) == true
 
     override suspend fun connect(onDisconnected: (RealtimeVoiceException?) -> Unit) {
         try {
@@ -89,6 +99,9 @@ class AndroidWebRtcVoiceTransport(
             val completeOffer = currentPeer.awaitIceGathering(offer)
             val answer = calls.createCall(completeOffer.description, requestContext)
             if (closed.get()) throw CancellationException("Voice session stopped.")
+            sideband?.connect(answer.callId, controlGeneration) { request ->
+                if (!closed.get() && request.voiceSessionGeneration == controlGeneration) delegationListener?.invoke(request)
+            }
             currentPeer.setDescriptionAwait(SessionDescription(SessionDescription.Type.ANSWER, answer.sdp), local = false)
             withTimeout(CONNECTION_TIMEOUT_MS) { connectionReady.await() }
             // WebRTC's native AudioDeviceModule renders enabled remote AudioTracks. No PCM bridge
@@ -109,6 +122,8 @@ class AndroidWebRtcVoiceTransport(
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         disconnectCallback = null
+        sideband?.close()
+        delegationListener = null
         localAudio?.setEnabled(false)
         synchronized(remoteAudioTracks) {
             remoteAudioTracks.forEach { it.setEnabled(false) }

@@ -7,11 +7,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import com.mobileclaw.agent.VoiceAgentCoordinator
 
 /** Application-owned single-session state machine. Generation checks reject stale WebRTC callbacks. */
 class ChatGptRealtimeSessionController(
     private val scope: CoroutineScope,
     private val transports: RealtimeVoiceTransportFactory,
+    private val coordinator: VoiceAgentCoordinator? = null,
 ) {
     private val _state = MutableStateFlow(RealtimeVoiceState())
     val state: StateFlow<RealtimeVoiceState> = _state.asStateFlow()
@@ -23,6 +25,10 @@ class ChatGptRealtimeSessionController(
         if (_state.value.phase in ACTIVE_PHASES) return false
         val currentGeneration = ++generation
         val currentTransport = transports.create()
+        if (currentTransport is RealtimeControlTransport) {
+            currentTransport.bindControl(currentGeneration, coordinator?.let { owner -> owner::accept } ?: {})
+            coordinator?.beginSession(currentGeneration, currentTransport)
+        }
         transport = currentTransport
         _state.value = RealtimeVoiceState(RealtimeVoicePhase.CONNECTING, RealtimeVoiceDiagnostic.CONNECTING)
         connectJob = scope.launch {
@@ -64,7 +70,9 @@ class ChatGptRealtimeSessionController(
 
     @Synchronized fun stop() {
         if (_state.value.phase == RealtimeVoicePhase.IDLE) return
+        val endedGeneration = generation
         ++generation
+        coordinator?.endSession(endedGeneration)
         _state.value = RealtimeVoiceState(RealtimeVoicePhase.ENDING)
         connectJob?.cancel()
         connectJob = null
@@ -75,6 +83,7 @@ class ChatGptRealtimeSessionController(
 
     @Synchronized private fun disconnected(id: Long, source: RealtimeVoiceTransport, failure: RealtimeVoiceException?) {
         if (!isCurrent(id, source)) return
+        coordinator?.endSession(id)
         source.close()
         transport = null
         connectJob = null
@@ -87,6 +96,7 @@ class ChatGptRealtimeSessionController(
 
     @Synchronized private fun fail(id: Long, source: RealtimeVoiceTransport, failure: RealtimeVoiceException) {
         if (!isCurrent(id, source)) return
+        coordinator?.endSession(id)
         source.close()
         transport = null
         connectJob = null

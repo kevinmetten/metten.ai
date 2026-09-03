@@ -30,7 +30,7 @@ import com.mobileclaw.agent.AiToolSelector
 import com.mobileclaw.agent.IntentContextPack
 import com.mobileclaw.agent.AgentRuntime
 import com.mobileclaw.agent.AgentCancellationReason
-import com.mobileclaw.agent.AgentExecutionForegroundService
+import com.mobileclaw.agent.AgentTaskSubmissionRequest
 import com.mobileclaw.agent.AgentWorkspaceUpdate
 import com.mobileclaw.agent.ChatBubbleStyle
 import com.mobileclaw.agent.ChannelType
@@ -214,7 +214,6 @@ import com.mobileclaw.ui.workspace.WorkspaceRuntimeRecorder
 import com.mobileclaw.ui.workspace.WorkspacePresentationSemantics
 import com.mobileclaw.vpn.AppHttpProxy
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -2148,15 +2147,11 @@ class MainViewModel : ViewModel() {
         val startedRuntime = startAgentRuntime(prepared, execution)
         val rt = startedRuntime.runtime
         val phoneAuroraOverlayShown = startedRuntime.phoneAuroraOverlayShown
-        val registration = app.agentTaskController.register(
+        val taskHandle = app.agentTaskSubmissionService.submit(AgentTaskSubmissionRequest(
             sessionId = prepared.sessionIdAtStart,
             taskType = execution.executionTaskType,
             foregroundRequested = isPhoneControlTask,
-        )
-
-        val newJob = app.agentExecutionScope.launch(start = CoroutineStart.LAZY) {
-          try {
-            app.agentTaskController.markRunning(registration)
+        ) worker@{
             val prelude = buildAgentRunPrelude(
                 prepared = prepared,
                 route = route,
@@ -2204,7 +2199,7 @@ class MainViewModel : ViewModel() {
                 networkTraceJob.cancel()
                 runtimeEventJob.cancel()
             }
-            if (handleAgentCancellation(result, prepared, resolvedSessionId, isPhoneControlTask)) return@launch
+            if (handleAgentCancellation(result, prepared, resolvedSessionId, isPhoneControlTask)) return@worker
 
             if (isPhoneControlTask) auroraOverlay.endTask()
 
@@ -2221,22 +2216,14 @@ class MainViewModel : ViewModel() {
                 userMessageVisible = userMessageVisible,
                 userMessagePersistedEarly = userMessagePersistedEarly,
             )
-          } finally {
-              app.agentTaskController.complete(registration)
-              if (app.agentTaskController.sessionTask(prepared.sessionIdAtStart) == null) {
-                  overlay.hide()
-                  auroraOverlay.hide()
-              }
-          }
+        })
+        app.agentExecutionScope.launch {
+            taskHandle.completion.await()
+            if (app.agentTaskController.sessionTask(prepared.sessionIdAtStart) == null) {
+                overlay.hide()
+                auroraOverlay.hide()
+            }
         }
-        if (!app.agentTaskController.attachJob(registration, newJob)) {
-            newJob.cancel()
-            return
-        }
-        if (isPhoneControlTask) {
-            AgentExecutionForegroundService.requestProtection(app, registration.taskId)
-        }
-        newJob.start()
     }
 
     private suspend fun CoroutineScope.buildAgentRunPrelude(
