@@ -111,11 +111,19 @@ class ChatGptRealtimeCallClient internal constructor(
         internal fun parseCallId(location: String?): String? {
             val clean = location?.trim()?.takeIf { it.isNotEmpty() && !it.any(Char::isWhitespace) } ?: return null
             val path = clean.substringBefore('#').substringBefore('?')
-            if (path.endsWith('/')) return null
-            val segment = path.substringAfterLast('/').takeIf(String::isNotBlank)
-                ?: return null
-            return segment
+            return path.split('/').firstOrNull(::isValidCallId)
         }
+
+        private fun isValidCallId(value: String): Boolean =
+            (value.startsWith("rtc_") && value.length > "rtc_".length) || isUuidShaped(value)
+
+        private fun isUuidShaped(value: String): Boolean = value.length == 36 && value.indices.all { index ->
+            if (index in UUID_HYPHEN_POSITIONS) value[index] == '-' else value[index].isAsciiHexDigit()
+        }
+
+        private fun Char.isAsciiHexDigit() = this in '0'..'9' || this in 'a'..'f' || this in 'A'..'F'
+
+        private val UUID_HYPHEN_POSITIONS = setOf(8, 13, 18, 23)
 
         internal fun classifyStatus(status: Int): RealtimeVoiceException = when (status) {
             401 -> RealtimeVoiceException(RealtimeVoiceDiagnostic.NOT_SIGNED_IN, "Your ChatGPT session has expired.")

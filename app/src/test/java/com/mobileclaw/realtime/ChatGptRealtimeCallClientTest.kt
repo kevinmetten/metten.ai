@@ -29,24 +29,26 @@ class ChatGptRealtimeCallClientTest {
         val json = JsonParser.parseString(request.bodyString()).asJsonObject
         assertEquals("v=0\r\no=offer", json["sdp"].asString)
         val session = json["session"].asJsonObject
-        assertFalse(session.has("type"))
+        assertEquals(setOf("type", "model", "instructions", "audio"), session.keySet())
+        assertEquals("quicksilver", session["type"].asString)
         assertEquals("gpt-realtime-1.5", session["model"].asString)
-        assertEquals(listOf("audio"), session["output_modalities"].asJsonArray.map { it.asString })
+        assertTrue(session["instructions"].asString.isNotBlank())
         val audio = session["audio"].asJsonObject
+        assertEquals(setOf("input", "output"), audio.keySet())
+        assertEquals(setOf("format"), audio["input"].asJsonObject.keySet())
+        assertEquals(setOf("voice"), audio["output"].asJsonObject.keySet())
         assertEquals("audio/pcm", audio["input"].asJsonObject["format"].asJsonObject["type"].asString)
         assertEquals(24_000, audio["input"].asJsonObject["format"].asJsonObject["rate"].asInt)
-        assertEquals("gpt-4o-mini-transcribe", audio["input"].asJsonObject["transcription"].asJsonObject["model"].asString)
-        assertEquals("near_field", audio["input"].asJsonObject["noise_reduction"].asJsonObject["type"].asString)
-        val vad = audio["input"].asJsonObject["turn_detection"].asJsonObject
-        assertEquals("server_vad", vad["type"].asString)
-        assertEquals(500, vad["silence_duration_ms"].asInt)
-        assertTrue(vad["create_response"].asBoolean)
-        assertTrue(vad["interrupt_response"].asBoolean)
-        assertEquals("sage", audio["output"].asJsonObject["voice"].asString)
-        assertEquals("audio/pcm", audio["output"].asJsonObject["format"].asJsonObject["type"].asString)
-        // Regression guard: these belong to other adapters/older experimental payloads.
+        assertEquals("cove", audio["output"].asJsonObject["voice"].asString)
+        assertNotEquals("sage", audio["output"].asJsonObject["voice"].asString)
+        assertFalse(session.has("output_modalities"))
+        assertFalse(audio["input"].asJsonObject.has("transcription"))
+        assertFalse(audio["input"].asJsonObject.has("noise_reduction"))
+        assertFalse(audio["input"].asJsonObject.has("turn_detection"))
+        assertFalse(audio["output"].asJsonObject.has("format"))
+        assertFalse(session.has("tools"))
+        assertFalse(session.has("tool_choice"))
         assertFalse(request.bodyString().contains("gpt-live-1-codex"))
-        assertFalse(request.bodyString().contains("semantic_vad"))
         assertFalse(request.bodyString().contains("secret-access-token"))
         assertFalse(request.bodyString().contains("account-123"))
     }
@@ -57,11 +59,14 @@ class ChatGptRealtimeCallClientTest {
         assertNull(request.header(RESIDENCY_HEADER))
     }
 
-    @Test fun `call id accepts upstream opaque final location segment`() {
+    @Test fun `call id parser searches segments and accepts only rtc or UUID identifiers`() {
         assertEquals("rtc_test", ChatGptRealtimeCallClient.parseCallId("https://chatgpt.com/realtime/calls/rtc_test"))
         val uuid = "123e4567-e89b-12d3-a456-426614174000"
         assertEquals(uuid, ChatGptRealtimeCallClient.parseCallId("/calls/$uuid?x=1"))
-        assertEquals("not-a-call", ChatGptRealtimeCallClient.parseCallId("/calls/not-a-call"))
+        assertEquals("rtc_nested", ChatGptRealtimeCallClient.parseCallId("/calls/rtc_nested/status"))
+        assertNull(ChatGptRealtimeCallClient.parseCallId("/calls/not-a-call"))
+        assertNull(ChatGptRealtimeCallClient.parseCallId("/calls/rtc_"))
+        assertNull(ChatGptRealtimeCallClient.parseCallId("/calls/123e4567-e89b-12d3-a456-42661417400z"))
         assertNull(ChatGptRealtimeCallClient.parseCallId("/calls/"))
         assertNull(ChatGptRealtimeCallClient.parseCallId("not a location"))
         assertNull(ChatGptRealtimeCallClient.parseCallId(null))

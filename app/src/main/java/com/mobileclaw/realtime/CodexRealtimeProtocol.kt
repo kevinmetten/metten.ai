@@ -1,15 +1,14 @@
 package com.mobileclaw.realtime
 
-import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 
 /**
  * The selected ChatGPT-backend wire adapter. This is deliberately explicit: fields from the
  * AVAS V1 session must never be mixed with the Frameless Bidi/V3 adapter.
  *
- * Mirrored from openai/codex `realtime_call.rs`, `realtime_websocket/methods.rs`, and
- * `realtime_websocket/protocol_v1.rs`. Current Codex explicitly rejects AVAS calls unless the
- * conversational realtime V1 adapter is selected (`quicksilver=v1`).
+ * Mirrored from openai/codex `realtime_call.rs`, `realtime_websocket/methods_v1.rs`, and
+ * `realtime_websocket/protocol.rs`. AVAS rejects V2 but permits V1 and V3; Voice V1 deliberately
+ * selects V1 because that is the current WebRTC default.
  */
 enum class CodexRealtimeProtocol(
     val model: String,
@@ -25,9 +24,16 @@ enum class CodexRealtimeProtocol(
 
 data class CodexRealtimeSessionConfig(
     val protocol: CodexRealtimeProtocol = CodexRealtimeProtocol.AVAS_REALTIME_V1,
-    val voice: String = "sage",
-    val transcriptionModel: String = "gpt-4o-mini-transcribe",
-)
+    val voice: String = "cove",
+    val instructions: String = DEFAULT_VOICE_INSTRUCTIONS,
+) {
+    init {
+        require(instructions.isNotBlank()) { "Realtime voice instructions must not be blank." }
+    }
+}
+
+const val DEFAULT_VOICE_INSTRUCTIONS =
+    "You are a helpful conversational voice assistant. Respond naturally and concisely."
 
 /** Pure mapper for the current conversational realtime V1 AVAS call-create session shape. */
 object CodexRealtimeProtocolMapper {
@@ -37,22 +43,14 @@ object CodexRealtimeProtocolMapper {
     }
 
     internal fun session(config: CodexRealtimeSessionConfig): JsonObject = JsonObject().apply {
+        addProperty("type", "quicksilver")
         addProperty("model", config.protocol.model)
-        add("output_modalities", JsonArray().apply { add("audio") })
+        addProperty("instructions", config.instructions)
         add("audio", JsonObject().apply {
             add("input", JsonObject().apply {
                 add("format", pcm24Khz())
-                add("transcription", JsonObject().apply { addProperty("model", config.transcriptionModel) })
-                add("turn_detection", JsonObject().apply {
-                    addProperty("type", "server_vad")
-                    addProperty("create_response", true)
-                    addProperty("interrupt_response", true)
-                    addProperty("silence_duration_ms", 500)
-                })
-                add("noise_reduction", JsonObject().apply { addProperty("type", "near_field") })
             })
             add("output", JsonObject().apply {
-                add("format", pcm24Khz())
                 addProperty("voice", config.voice)
             })
         })
