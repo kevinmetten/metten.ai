@@ -21,7 +21,7 @@ class RealtimeSidebandLifecycleTest {
         val sideband = FakeSideband()
         val attachment = TransportSidebandAttachment(sideband)
         attachment.close()
-        assertFalse(attachment.attach("rtc_late", 1) {})
+        assertFalse(attachment.attach(attachment("rtc_late"), 1) {})
         assertEquals(0, sideband.connects)
         assertEquals(1, sideband.closes)
     }
@@ -29,7 +29,7 @@ class RealtimeSidebandLifecycleTest {
     @Test fun `transport attachment that wins is closed exactly before later sends`() {
         val sideband = FakeSideband()
         val attachment = TransportSidebandAttachment(sideband)
-        assertTrue(attachment.attach("rtc_current", 3) {})
+        assertTrue(attachment.attach(attachment("rtc_current"), 3) {})
         assertEquals(1, sideband.connects)
         assertTrue(attachment.send(update(3)))
         attachment.close()
@@ -42,7 +42,7 @@ class RealtimeSidebandLifecycleTest {
         val credential = CompletableDeferred<ChatGptBackendCredentials>()
         val factory = FakeSocketFactory()
         val client = client(scope, RealtimeCredentialProvider { credential.await() }, factory)
-        client.connect("rtc_one", 1) {}
+        client.connect(attachment("rtc_one"), 1) {}
         scope.runCurrent()
         client.close()
         credential.complete(credentials())
@@ -60,7 +60,7 @@ class RealtimeSidebandLifecycleTest {
             scope, RealtimeCredentialProvider { credentials() }, socketFactory = factory,
             beforeSocketOpen = { reached.complete(Unit); release.await() },
         )
-        client.connect("rtc_race", 1) {}
+        client.connect(attachment("rtc_race"), 1) {}
         scope.runCurrent()
         assertTrue(reached.isCompleted)
         client.close()
@@ -74,15 +74,16 @@ class RealtimeSidebandLifecycleTest {
         val scope = TestScope(StandardTestDispatcher())
         val factory = FakeSocketFactory()
         val client = client(scope, RealtimeCredentialProvider { credentials() }, factory)
-        client.connect("rtc_old", 1) {}
+        client.connect(attachment("rtc_old"), 1) {}
         scope.runCurrent()
         val old = factory.sockets.single()
-        client.connect("rtc_new", 2) {}
+        client.connect(attachment("rtc_new"), 2) {}
         scope.runCurrent()
         val newer = factory.sockets.last()
         old.listener.onOpen(old, response(old.request()))
         old.listener.onFailure(old, IllegalStateException("stale"), null)
         old.listener.onClosed(old, 1000, "stale")
+        newer.listener.onOpen(newer, response(newer.request()))
         assertTrue(client.send(update(2)))
         assertEquals(1, newer.sent.size)
         assertTrue(old.closed)
@@ -92,11 +93,11 @@ class RealtimeSidebandLifecycleTest {
         val scope = TestScope(StandardTestDispatcher())
         val factory = FakeSocketFactory()
         val client = client(scope, RealtimeCredentialProvider { credentials() }, factory)
-        client.connect("rtc_old", 1) {}
+        client.connect(attachment("rtc_old"), 1) {}
         scope.runCurrent()
         val old = factory.sockets.single()
         old.listener.onFailure(old, IllegalStateException("transient"), null)
-        client.connect("rtc_new", 2) {}
+        client.connect(attachment("rtc_new"), 2) {}
         scope.runCurrent()
         assertEquals(2, factory.sockets.size)
         scope.advanceTimeBy(5_000)
@@ -112,7 +113,7 @@ class RealtimeSidebandLifecycleTest {
         val scope = TestScope(StandardTestDispatcher())
         val factory = FakeSocketFactory()
         val client = client(scope, RealtimeCredentialProvider { credentials() }, factory)
-        client.connect("rtc_current", 7) {}
+        client.connect(attachment("rtc_current"), 7) {}
         scope.runCurrent()
         val socket = factory.sockets.single()
         socket.listener.onOpen(socket, response(socket.request()))
@@ -123,8 +124,30 @@ class RealtimeSidebandLifecycleTest {
         assertFalse(client.send(update(7)))
     }
 
+    @Test fun `handshake failure is observable and bounded reconnect delivers realistic delegation`() {
+        val scope = TestScope(StandardTestDispatcher())
+        val factory = FakeSocketFactory()
+        val received = mutableListOf<RealtimeDelegationRequest>()
+        val client = client(scope, RealtimeCredentialProvider { credentials() }, factory)
+        client.connect(attachment("rtc_exact"), 9, received::add)
+        scope.runCurrent()
+        val failed = factory.sockets.single()
+        failed.listener.onFailure(failed, IllegalStateException("handshake"),
+            Response.Builder().request(failed.request()).protocol(Protocol.HTTP_1_1).code(403).message("Forbidden").build())
+        assertEquals(RealtimeSidebandPhase.FAILED, RealtimeSidebandDiagnostics.state.value.phase)
+        assertEquals(403, RealtimeSidebandDiagnostics.state.value.httpStatus)
+        scope.advanceTimeBy(500)
+        scope.runCurrent()
+        val recovered = factory.sockets.last()
+        recovered.listener.onOpen(recovered, response(recovered.request()))
+        recovered.listener.onMessage(recovered, """{"type":"delegation.created","item":{"type":"delegation","target":"client","id":"d1","content":[{"type":"input_text","text":"{\"op\":\"start_phone_task\",\"goal\":\"Open Android Settings\"}"}]}}""")
+        assertEquals(listOf(RealtimeDelegationRequest(9, "d1", """{"op":"start_phone_task","goal":"Open Android Settings"}""")), received)
+        assertEquals(1, RealtimeSidebandDiagnostics.state.value.delegationEventsReceived)
+    }
+
     private fun client(scope: TestScope, provider: RealtimeCredentialProvider, factory: FakeSocketFactory) =
         ChatGptRealtimeSidebandClient(scope, provider, socketFactory = factory)
+    private fun attachment(id: String) = RealtimeSidebandAttachment(id, RealtimeRequestContext("session", "thread", "realtime"))
     private fun credentials() = ChatGptBackendCredentials("token", "account", null)
     private fun update(generation: Long) = RealtimeDelegationUpdate(generation, "d", "result", RealtimeDelegationChannel.SPEAKABLE)
     private fun response(request: Request) = Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(101).message("Switching Protocols").build()
@@ -148,7 +171,7 @@ class RealtimeSidebandLifecycleTest {
     private class FakeSideband : RealtimeSideband {
         var connects = 0
         var closes = 0
-        override fun connect(callId: String, generation: Long, listener: (RealtimeDelegationRequest) -> Unit) { connects++ }
+        override fun connect(attachment: RealtimeSidebandAttachment, generation: Long, listener: (RealtimeDelegationRequest) -> Unit) { connects++ }
         override fun close() { closes++ }
         override fun send(update: RealtimeDelegationUpdate) = true
     }

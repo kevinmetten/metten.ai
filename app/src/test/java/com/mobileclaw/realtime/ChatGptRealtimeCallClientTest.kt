@@ -90,6 +90,7 @@ class ChatGptRealtimeCallClientTest {
         server.enqueue(MockResponse().setResponseCode(200).addHeader("Location", "/realtime/calls/rtc_123").setBody("v=0\r\no=answer"))
         val answer = runBlocking { client(server.url("/backend-api/codex").toString()).createCall("v=0\r\no=offer", requestContext) }
         assertEquals("rtc_123", answer.callId)
+        assertSame(requestContext, answer.sidebandAttachment.requestContext)
         assertTrue(answer.sdp.startsWith("v=0"))
     }
 

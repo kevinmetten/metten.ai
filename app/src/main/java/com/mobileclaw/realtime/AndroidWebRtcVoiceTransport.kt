@@ -99,7 +99,7 @@ class AndroidWebRtcVoiceTransport(
             val offer = currentPeer.createOfferAwait().also { currentPeer.setDescriptionAwait(it, local = true) }
             val completeOffer = currentPeer.awaitIceGathering(offer)
             val answer = calls.createCall(completeOffer.description, requestContext)
-            if (!sidebandAttachment.attach(answer.callId, controlGeneration) { request ->
+            if (!sidebandAttachment.attach(answer.sidebandAttachment, controlGeneration) { request ->
                 if (!closed.get() && request.voiceSessionGeneration == controlGeneration) delegationListener?.invoke(request)
             }) throw CancellationException("Voice session stopped.")
             currentPeer.setDescriptionAwait(SessionDescription(SessionDescription.Type.ANSWER, answer.sdp), local = false)

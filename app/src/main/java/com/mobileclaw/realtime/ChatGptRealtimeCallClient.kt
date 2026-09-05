@@ -50,7 +50,7 @@ class ChatGptRealtimeCallClient internal constructor(
             throw RealtimeVoiceException(RealtimeVoiceDiagnostic.AUTH_REFRESH_FAILED, "Could not prepare the ChatGPT session. Try again.")
         }
         val request = buildRequest(offerSdp, credential, requestContext)
-        return client.newCall(request).awaitRealtimeResponse(credential)
+        return client.newCall(request).awaitRealtimeResponse(credential, requestContext)
     }
 
     internal fun buildRequest(offerSdp: String, credential: ChatGptBackendCredentials, requestContext: RealtimeRequestContext): Request {
@@ -71,7 +71,10 @@ class ChatGptRealtimeCallClient internal constructor(
             .build()
     }
 
-    private suspend fun Call.awaitRealtimeResponse(credential: ChatGptBackendCredentials): RealtimeCallAnswer =
+    private suspend fun Call.awaitRealtimeResponse(
+        credential: ChatGptBackendCredentials,
+        requestContext: RealtimeRequestContext,
+    ): RealtimeCallAnswer =
         suspendCancellableCoroutine { continuation ->
             continuation.invokeOnCancellation { cancel() }
             enqueue(object : Callback {
@@ -103,7 +106,7 @@ class ChatGptRealtimeCallClient internal constructor(
                             )
                             return
                         }
-                        continuation.resume(RealtimeCallAnswer(answer, callId))
+                        continuation.resume(RealtimeCallAnswer(answer, RealtimeSidebandAttachment(callId, requestContext)))
                     }
                 }
             })

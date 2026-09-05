@@ -36,11 +36,15 @@ class VoiceV2ProtocolTest {
 
     @Test fun `existing call request uses exact live call path and OAuth headers`() {
         val client = ChatGptRealtimeSidebandClient(TestScope(), RealtimeCredentialProvider { error("unused") }, OkHttpClient(), "https://api.openai.com/v1".toHttpUrl())
-        val request = client.request("rtc_existing", ChatGptBackendCredentials("secret", "account", null))
+        val request = client.request(RealtimeSidebandAttachment("rtc_existing", RealtimeRequestContext("session-fixed", "thread-fixed", "realtime-fixed")), ChatGptBackendCredentials("secret", "account", null))
         assertEquals("https://api.openai.com/v1/live/rtc_existing", request.url.toString())
         assertEquals("Bearer secret", request.header("Authorization"))
         assertEquals("account", request.header("ChatGPT-Account-Id"))
         assertEquals("metten_ai_android", request.header("originator"))
+        assertEquals("quicksilver=v2", request.header("openai-alpha"))
+        assertEquals("session-fixed", request.header("session-id"))
+        assertEquals("thread-fixed", request.header("thread-id"))
+        assertEquals("realtime-fixed", request.header("x-session-id"))
         assertNull(request.header("OpenAI-Beta"))
     }
 
