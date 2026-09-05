@@ -9,6 +9,17 @@ import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
 import java.util.UUID
 
+internal fun <T> selectCompatibleOfflineVoice(
+    requested: Locale,
+    voices: Collection<T>,
+    localeOf: (T) -> Locale,
+    requiresNetwork: (T) -> Boolean,
+): T? = voices.asSequence()
+    .filterNot(requiresNetwork)
+    .filter { localeOf(it).language == requested.language }
+    .sortedByDescending { localeOf(it) == requested }
+    .firstOrNull()
+
 /** TextToSpeech adapter which selects only installed, non-network voices for the device locale. */
 class AndroidOfflineTextToSpeechOutput(context: Context) : SpeechOutputEngine {
     private val appContext = context.applicationContext
@@ -29,9 +40,7 @@ class AndroidOfflineTextToSpeechOutput(context: Context) : SpeechOutputEngine {
             return
         }
         val locale = Locale.getDefault()
-        val voice = engine.voices.orEmpty().filterNot { it.isNetworkConnectionRequired }
-            .sortedByDescending { it.locale == locale }.firstOrNull { it.locale.language == locale.language }
-            ?: engine.voices.orEmpty().firstOrNull { !it.isNetworkConnectionRequired }
+        val voice = selectCompatibleOfflineVoice(locale, engine.voices.orEmpty(), { it.locale }, { it.isNetworkConnectionRequired })
         capability = if (voice == null) SpeechCapability(false, "No offline Text-to-Speech voice is installed.")
         else if (engine.setVoice(voice) == TextToSpeech.ERROR) SpeechCapability(false, "The offline Text-to-Speech voice could not be selected.")
         else SpeechCapability(true)

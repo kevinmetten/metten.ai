@@ -15,8 +15,22 @@ class LocalSpeechPolicyTest {
 
     @Test fun `output excludes network-required voices and owns shutdown`() {
         val source = projectFile("src/main/java/com/mobileclaw/voice/AndroidOfflineTextToSpeechOutput.kt").readText()
-        assertTrue(source.contains("filterNot { it.isNetworkConnectionRequired }"))
+        assertTrue(source.contains("selectCompatibleOfflineVoice"))
+        assertTrue(source.contains("it.isNetworkConnectionRequired"))
         assertTrue(source.contains("tts?.shutdown()"))
+    }
+
+    @Test fun `offline voice selection is exact then same-language and never network or unrelated`() {
+        data class Candidate(val locale: java.util.Locale, val network: Boolean)
+        val requested = java.util.Locale.US
+        val sameLanguage = Candidate(java.util.Locale.UK, false)
+        val exact = Candidate(java.util.Locale.US, false)
+        val networkExact = Candidate(java.util.Locale.US, true)
+        val unrelated = Candidate(java.util.Locale.FRANCE, false)
+        fun choose(candidates: List<Candidate>) = selectCompatibleOfflineVoice(requested, candidates, { it.locale }, { it.network })
+        assertSame(exact, choose(listOf(sameLanguage, exact)))
+        assertSame(sameLanguage, choose(listOf(networkExact, sameLanguage)))
+        assertNull(choose(listOf(networkExact, unrelated)))
     }
 
     @Test fun `manifest exposes recognition and TTS service queries`() {

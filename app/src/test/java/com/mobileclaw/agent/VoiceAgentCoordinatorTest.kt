@@ -18,6 +18,16 @@ import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class VoiceAgentCoordinatorTest {
+    @Test fun `generation admission is monotonic idempotent and once only`() {
+        val h = Harness()
+        assertEquals(VoiceSessionAdmission.ALREADY_ACTIVE, h.coordinator.beginSession(1, h.sink))
+        h.coordinator.endSession(1)
+        assertEquals(VoiceSessionAdmission.STALE_OR_ENDED, h.coordinator.beginSession(1, h.sink))
+        assertEquals(VoiceSessionAdmission.ACTIVATED, h.coordinator.beginSession(3, h.sink))
+        assertEquals(VoiceSessionAdmission.STALE_OR_ENDED, h.coordinator.beginSession(2, h.sink))
+        assertEquals(VoiceSessionAdmission.ALREADY_ACTIVE, h.coordinator.beginSession(3, h.sink))
+    }
+
     @Test fun `duplicate and concurrent starts admit exactly one worker`() {
         val h = Harness(); h.start("a", "Open Spotify"); h.start("a", "Open Spotify"); h.start("b", "Open YouTube"); h.scope.runCurrent()
         assertEquals(listOf("Open Spotify"), h.goals)
