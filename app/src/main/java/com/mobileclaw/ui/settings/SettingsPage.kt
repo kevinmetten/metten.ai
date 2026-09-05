@@ -777,7 +777,7 @@ private fun ChatGptAccountCard(app: ClawApplication, c: ClawColors) {
                     )
                     val voiceReadiness = app.mettenVoiceController.readiness()
                     Text("On-device speech recognition: ${if (voiceReadiness.onDeviceSpeech.available) "Available" else "Unavailable"}", color = c.subtext, fontSize = 12.sp)
-                    Text("Offline TTS: ${if (voiceReadiness.offlineTts.available) "Available" else "Unavailable"}", color = c.subtext, fontSize = 12.sp)
+                    Text("Offline TTS: ${when { voiceReadiness.offlineTts.initializing -> "Initializing"; voiceReadiness.offlineTts.available -> "Available"; else -> "Unavailable" }}", color = c.subtext, fontSize = 12.sp)
                     Text("ChatGPT text: ${if (voiceReadiness.chatGptTextReady) "Ready" else "Not ready"}", color = c.subtext, fontSize = 12.sp)
                     Text("Phone control: ${app.deviceReadinessEngine.evaluate(com.mobileclaw.permission.DeviceCapability.PHONE_CONTROL).level.name.lowercase().replaceFirstChar(Char::uppercase)}", color = c.subtext, fontSize = 12.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

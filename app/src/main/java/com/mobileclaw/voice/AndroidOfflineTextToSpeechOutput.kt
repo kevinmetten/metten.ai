@@ -13,7 +13,7 @@ import java.util.UUID
 class AndroidOfflineTextToSpeechOutput(context: Context) : SpeechOutputEngine {
     private val appContext = context.applicationContext
     private val main = Handler(Looper.getMainLooper())
-    @Volatile private var capability = SpeechCapability(false, "Offline speech is still initializing.")
+    @Volatile private var capability = SpeechCapability(false, "Offline speech is still initializing.", initializing = true)
     private var tts: TextToSpeech? = null
     private var released = false
     private val initializationListeners = mutableListOf<(SpeechCapability) -> Unit>()
@@ -40,7 +40,7 @@ class AndroidOfflineTextToSpeechOutput(context: Context) : SpeechOutputEngine {
 
     override fun capability() = capability
     override fun initialize(listener: (SpeechCapability) -> Unit) = onMain {
-        if (capability.available || capability.reason != "Offline speech is still initializing.") listener(capability)
+        if (!capability.initializing) listener(capability)
         else initializationListeners += listener
     }
     override fun speak(text: String, listener: (SpeechOutputEvent) -> Unit) = onMain {

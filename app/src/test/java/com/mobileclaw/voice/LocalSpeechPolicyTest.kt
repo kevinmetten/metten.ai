@@ -19,5 +19,12 @@ class LocalSpeechPolicyTest {
         assertTrue(source.contains("tts?.shutdown()"))
     }
 
+    @Test fun `manifest exposes recognition and TTS service queries`() {
+        val manifest = projectFile("src/main/AndroidManifest.xml").readText()
+        val queries = manifest.substringAfter("<queries>").substringBefore("</queries>")
+        assertTrue(queries.contains("android.speech.RecognitionService"))
+        assertTrue(queries.contains("android.intent.action.TTS_SERVICE"))
+    }
+
     private fun projectFile(relative: String): File = sequenceOf(File(relative), File("app/$relative"), File(System.getProperty("user.dir"), relative), File(System.getProperty("user.dir"), "app/$relative")).first { it.isFile }
 }

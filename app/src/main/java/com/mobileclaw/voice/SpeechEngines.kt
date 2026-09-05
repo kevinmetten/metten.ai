@@ -1,6 +1,6 @@
 package com.mobileclaw.voice
 
-data class SpeechCapability(val available: Boolean, val reason: String? = null)
+data class SpeechCapability(val available: Boolean, val reason: String? = null, val initializing: Boolean = false)
 
 sealed interface SpeechInputEvent {
     data object Ready : SpeechInputEvent

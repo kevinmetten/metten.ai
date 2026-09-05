@@ -28,13 +28,26 @@ class AndroidOnDeviceSpeechInput(context: Context) : SpeechInputEngine {
         if (released) { listener(SpeechInputEvent.FatalError("Speech recognition has been released.")); return@onMain }
         val readiness = capability()
         if (!readiness.available) { listener(SpeechInputEvent.FatalError(readiness.reason.orEmpty())); return@onMain }
-        val current = recognizer ?: SpeechRecognizer.createOnDeviceSpeechRecognizer(appContext).also { recognizer = it }
-        current.setRecognitionListener(AndroidListener(listener))
-        current.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
-        })
+        }
+        try {
+            val current = recognizer ?: SpeechRecognizer.createOnDeviceSpeechRecognizer(appContext).also { recognizer = it }
+            current.setRecognitionListener(AndroidListener(listener))
+            current.startListening(intent)
+        } catch (_: SecurityException) {
+            listener(SpeechInputEvent.FatalError("Microphone permission is missing."))
+        } catch (_: UnsupportedOperationException) {
+            listener(SpeechInputEvent.FatalError("On-device speech recognition is not supported by this device."))
+        } catch (_: IllegalStateException) {
+            listener(SpeechInputEvent.RecoverableError("The on-device recognizer could not start.", 1_200))
+        } catch (_: android.content.ActivityNotFoundException) {
+            listener(SpeechInputEvent.FatalError("The on-device recognition service is unavailable."))
+        } catch (_: RuntimeException) {
+            listener(SpeechInputEvent.RecoverableError("The on-device recognizer could not start.", 1_200))
+        }
     }
 
     override fun stopListening() = onMain { recognizer?.cancel() }
@@ -60,6 +73,8 @@ class AndroidOnDeviceSpeechInput(context: Context) : SpeechInputEngine {
                 SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "The on-device recognizer is temporarily busy."
                 SpeechRecognizer.ERROR_SPEECH_TIMEOUT, SpeechRecognizer.ERROR_NO_MATCH -> "No speech was recognized."
                 SpeechRecognizer.ERROR_CLIENT -> "Recognition was cancelled."
+                SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED -> "The device language is not supported by on-device recognition."
+                SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> "On-device recognition is unavailable for the device language."
                 else -> "On-device recognition failed ($error)."
             }
             if (benign) emit(SpeechInputEvent.RecoverableError(reason, if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 1_200 else 700))
