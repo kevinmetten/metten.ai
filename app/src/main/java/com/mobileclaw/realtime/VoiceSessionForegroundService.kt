@@ -24,16 +24,16 @@ class VoiceSessionForegroundService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     override fun onCreate() {
         super.onCreate()
-        getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(CHANNEL, "Live Voice", NotificationManager.IMPORTANCE_LOW))
+        getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(CHANNEL, "Metten Voice", NotificationManager.IMPORTANCE_LOW))
         scope.launch {
-            (application as ClawApplication).realtimeVoiceController.state.collectLatest {
-                if (it.phase == RealtimeVoicePhase.IDLE || it.phase == RealtimeVoicePhase.FAILED) stopSelf()
+            (application as ClawApplication).mettenVoiceController.state.collectLatest {
+                if (it.phase == com.mobileclaw.voice.MettenVoicePhase.IDLE || it.phase == com.mobileclaw.voice.MettenVoicePhase.FAILED) stopSelf()
             }
         }
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val notification = Notification.Builder(this, CHANNEL).setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("Metten Live Voice is active").setContentText("Microphone session active").setOngoing(true).build()
+            .setContentTitle("Metten Voice is active").setContentText("On-device microphone session active").setOngoing(true).build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) startForeground(ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
         else startForeground(ID, notification)
         return START_NOT_STICKY

@@ -33,8 +33,7 @@ import com.mobileclaw.ui.shell.rememberClassicShellController
 import java.util.Locale
 import com.mobileclaw.R
 import com.mobileclaw.str
-import com.mobileclaw.realtime.VoiceAudioPolicy
-import com.mobileclaw.realtime.RealtimeVoicePhase
+import com.mobileclaw.voice.MettenVoicePhase
 
 class MainActivity : ComponentActivity() {
 
@@ -43,12 +42,12 @@ class MainActivity : ComponentActivity() {
     ) { }
     private var debugPageRequest by mutableStateOf<String?>(null)
     private var debugGoalRequest by mutableStateOf<String?>(null)
-    private var voicePhase = RealtimeVoicePhase.IDLE
+    private var voicePhase = MettenVoicePhase.IDLE
 
     override fun onResume() {
         super.onResume()
-        voicePhase = (application as ClawApplication).realtimeVoiceController.state.value.phase
-        volumeControlStream = VoiceAudioPolicy.volumeStreamFor(voicePhase)
+        voicePhase = (application as ClawApplication).mettenVoiceController.state.value.phase
+        volumeControlStream = if (voicePhase in setOf(MettenVoicePhase.IDLE, MettenVoicePhase.FAILED)) android.media.AudioManager.USE_DEFAULT_STREAM_TYPE else android.media.AudioManager.STREAM_MUSIC
     }
 
     override fun onPause() {
@@ -66,12 +65,12 @@ class MainActivity : ComponentActivity() {
         setContent {
             val vm: MainViewModel = viewModel()
             val uiState by vm.uiState.collectAsState()
-            val voiceState by ClawApplication.instance.realtimeVoiceController.state.collectAsState()
+            val voiceState by ClawApplication.instance.mettenVoiceController.state.collectAsState()
 
             LaunchedEffect(voiceState.phase) {
                 voicePhase = voiceState.phase
                 if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
-                    volumeControlStream = VoiceAudioPolicy.volumeStreamFor(voicePhase)
+                    volumeControlStream = if (voicePhase in setOf(MettenVoicePhase.IDLE, MettenVoicePhase.FAILED)) android.media.AudioManager.USE_DEFAULT_STREAM_TYPE else android.media.AudioManager.STREAM_MUSIC
                 }
             }
 
