@@ -92,13 +92,18 @@ class AgentOverlayManager(private val context: Context) {
     private var hostFrame: FrameLayout? = null
     private var hostParams: WindowManager.LayoutParams? = null
     private var lifecycleOwner: OverlayLifecycleOwner? = null
+    private var ownerId: String? = null
 
     val state = OverlayState()
 
     // ── Public API ────────────────────────────────────────────────────────────
 
     fun show(task: String) {
-        runOnMain { showInternal(task, compact = false) }
+        runOnMain { ownerId = null; showInternal(task, compact = false) }
+    }
+
+    fun showOwned(owner: String, task: String) {
+        runOnMain { ownerId = owner; showInternal(task, compact = false) }
     }
 
     fun showCompact(task: String) {
@@ -221,13 +226,25 @@ class AgentOverlayManager(private val context: Context) {
         }
     }
 
+    fun showCompletedOwned(owner: String, summary: String) {
+        runOnMain { if (ownerId == owner) showCompleted(summary) }
+    }
+
     fun hide() {
         runOnMain {
+            ownerId = null
             runCatching { hostFrame?.let { wm.removeView(it) } }
             hostFrame = null
             lifecycleOwner?.stop(); lifecycleOwner = null
             state.streamingThought = ""
             state.visible = false
+        }
+    }
+
+    fun hideOwned(owner: String) {
+        runOnMain {
+            if (ownerId != owner) return@runOnMain
+            hide()
         }
     }
 

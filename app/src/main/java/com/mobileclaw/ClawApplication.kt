@@ -6,6 +6,10 @@ import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import com.mobileclaw.agent.RoleManager
 import com.mobileclaw.agent.AgentTaskController
+import com.mobileclaw.agent.AgentTaskSubmissionService
+import com.mobileclaw.agent.AgentRuntime
+import com.mobileclaw.agent.TaskType
+import com.mobileclaw.agent.VoiceAgentCoordinator
 import com.mobileclaw.auth.chatgpt.ChatGptAuthManager
 import com.mobileclaw.agent.RoleWorkspaceStore
 import com.mobileclaw.agent.TaskRecipeStore
@@ -44,6 +48,9 @@ import com.mobileclaw.permission.detectRom
 import com.mobileclaw.realtime.AndroidWebRtcVoiceTransport
 import com.mobileclaw.realtime.ChatGptRealtimeCallClient
 import com.mobileclaw.realtime.ChatGptRealtimeSessionController
+import com.mobileclaw.realtime.ChatGptRealtimeSidebandClient
+import com.mobileclaw.realtime.VoiceSessionForegroundService
+import com.mobileclaw.memory.MemoryContextBuilder
 import com.mobileclaw.runtime.PageRuntimeCapabilities
 import com.mobileclaw.server.ConsoleServer
 import com.mobileclaw.server.LocalApiServer
@@ -77,6 +84,12 @@ class ClawApplication : Application() {
         private set
 
     lateinit var realtimeVoiceController: ChatGptRealtimeSessionController
+        private set
+
+    lateinit var agentTaskSubmissionService: AgentTaskSubmissionService
+        private set
+
+    lateinit var voiceAgentCoordinator: VoiceAgentCoordinator
         private set
 
     lateinit var database: ClawDatabase
@@ -181,10 +194,6 @@ class ClawApplication : Application() {
         agentTaskController = AgentTaskController()
         chatGptAuthManager = ChatGptAuthManager(this)
         chatGptModelService = ChatGptModelService(chatGptAuthManager)
-        val realtimeCalls = ChatGptRealtimeCallClient(chatGptAuthManager)
-        realtimeVoiceController = ChatGptRealtimeSessionController(agentExecutionScope) {
-            AndroidWebRtcVoiceTransport(this, realtimeCalls)
-        }
         registerForegroundCallbacks()
         database = ClawDatabase.getInstance(this)
         agentConfig = AgentConfig(this)
@@ -253,6 +262,34 @@ class ClawApplication : Application() {
         consoleServer.start()
         aiPageStore = AiPageStore(filesDir)
         agentTownStore = AgentTownStore(this)
+        agentTaskSubmissionService = AgentTaskSubmissionService(this, agentTaskController, agentExecutionScope)
+        voiceAgentCoordinator = VoiceAgentCoordinator(
+            agentExecutionScope,
+            agentTaskController,
+            agentTaskSubmissionService,
+            { capability -> deviceReadinessEngine.evaluate(capability).level },
+        ) { goal ->
+            AgentRuntime(createLlmGateway(), skillRegistry, semanticMemory, MemoryContextBuilder(semanticMemory, userConfig))
+                .run(goal = goal, taskType = TaskType.PHONE_CONTROL)
+        }
+        val realtimeCalls = ChatGptRealtimeCallClient(chatGptAuthManager)
+        realtimeVoiceController = ChatGptRealtimeSessionController(
+            agentExecutionScope,
+            { AndroidWebRtcVoiceTransport(this, realtimeCalls, ChatGptRealtimeSidebandClient(agentExecutionScope, chatGptAuthManager)) },
+            voiceAgentCoordinator,
+        )
+    }
+
+    /** Called only from the foreground UI after RECORD_AUDIO is granted. */
+    fun startLiveVoice(): Boolean {
+        val started = realtimeVoiceController.start()
+        if (started) VoiceSessionForegroundService.start(this)
+        return started
+    }
+
+    fun endLiveVoice() {
+        realtimeVoiceController.stop()
+        VoiceSessionForegroundService.stop(this)
     }
 
     fun providerReadiness(snapshot: com.mobileclaw.config.ConfigSnapshot = agentConfig.snapshot()) = snapshot.let {

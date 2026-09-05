@@ -30,7 +30,9 @@ import com.mobileclaw.agent.AiToolSelector
 import com.mobileclaw.agent.IntentContextPack
 import com.mobileclaw.agent.AgentRuntime
 import com.mobileclaw.agent.AgentCancellationReason
-import com.mobileclaw.agent.AgentExecutionForegroundService
+import com.mobileclaw.agent.AgentTaskSubmissionRequest
+import com.mobileclaw.agent.AgentTaskCompletion
+import com.mobileclaw.agent.ExclusiveSubmissionResult
 import com.mobileclaw.agent.AgentWorkspaceUpdate
 import com.mobileclaw.agent.ChatBubbleStyle
 import com.mobileclaw.agent.ChannelType
@@ -214,9 +216,11 @@ import com.mobileclaw.ui.workspace.WorkspaceRuntimeRecorder
 import com.mobileclaw.ui.workspace.WorkspacePresentationSemantics
 import com.mobileclaw.vpn.AppHttpProxy
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -471,6 +475,7 @@ class MainViewModel : ViewModel() {
 
     // Per-session task management (multiple sessions can run simultaneously)
     private val taskJobs = mutableMapOf<String, Job>()
+    private val surfaceOwnership = RunSurfaceOwnership()
     private val pendingConfirmedRoutes = mutableMapOf<String, TaskRoute>()
     private var videoTaskAutoRefreshJob: Job? = null
 
@@ -1946,8 +1951,8 @@ class MainViewModel : ViewModel() {
         app.agentTaskController.cancelSession(sessionId, AgentCancellationReason.SUPERSEDED_BY_NEW_TURN)
         taskJobs[sessionId]?.cancel()
         taskJobs.remove(sessionId)
-        overlay.hide()
-        auroraOverlay.hide()
+        surfaceOwnership.releaseAgent(sessionId)?.let(overlay::hideOwned)
+        surfaceOwnership.releasePhone(sessionId)?.let(auroraOverlay::endTask)
         val salvaged = salvageInterruptedRunMessages(sessionId)
         updateSession(sessionId) { state ->
             state.copy(
@@ -2145,18 +2150,15 @@ class MainViewModel : ViewModel() {
         )
         if (runFastPathIfHandled(goal, prepared, execution, runtimePlan)) return
 
-        val startedRuntime = startAgentRuntime(prepared, execution)
-        val rt = startedRuntime.runtime
-        val phoneAuroraOverlayShown = startedRuntime.phoneAuroraOverlayShown
-        val registration = app.agentTaskController.register(
+        var submittedResolvedSessionId: String? = null
+        val submissionRequest = AgentTaskSubmissionRequest(
             sessionId = prepared.sessionIdAtStart,
             taskType = execution.executionTaskType,
             foregroundRequested = isPhoneControlTask,
-        )
-
-        val newJob = app.agentExecutionScope.launch(start = CoroutineStart.LAZY) {
-          try {
-            app.agentTaskController.markRunning(registration)
+        ) worker@{ canonicalTaskId ->
+            val startedRuntime = startAgentRuntime(prepared, execution, canonicalTaskId)
+            val rt = startedRuntime.runtime
+            val phoneAuroraOverlayShown = startedRuntime.phoneAuroraOverlayShown
             val prelude = buildAgentRunPrelude(
                 prepared = prepared,
                 route = route,
@@ -2165,6 +2167,7 @@ class MainViewModel : ViewModel() {
                 phoneAuroraOverlayShown = phoneAuroraOverlayShown,
             )
             val resolvedSessionId = prelude.resolvedSessionId
+            submittedResolvedSessionId = resolvedSessionId
             val episodicContext = prelude.episodicContext
             maybeStartRoleRuntimeDryRunTrace(
                 prepared = prepared,
@@ -2204,9 +2207,11 @@ class MainViewModel : ViewModel() {
                 networkTraceJob.cancel()
                 runtimeEventJob.cancel()
             }
-            if (handleAgentCancellation(result, prepared, resolvedSessionId, isPhoneControlTask)) return@launch
+            if (handleAgentCancellation(result, prepared, resolvedSessionId, isPhoneControlTask)) return@worker
 
-            if (isPhoneControlTask) auroraOverlay.endTask()
+            if (isPhoneControlTask) {
+                if (surfaceOwnership.releasePhone(prepared.sessionIdAtStart, canonicalTaskId)) auroraOverlay.endTask(canonicalTaskId)
+            }
 
             persistAgentOutcome(
                 result = result,
@@ -2220,23 +2225,100 @@ class MainViewModel : ViewModel() {
                 userMessage = userMessage,
                 userMessageVisible = userMessageVisible,
                 userMessagePersistedEarly = userMessagePersistedEarly,
+                overlayOwnerId = canonicalTaskId,
             )
-          } finally {
-              app.agentTaskController.complete(registration)
-              if (app.agentTaskController.sessionTask(prepared.sessionIdAtStart) == null) {
-                  overlay.hide()
-                  auroraOverlay.hide()
-              }
-          }
-        }
-        if (!app.agentTaskController.attachJob(registration, newJob)) {
-            newJob.cancel()
-            return
         }
         if (isPhoneControlTask) {
-            AgentExecutionForegroundService.requestProtection(app, registration.taskId)
+            val pendingAdmission = app.agentExecutionScope.launch(start = CoroutineStart.LAZY) {
+                val admissionOwner = currentCoroutineContext()[Job]!!
+                var reserved: com.mobileclaw.agent.PreparedAgentTask<Unit>? = null
+                var started = false
+                try {
+                    when (val admission = app.agentTaskSubmissionService.reserveExclusiveAfterSameSessionRelease(submissionRequest) {
+                        isRunGenerationCurrent(prepared.sessionIdAtStart, prepared.runGeneration) &&
+                            taskJobs[prepared.sessionIdAtStart] === admissionOwner
+                    }) {
+                            is ExclusiveSubmissionResult.Reserved -> {
+                                reserved = admission.task
+                                currentCoroutineContext().ensureActive()
+                                if (!isRunGenerationCurrent(prepared.sessionIdAtStart, prepared.runGeneration) ||
+                                    taskJobs[prepared.sessionIdAtStart] !== admissionOwner) return@launch
+                                started = admission.task.start()
+                                if (!started) return@launch
+                                observeSubmittedTask(
+                                    admission.task.completion,
+                                    admission.task.taskId,
+                                    prepared.sessionIdAtStart,
+                                    { submittedResolvedSessionId },
+                                    prepared.runGeneration,
+                                )
+                            }
+                            is ExclusiveSubmissionResult.Busy -> {
+                                if (admission.conflictingSessionId != prepared.sessionIdAtStart ||
+                                    admission.phase != com.mobileclaw.agent.AgentTaskPhase.CANCELLING) {
+                                    reconcileSubmissionFailure(
+                                        prepared.sessionIdAtStart,
+                                        runGeneration = prepared.runGeneration,
+                                        summary = "Another phone task is already active.",
+                                    )
+                                }
+                            }
+                            null -> Unit
+                    }
+                } finally {
+                    if (!started) reserved?.cancel(AgentCancellationReason.SUPERSEDED_BY_NEW_TURN)
+                }
+            }
+            taskJobs[prepared.sessionIdAtStart] = pendingAdmission
+            pendingAdmission.start()
+        } else {
+            val taskHandle = app.agentTaskSubmissionService.submit(submissionRequest)
+            app.agentExecutionScope.launch {
+                observeSubmittedTask(taskHandle.completion, taskHandle.taskId, prepared.sessionIdAtStart, { submittedResolvedSessionId }, prepared.runGeneration)
+            }
         }
-        newJob.start()
+    }
+
+    private suspend fun observeSubmittedTask(
+        completion: kotlinx.coroutines.Deferred<AgentTaskCompletion<Unit>>,
+        taskId: String,
+        sessionId: String,
+        resolvedSessionId: () -> String?,
+        runGeneration: Long,
+    ) {
+        when (val terminal = completion.await()) {
+            is AgentTaskCompletion.Failed -> reconcileSubmissionFailure(sessionId, resolvedSessionId(), runGeneration, terminal.message)
+            AgentTaskCompletion.Cancelled -> reconcileSubmissionFailure(sessionId, resolvedSessionId(), runGeneration, "Task cancelled.")
+            is AgentTaskCompletion.Succeeded -> Unit
+        }
+        val resolved = resolvedSessionId() ?: sessionId
+        if (isRunGenerationCurrent(resolved, runGeneration)) {
+            clearRuntimeHandles(sessionId, resolved)
+            if (surfaceOwnership.releaseAgent(sessionId, taskId)) overlay.hideOwned(taskId)
+            if (surfaceOwnership.releasePhone(sessionId, taskId)) auroraOverlay.endTask(taskId)
+        }
+    }
+
+    private fun reconcileSubmissionFailure(
+        sessionId: String,
+        resolvedSessionId: String? = null,
+        runGeneration: Long,
+        summary: String,
+    ) {
+        val stateSessionId = resolvedSessionId ?: sessionId
+        if (!isRunGenerationCurrent(stateSessionId, runGeneration)) return
+        updateSession(stateSessionId) { state ->
+            if (!state.isRunning) state else state.copy(
+                isRunning = false,
+                runStartedAt = 0L,
+                streamingToken = "",
+                streamingThought = "",
+                activeLogLines = state.activeLogLines.finishLatestRunningLine() +
+                    LogLine(type = LogType.ERROR, text = summary.take(240)),
+            )
+        }
+        clearRuntimeHandles(sessionId, stateSessionId)
+        surfaceOwnership.releaseAgent(sessionId)?.let(overlay::hideOwned)
     }
 
     private suspend fun CoroutineScope.buildAgentRunPrelude(
@@ -2471,12 +2553,13 @@ class MainViewModel : ViewModel() {
         userMessage: ChatMessage,
         userMessageVisible: Boolean,
         userMessagePersistedEarly: Boolean,
+        overlayOwnerId: String,
     ) {
         val summary = result.getOrNull()?.summary?.let { raw ->
             if (raw.trim().startsWith("LLM error:")) friendlyRuntimeNotice(raw) else raw
         } ?: result.exceptionOrNull()?.message?.let(::friendlyLlmFailureMessage) ?: "Task failed."
         consoleServer.broadcast("task_completed", summary)
-        showCompletionOverlayIfNeeded(summary)
+        showCompletionOverlayIfNeeded(summary, overlayOwnerId)
 
         launch {
             val agentResult = result.getOrNull() ?: return@launch
@@ -2828,8 +2911,8 @@ class MainViewModel : ViewModel() {
     ): Boolean {
         if (result.exceptionOrNull() is kotlinx.coroutines.CancellationException) {
             if (!isRunGenerationCurrent(resolvedSessionId, prepared.runGeneration)) return true
-            overlay.hide()
-            if (isPhoneControlTask) auroraOverlay.endTask()
+            surfaceOwnership.releaseAgent(prepared.sessionIdAtStart)?.let(overlay::hideOwned)
+            if (isPhoneControlTask) surfaceOwnership.releasePhone(prepared.sessionIdAtStart)?.let(auroraOverlay::endTask)
             updateSession(resolvedSessionId) { s ->
                 s.copy(
                     isRunning = false,
@@ -3218,12 +3301,16 @@ class MainViewModel : ViewModel() {
     private fun startAgentRuntime(
         prepared: PreparedRunInput,
         execution: PreparedRunExecution,
+        canonicalTaskId: String,
     ): StartedAgentRuntime {
         val llm = app.createLlmGateway()
         val runtime = AgentRuntime(llm, registry, app.semanticMemory, memoryContextBuilder)
-        overlay.show(execution.visibleGoalLabel)
+        surfaceOwnership.claimAgent(prepared.sessionIdAtStart, canonicalTaskId)
+        overlay.showOwned(canonicalTaskId, execution.visibleGoalLabel)
         val phoneAuroraOverlayShown = if (execution.isPhoneControlTask) {
-            auroraOverlay.beginTask()
+            auroraOverlay.beginTask(canonicalTaskId).also { shown ->
+                if (shown) surfaceOwnership.claimPhone(prepared.sessionIdAtStart, canonicalTaskId)
+            }
         } else {
             false
         }
@@ -4230,8 +4317,8 @@ For pure conversational replies, greetings, explanations, and simple factual ans
                 }
             }
         }
-        overlay.hide()
-        auroraOverlay.hide()
+        surfaceOwnership.releaseAgent(sessionId)?.let(overlay::hideOwned)
+        surfaceOwnership.releasePhone(sessionId)?.let(auroraOverlay::endTask)
         consoleServer.broadcast("task_stopped", "")
         val salvaged = salvageInterruptedRunMessages(sessionId)
         updateSession(sessionId) { state ->
@@ -5288,11 +5375,11 @@ For pure conversational replies, greetings, explanations, and simple factual ans
         }
     }
 
-    private fun showCompletionOverlayIfNeeded(summary: String) {
+    private fun showCompletionOverlayIfNeeded(summary: String, ownerId: String? = null) {
         if (isMobileClawForegroundNow()) {
-            overlay.hide()
+            if (ownerId == null) overlay.hide() else overlay.hideOwned(ownerId)
         } else {
-            overlay.showCompleted(summary)
+            if (ownerId == null) overlay.showCompleted(summary) else overlay.showCompletedOwned(ownerId, summary)
         }
     }
 

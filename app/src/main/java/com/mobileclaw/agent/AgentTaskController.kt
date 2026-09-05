@@ -38,6 +38,10 @@ class AgentTaskController(
     private val idFactory: () -> String = { UUID.randomUUID().toString() },
 ) {
     data class Registration(val taskId: String, val registrationId: String)
+    sealed interface RegistrationAttempt {
+        data class Registered(val registration: Registration) : RegistrationAttempt
+        data class Busy(val task: ActiveAgentTask) : RegistrationAttempt
+    }
 
     private data class Entry(val task: ActiveAgentTask, val ordinal: Long, val job: Job? = null)
     private val lock = Any()
@@ -74,6 +78,42 @@ class AgentTaskController(
         return registration
     }
 
+    /** Atomically checks and reserves an exclusive physical task type under the canonical lock. */
+    fun tryRegisterExclusiveTaskType(
+        sessionId: String,
+        taskType: TaskType,
+        foregroundRequested: Boolean,
+    ): RegistrationAttempt {
+        val (attempt, oldJobs) = synchronized(lock) {
+            entries.values.firstOrNull { it.task.taskType == taskType }?.let {
+                return@synchronized RegistrationAttempt.Busy(it.task) to emptyList()
+            }
+            val jobs = entries.values.filter { it.task.sessionId == sessionId }.mapNotNull { old ->
+                entries[old.task.taskId] = old.copy(task = old.task.copy(
+                    phase = AgentTaskPhase.CANCELLING,
+                    cancellationReason = AgentCancellationReason.SUPERSEDED_BY_NEW_TURN,
+                ))
+                old.job
+            }
+            val taskId = idFactory()
+            val registrationId = idFactory()
+            entries[taskId] = Entry(ActiveAgentTask(
+                taskId = taskId,
+                registrationId = registrationId,
+                sessionId = sessionId,
+                taskType = taskType,
+                startedAtMs = clock(),
+                phase = AgentTaskPhase.STARTING,
+                foregroundRequested = foregroundRequested,
+                foregroundProtected = false,
+            ), ordinal = ++nextOrdinal)
+            publishLocked()
+            RegistrationAttempt.Registered(Registration(taskId, registrationId)) to jobs
+        }
+        oldJobs.forEach { it.cancel(AgentTaskCancellationException(AgentCancellationReason.SUPERSEDED_BY_NEW_TURN)) }
+        return attempt
+    }
+
     fun attachJob(registration: Registration, job: Job): Boolean = synchronized(lock) {
         val current = entries[registration.taskId]
         if (current?.task?.registrationId != registration.registrationId) return@synchronized false
@@ -82,8 +122,14 @@ class AgentTaskController(
         true
     }
 
-    fun markRunning(registration: Registration): Boolean = updateExact(registration) {
-        it.copy(phase = AgentTaskPhase.RUNNING)
+    fun markRunning(registration: Registration): Boolean = synchronized(lock) {
+        val current = entries[registration.taskId]
+        if (current?.task?.registrationId != registration.registrationId || current.task.phase != AgentTaskPhase.STARTING) {
+            return@synchronized false
+        }
+        entries[registration.taskId] = current.copy(task = current.task.copy(phase = AgentTaskPhase.RUNNING))
+        publishLocked()
+        true
     }
 
     fun markForegroundProtected(taskId: String, protected: Boolean): Boolean = synchronized(lock) {

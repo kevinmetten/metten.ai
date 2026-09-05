@@ -31,11 +31,13 @@ import kotlin.coroutines.resumeWithException
 class AndroidWebRtcVoiceTransport(
     context: Context,
     private val calls: ChatGptRealtimeCallClient,
-) : RealtimeVoiceTransport {
+    sideband: RealtimeSideband? = null,
+) : RealtimeControlTransport {
     private val appContext = context.applicationContext
     private val requestContext = RealtimeRequestContext.create()
     private val audioManager = appContext.getSystemService(AudioManager::class.java)
     private val closed = AtomicBoolean(false)
+    private val sidebandAttachment = TransportSidebandAttachment(sideband)
     private var disconnectCallback: ((RealtimeVoiceException?) -> Unit)? = null
     private var factory: PeerConnectionFactory? = null
     private var audioDeviceModule: AudioDeviceModule? = null
@@ -48,6 +50,15 @@ class AndroidWebRtcVoiceTransport(
     private val iceGatheringComplete = CompletableDeferred<Unit>()
     private val remoteAudioTracks = mutableListOf<AudioTrack>()
     private var previousMode = AudioManager.MODE_NORMAL
+    private var controlGeneration = -1L
+    private var delegationListener: ((RealtimeDelegationRequest) -> Unit)? = null
+
+    override fun bindControl(generation: Long, listener: (RealtimeDelegationRequest) -> Unit) {
+        controlGeneration = generation
+        delegationListener = listener
+    }
+
+    override fun send(update: RealtimeDelegationUpdate): Boolean = sidebandAttachment.send(update)
 
     override suspend fun connect(onDisconnected: (RealtimeVoiceException?) -> Unit) {
         try {
@@ -88,7 +99,9 @@ class AndroidWebRtcVoiceTransport(
             val offer = currentPeer.createOfferAwait().also { currentPeer.setDescriptionAwait(it, local = true) }
             val completeOffer = currentPeer.awaitIceGathering(offer)
             val answer = calls.createCall(completeOffer.description, requestContext)
-            if (closed.get()) throw CancellationException("Voice session stopped.")
+            if (!sidebandAttachment.attach(answer.callId, controlGeneration) { request ->
+                if (!closed.get() && request.voiceSessionGeneration == controlGeneration) delegationListener?.invoke(request)
+            }) throw CancellationException("Voice session stopped.")
             currentPeer.setDescriptionAwait(SessionDescription(SessionDescription.Type.ANSWER, answer.sdp), local = false)
             withTimeout(CONNECTION_TIMEOUT_MS) { connectionReady.await() }
             // WebRTC's native AudioDeviceModule renders enabled remote AudioTracks. No PCM bridge
@@ -107,8 +120,11 @@ class AndroidWebRtcVoiceTransport(
     }
 
     override fun close() {
+        // Always close the attachment gate, including repeated cleanup after an in-flight connect.
+        sidebandAttachment.close()
         if (!closed.compareAndSet(false, true)) return
         disconnectCallback = null
+        delegationListener = null
         localAudio?.setEnabled(false)
         synchronized(remoteAudioTracks) {
             remoteAudioTracks.forEach { it.setEnabled(false) }

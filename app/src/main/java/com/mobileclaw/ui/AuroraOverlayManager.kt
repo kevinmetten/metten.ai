@@ -62,23 +62,23 @@ class AuroraOverlayManager(private val context: Context) {
     private var hostFrame: FrameLayout? = null
     private var lifecycleOwner: AuroraLifecycleOwner? = null
     private var hideJob: Job? = null
-    private var taskHoldCount = 0
+    private val taskOwners = mutableSetOf<String>()
 
     private var visible by mutableStateOf(false)
     private var fullScreen by mutableStateOf(false)
 
     /** Persistent pass-through border shown for the whole VLM phone-control task. */
-    fun beginTask(fullScreenPulse: Boolean = false): Boolean {
+    fun beginTask(ownerId: String, fullScreenPulse: Boolean = false): Boolean {
         if (Looper.myLooper() != Looper.getMainLooper()) {
-            scope.launch { beginTask(fullScreenPulse) }
+            scope.launch { beginTask(ownerId, fullScreenPulse) }
             return false
         }
         if (!Settings.canDrawOverlays(context)) return false
-        taskHoldCount += 1
+        if (!taskOwners.add(ownerId)) return true
         fullScreen = fullScreenPulse
         ensureWindow()
         if (hostFrame == null) {
-            taskHoldCount = maxOf(0, taskHoldCount - 1)
+            taskOwners.remove(ownerId)
             return false
         }
         hideJob?.cancel()
@@ -86,19 +86,19 @@ class AuroraOverlayManager(private val context: Context) {
         if (fullScreenPulse) {
             hideJob = scope.launch {
                 delay(1_600)
-                if (taskHoldCount > 0) fullScreen = false
+                if (taskOwners.isNotEmpty()) fullScreen = false
             }
         }
         return true
     }
 
-    fun endTask() {
+    fun endTask(ownerId: String) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
-            scope.launch { endTask() }
+            scope.launch { endTask(ownerId) }
             return
         }
-        taskHoldCount = maxOf(0, taskHoldCount - 1)
-        if (taskHoldCount == 0) hide()
+        taskOwners.remove(ownerId)
+        if (taskOwners.isEmpty()) hide()
     }
 
     fun hide() {
@@ -106,10 +106,10 @@ class AuroraOverlayManager(private val context: Context) {
             scope.launch { hide() }
             return
         }
-        taskHoldCount = 0
         hideJob?.cancel()
         fullScreen = false
-        visible = false
+        visible = taskOwners.isNotEmpty()
+        if (visible) return
         hideJob = scope.launch {
             delay(420)
             removeWindow()
@@ -129,7 +129,7 @@ class AuroraOverlayManager(private val context: Context) {
         hideJob?.cancel()
         hideJob = scope.launch {
             delay(durationMs)
-            if (taskHoldCount > 0) {
+            if (taskOwners.isNotEmpty()) {
                 fullScreen = false
                 visible = true
             } else {
@@ -153,7 +153,7 @@ class AuroraOverlayManager(private val context: Context) {
         hideJob?.cancel()
         hideJob = scope.launch {
             delay(durationMs)
-            if (taskHoldCount > 0) {
+            if (taskOwners.isNotEmpty()) {
                 fullScreen = false
                 visible = true
             } else {

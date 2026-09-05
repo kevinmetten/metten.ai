@@ -724,7 +724,7 @@ private fun ChatGptAccountCard(app: ClawApplication, c: ClawColors) {
     val actions = chatGptAccountActions(state is ChatGptAuthState.SignedIn, voiceState.phase)
     val context = LocalContext.current
     val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) app.realtimeVoiceController.start() else app.realtimeVoiceController.microphonePermissionMissing()
+        if (granted) app.startLiveVoice() else app.realtimeVoiceController.microphonePermissionMissing()
     }
     Box(Modifier.fillMaxWidth().testTag("chatgpt_account_card")) {
         SettingsHubCard(c) {
@@ -778,7 +778,7 @@ private fun ChatGptAccountCard(app: ClawApplication, c: ClawColors) {
                             Button(
                                 onClick = {
                                     if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                                        app.realtimeVoiceController.start()
+                                        app.startLiveVoice()
                                     } else {
                                         microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
                                     }
@@ -787,7 +787,7 @@ private fun ChatGptAccountCard(app: ClawApplication, c: ClawColors) {
                                 colors = ButtonDefaults.buttonColors(containerColor = c.text, contentColor = c.bg),
                             ) { Text("Start Live Voice") }
                         } else {
-                            OutlinedButton(onClick = app.realtimeVoiceController::stop, modifier = Modifier.testTag("live_voice_end"), border = androidx.compose.foundation.BorderStroke(0.8.dp, c.border)) {
+                            OutlinedButton(onClick = app::endLiveVoice, modifier = Modifier.testTag("live_voice_end"), border = androidx.compose.foundation.BorderStroke(0.8.dp, c.border)) {
                                 Text("End", color = c.text)
                             }
                             if (ChatGptAccountAction.MUTE_VOICE in actions) {
@@ -800,7 +800,7 @@ private fun ChatGptAccountCard(app: ClawApplication, c: ClawColors) {
                         }
                     }
                     OutlinedButton(onClick = {
-                        app.realtimeVoiceController.stop()
+                        app.endLiveVoice()
                         manager.signOut()
                     }) { Text("Sign out", color = c.text) }
                 }
