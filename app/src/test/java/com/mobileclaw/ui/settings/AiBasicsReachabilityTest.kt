@@ -2,7 +2,7 @@ package com.mobileclaw.ui.settings
 
 import com.mobileclaw.ui.AppPage
 import com.mobileclaw.ui.shell.classicMeAiBasicsDestination
-import com.mobileclaw.realtime.RealtimeVoicePhase
+import com.mobileclaw.voice.MettenVoicePhase
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -21,14 +21,14 @@ class AiBasicsReachabilityTest {
     }
 
     @Test fun `shared ChatGPT card exposes sign in while signed out`() {
-        val actions = chatGptAccountActions(signedIn = false, voicePhase = RealtimeVoicePhase.IDLE)
+        val actions = chatGptAccountActions(signedIn = false, voicePhase = MettenVoicePhase.IDLE)
         assertTrue(ChatGptAccountAction.SIGN_IN in actions)
         assertTrue(ChatGptAccountAction.DEVICE_CODE in actions)
     }
 
     @Test fun `shared ChatGPT card exposes live voice controls while signed in`() {
-        assertTrue(ChatGptAccountAction.START_VOICE in chatGptAccountActions(true, RealtimeVoicePhase.IDLE))
-        val liveActions = chatGptAccountActions(true, RealtimeVoicePhase.CONNECTED)
+        assertTrue(ChatGptAccountAction.START_VOICE in chatGptAccountActions(true, MettenVoicePhase.IDLE))
+        val liveActions = chatGptAccountActions(true, MettenVoicePhase.LISTENING)
         assertTrue(ChatGptAccountAction.END_VOICE in liveActions)
         assertTrue(ChatGptAccountAction.MUTE_VOICE in liveActions)
         assertTrue(ChatGptAccountAction.SIGN_OUT in liveActions)

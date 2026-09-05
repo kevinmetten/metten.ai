@@ -12,25 +12,23 @@ class VoiceForegroundServicePolicyTest {
         assertTrue(manifest.contains("android:foregroundServiceType=\"microphone\""))
     }
 
-    @Test fun `service is lifecycle anchor and does not construct ownership graph`() {
+    @Test fun `service follows application-owned Metten lifecycle without constructing ownership graph`() {
         val source = projectFile("src/main/java/com/mobileclaw/realtime/VoiceSessionForegroundService.kt").readText()
-        listOf(
-            "ChatGptRealtimeSessionController(", "AndroidWebRtcVoiceTransport(", "VoiceAgentCoordinator(",
-            "AgentRuntime(", "AgentTaskController(",
-        ).forEach { forbidden -> assertFalse("service must not construct $forbidden", source.contains(forbidden)) }
-        assertTrue(source.contains("RealtimeVoicePhase.IDLE") && source.contains("RealtimeVoicePhase.FAILED"))
-        assertFalse(source.contains("VoicePhoneTaskState"))
+        listOf("ChatGptRealtimeSessionController(", "AndroidWebRtcVoiceTransport(", "VoiceAgentCoordinator(", "AgentRuntime(", "AgentTaskController(")
+            .forEach { assertFalse(source.contains(it)) }
+        assertTrue(source.contains("mettenVoiceController.state"))
+        assertTrue(source.contains("MettenVoicePhase.IDLE") && source.contains("MettenVoicePhase.FAILED"))
     }
 
-    @Test fun `application enters connecting before foreground service starts and End stops it`() {
-        val source = projectFile("src/main/java/com/mobileclaw/ClawApplication.kt").readText()
-        val startBody = source.substringAfter("fun startLiveVoice()").substringBefore("fun endLiveVoice()")
-        assertTrue(startBody.indexOf("realtimeVoiceController.start()") < startBody.indexOf("VoiceSessionForegroundService.start(this)"))
-        val endBody = source.substringAfter("fun endLiveVoice()").substringBefore("fun providerReadiness")
-        assertTrue(endBody.contains("VoiceSessionForegroundService.stop(this)"))
+    @Test fun `product Voice wiring cannot reach ChatGPT Realtime or WebRTC`() {
+        val application = projectFile("src/main/java/com/mobileclaw/ClawApplication.kt").readText()
+        val settings = projectFile("src/main/java/com/mobileclaw/ui/settings/SettingsPage.kt").readText()
+        listOf("ChatGptRealtimeSessionController", "AndroidWebRtcVoiceTransport", "ChatGptRealtimeCallClient", "ChatGptRealtimeSidebandClient", "/v1/live")
+            .forEach { forbidden -> assertFalse("product Voice wiring referenced $forbidden", forbidden in application || forbidden in settings) }
+        assertTrue(application.contains("MettenVoiceSessionController("))
+        assertTrue(application.contains("AndroidOnDeviceSpeechInput(this)"))
+        assertTrue(application.contains("AndroidOfflineTextToSpeechOutput(this)"))
     }
 
-    private fun projectFile(relative: String): File = sequenceOf(
-        File(relative), File("app/$relative"), File(System.getProperty("user.dir"), relative), File(System.getProperty("user.dir"), "app/$relative"),
-    ).first { it.isFile }
+    private fun projectFile(relative: String): File = sequenceOf(File(relative), File("app/$relative"), File(System.getProperty("user.dir"), relative), File(System.getProperty("user.dir"), "app/$relative")).first { it.isFile }
 }

@@ -8,6 +8,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import com.mobileclaw.agent.VoiceAgentCoordinator
+import com.mobileclaw.agent.VoiceControlCommand
+import com.mobileclaw.agent.VoiceControlEventSink
+import com.mobileclaw.agent.VoiceControlRequest
 
 /** Application-owned single-session state machine. Generation checks reject stale WebRTC callbacks. */
 class ChatGptRealtimeSessionController(
@@ -26,8 +29,18 @@ class ChatGptRealtimeSessionController(
         val currentGeneration = ++generation
         val currentTransport = transports.create()
         if (currentTransport is RealtimeControlTransport) {
-            currentTransport.bindControl(currentGeneration, coordinator?.let { owner -> owner::accept } ?: {})
-            coordinator?.beginSession(currentGeneration, currentTransport)
+            currentTransport.bindControl(currentGeneration) { request ->
+                val command = when (val envelope = VoiceControlEnvelopeParser.parse(request.instructionText)) {
+                    is VoiceControlEnvelope.Start -> VoiceControlCommand.Start(envelope.goal)
+                    is VoiceControlEnvelope.Replace -> VoiceControlCommand.Replace(envelope.goal)
+                    VoiceControlEnvelope.Cancel -> VoiceControlCommand.Cancel
+                    VoiceControlEnvelope.Status -> VoiceControlCommand.Status
+                    null -> null
+                }
+                command?.let { coordinator?.accept(VoiceControlRequest(request.voiceSessionGeneration, request.delegationId, it)) }
+            }
+            // Legacy transport adapter only; product wiring no longer constructs this controller.
+            coordinator?.beginSession(currentGeneration, VoiceControlEventSink { })
         }
         transport = currentTransport
         _state.value = RealtimeVoiceState(RealtimeVoicePhase.CONNECTING, RealtimeVoiceDiagnostic.CONNECTING)
