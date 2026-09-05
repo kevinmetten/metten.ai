@@ -215,6 +215,7 @@ class ChatGptRealtimeSidebandClient internal constructor(
         }
         scope.launch {
             val credential = runCatching { credentials.credentials() }.getOrNull() ?: run {
+                RealtimeVoiceRuntimeDiagnostics.event(RealtimeVoiceRuntimeReason.SIDEBAND_FAILED, terminal = false)
                 RealtimeSidebandDiagnostics.report(RealtimeSidebandPhase.FAILED, "credential_refresh")
                 return@launch retry(epoch, expectedGeneration, attempt)
             }
@@ -244,6 +245,7 @@ class ChatGptRealtimeSidebandClient internal constructor(
                 }
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                     socketEnded(webSocket, epoch, expectedGeneration, attempt)?.let {
+                        RealtimeVoiceRuntimeDiagnostics.event(RealtimeVoiceRuntimeReason.SIDEBAND_FAILED, terminal = false)
                         RealtimeSidebandDiagnostics.report(RealtimeSidebandPhase.FAILED, t.javaClass.simpleName.take(80), response?.code)
                         retry(epoch, expectedGeneration, attempt)
                     }

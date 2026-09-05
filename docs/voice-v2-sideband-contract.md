@@ -40,3 +40,20 @@ The strict JSON envelope remains supported as an optional, unambiguous internal 
 form, especially for status, cancellation, and replacement; it is not a Frameless wire
 requirement. Malformed JSON-like content is rejected instead of being executed as a
 natural Android goal.
+
+## WebRTC lifetime policy
+
+The `oai-events` data channel is created so the WebRTC SDP advertises the standard
+realtime events channel. MobileClaw Voice V2 deliberately receives client delegation
+over the existing-call sideband instead and does not use `oai-events` as its control
+transport. Closing that auxiliary channel is therefore recorded as
+`EVENTS_DATACHANNEL_CLOSED` but is not evidence that the audio PeerConnection is dead.
+
+`PeerConnection.FAILED`, or `PeerConnection.CLOSED` while the transport has not begun
+local teardown, remain authoritative terminal events. A per-transport terminal gate
+makes those callbacks one-shot. Local `close()` claims the gate before invoking native
+close methods, so synchronous or delayed native CLOSED callbacks cannot turn End Voice
+into a remote failure.
+
+Voice and Agent execution remain independent foreground services with notification IDs
+7302 and 7301 respectively. Neither service starts, stops, or addresses the other.

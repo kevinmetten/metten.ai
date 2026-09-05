@@ -24,6 +24,7 @@ class ChatGptRealtimeSessionController(
     @Synchronized fun start(): Boolean {
         if (_state.value.phase in ACTIVE_PHASES) return false
         val currentGeneration = ++generation
+        RealtimeVoiceRuntimeDiagnostics.voiceStarted(currentGeneration)
         val currentTransport = transports.create()
         if (currentTransport is RealtimeControlTransport) {
             currentTransport.bindControl(currentGeneration, coordinator?.let { owner -> owner::accept } ?: {})
@@ -72,6 +73,7 @@ class ChatGptRealtimeSessionController(
         if (_state.value.phase == RealtimeVoicePhase.IDLE) return
         val endedGeneration = generation
         ++generation
+        RealtimeVoiceRuntimeDiagnostics.event(RealtimeVoiceRuntimeReason.USER_STOPPED, terminal = true, local = true)
         coordinator?.endSession(endedGeneration)
         _state.value = RealtimeVoiceState(RealtimeVoicePhase.ENDING)
         connectJob?.cancel()
@@ -91,6 +93,7 @@ class ChatGptRealtimeSessionController(
             RealtimeVoiceDiagnostic.REMOTE_CLOSED,
             "The remote Live Voice session ended.",
         )
+        recordTerminalIfTransportDidNot(reason)
         _state.value = RealtimeVoiceState(RealtimeVoicePhase.FAILED, reason.diagnostic, reason.message)
     }
 
@@ -100,6 +103,7 @@ class ChatGptRealtimeSessionController(
         source.close()
         transport = null
         connectJob = null
+        recordTerminalIfTransportDidNot(failure)
         _state.value = RealtimeVoiceState(RealtimeVoicePhase.FAILED, failure.diagnostic, failure.message)
     }
 
@@ -109,6 +113,16 @@ class ChatGptRealtimeSessionController(
         transport = null
         connectJob = null
         _state.value = RealtimeVoiceState()
+    }
+
+    private fun recordTerminalIfTransportDidNot(failure: RealtimeVoiceException) {
+        if (RealtimeVoiceRuntimeDiagnostics.state.value.terminalWasLocal != null) return
+        val reason = when (failure.diagnostic) {
+            RealtimeVoiceDiagnostic.MIC_FAILURE, RealtimeVoiceDiagnostic.AUDIO_PLAYBACK_FAILURE -> RealtimeVoiceRuntimeReason.AUDIO_FAILURE
+            RealtimeVoiceDiagnostic.REMOTE_CLOSED -> RealtimeVoiceRuntimeReason.WEBRTC_PEER_CLOSED
+            else -> RealtimeVoiceRuntimeReason.UNKNOWN_FAILURE
+        }
+        RealtimeVoiceRuntimeDiagnostics.event(reason, terminal = true, local = false)
     }
 
     private companion object {
