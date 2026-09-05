@@ -37,7 +37,7 @@ class AndroidWebRtcVoiceTransport(
     private val requestContext = RealtimeRequestContext.create()
     private val audioManager = appContext.getSystemService(AudioManager::class.java)
     private val closed = AtomicBoolean(false)
-    private val terminalGate = RealtimeVoiceTerminalGate()
+    private val nativeEvents = RealtimeVoiceNativeEventGate()
     private val sidebandAttachment = TransportSidebandAttachment(sideband)
     private var disconnectCallback: ((RealtimeVoiceException?) -> Unit)? = null
     private var factory: PeerConnectionFactory? = null
@@ -123,7 +123,7 @@ class AndroidWebRtcVoiceTransport(
 
     override fun close() {
         // Mark local teardown before invoking native close methods, whose callbacks may be synchronous.
-        if (!terminalGate.beginLocalClose() || !closed.compareAndSet(false, true)) return
+        if (!nativeEvents.beginLocalClose() || !closed.compareAndSet(false, true)) return
         disconnectCallback = null
         delegationListener = null
         sidebandAttachment.close()
@@ -178,13 +178,12 @@ class AndroidWebRtcVoiceTransport(
             when (state) {
                 PeerConnection.PeerConnectionState.CONNECTED -> connectionReady.complete(Unit)
                 PeerConnection.PeerConnectionState.FAILED -> {
-                    check(RealtimeVoiceTransportPolicy.isFatal(RealtimeNativeTransportEvent.WEBRTC_PEER_FAILED))
                     val failure = RealtimeVoiceException(RealtimeVoiceDiagnostic.NETWORK_FAILED, "Live Voice lost its WebRTC connection.")
                     connectionReady.completeExceptionally(failure)
-                    fatalDisconnect(RealtimeVoiceRuntimeReason.WEBRTC_PEER_FAILED, failure)
+                    fatalDisconnect(RealtimeNativeTransportEvent.WEBRTC_PEER_FAILED, failure)
                 }
                 PeerConnection.PeerConnectionState.CLOSED -> fatalDisconnect(
-                    RealtimeVoiceRuntimeReason.WEBRTC_PEER_CLOSED,
+                    RealtimeNativeTransportEvent.WEBRTC_PEER_CLOSED,
                     RealtimeVoiceException(RealtimeVoiceDiagnostic.REMOTE_CLOSED, "The remote Live Voice session ended."),
                 )
                 else -> Unit
@@ -201,8 +200,7 @@ class AndroidWebRtcVoiceTransport(
             if (state == DataChannel.State.CLOSED && !closed.get()) {
                 // oai-events is advertised for SDP compatibility; V2 control uses the sideband.
                 // Its closure is not authoritative evidence that the audio PeerConnection died.
-                check(!RealtimeVoiceTransportPolicy.isFatal(RealtimeNativeTransportEvent.EVENTS_DATACHANNEL_CLOSED))
-                RealtimeVoiceRuntimeDiagnostics.event(RealtimeVoiceRuntimeReason.EVENTS_DATACHANNEL_CLOSED, terminal = false)
+                nativeEvents.accept(RealtimeNativeTransportEvent.EVENTS_DATACHANNEL_CLOSED)
                 Log.w(TAG, "Auxiliary oai-events data channel closed while Voice transport remains active")
             }
         }
@@ -211,9 +209,8 @@ class AndroidWebRtcVoiceTransport(
         override fun onMessage(buffer: DataChannel.Buffer) = Unit
     }
 
-    private fun fatalDisconnect(reason: RealtimeVoiceRuntimeReason, failure: RealtimeVoiceException) {
-        if (!closed.get() && terminalGate.claimRemoteTerminal()) {
-            RealtimeVoiceRuntimeDiagnostics.event(reason, terminal = true, local = false)
+    private fun fatalDisconnect(event: RealtimeNativeTransportEvent, failure: RealtimeVoiceException) {
+        if (!closed.get() && nativeEvents.accept(event) != null) {
             disconnectCallback?.invoke(failure)
         }
     }

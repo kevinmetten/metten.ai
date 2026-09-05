@@ -74,6 +74,7 @@ internal class RealtimeVoiceTerminalGate {
     private val localClose = java.util.concurrent.atomic.AtomicBoolean(false)
     private val terminalDelivered = java.util.concurrent.atomic.AtomicBoolean(false)
     fun beginLocalClose(): Boolean = localClose.compareAndSet(false, true)
+    fun isLocalCloseStarted(): Boolean = localClose.get()
     fun claimRemoteTerminal(): Boolean = !localClose.get() && terminalDelivered.compareAndSet(false, true)
 }
 
@@ -84,5 +85,30 @@ internal object RealtimeVoiceTransportPolicy {
         RealtimeNativeTransportEvent.WEBRTC_PEER_FAILED,
         RealtimeNativeTransportEvent.WEBRTC_PEER_CLOSED -> true
         RealtimeNativeTransportEvent.EVENTS_DATACHANNEL_CLOSED -> false
+    }
+}
+
+/** Small JVM-testable seam shared by the native transport and lifecycle regressions. */
+internal class RealtimeVoiceNativeEventGate(
+    private val diagnostic: (RealtimeVoiceRuntimeReason, Boolean, Boolean) -> Unit = RealtimeVoiceRuntimeDiagnostics::event,
+) {
+    private val terminal = RealtimeVoiceTerminalGate()
+
+    fun beginLocalClose(): Boolean = terminal.beginLocalClose()
+
+    fun accept(event: RealtimeNativeTransportEvent): RealtimeVoiceRuntimeReason? {
+        if (terminal.isLocalCloseStarted()) return null
+        val reason = when (event) {
+            RealtimeNativeTransportEvent.EVENTS_DATACHANNEL_CLOSED -> RealtimeVoiceRuntimeReason.EVENTS_DATACHANNEL_CLOSED
+            RealtimeNativeTransportEvent.WEBRTC_PEER_FAILED -> RealtimeVoiceRuntimeReason.WEBRTC_PEER_FAILED
+            RealtimeNativeTransportEvent.WEBRTC_PEER_CLOSED -> RealtimeVoiceRuntimeReason.WEBRTC_PEER_CLOSED
+        }
+        if (!RealtimeVoiceTransportPolicy.isFatal(event)) {
+            diagnostic(reason, false, false)
+            return null
+        }
+        if (!terminal.claimRemoteTerminal()) return null
+        diagnostic(reason, true, false)
+        return reason
     }
 }

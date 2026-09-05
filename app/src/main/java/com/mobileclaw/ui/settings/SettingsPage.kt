@@ -786,7 +786,8 @@ private fun ChatGptAccountCard(app: ClawApplication, c: ClawColors) {
                     )
                     Text(
                         "Process: ${voiceRuntimeState.processEpoch} · Voice generation: ${voiceRuntimeState.generation} · Peer: ${voiceRuntimeState.peerState} · Events: ${voiceRuntimeState.eventsDataChannelState}" +
-                            voiceRuntimeState.lastReason?.let { " · Last: $it (${if (voiceRuntimeState.terminalWasLocal == true) "local" else "remote/nonfatal"})" }.orEmpty(),
+                            " · Terminal origin: ${when (voiceRuntimeState.terminalWasLocal) { true -> "LOCAL"; false -> "REMOTE"; null -> "NONE" }}" +
+                            voiceRuntimeState.lastReason?.let { " · Last event: $it" }.orEmpty(),
                         color = c.subtext,
                         fontSize = 11.sp,
                         modifier = Modifier.testTag("live_voice_runtime_diagnostic"),
