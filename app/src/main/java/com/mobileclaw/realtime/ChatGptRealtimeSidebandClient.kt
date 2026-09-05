@@ -6,7 +6,6 @@ import com.google.gson.JsonParser
 import com.mobileclaw.auth.chatgpt.ChatGptAuthManager
 import com.mobileclaw.auth.chatgpt.ChatGptBackendCredentials
 import com.mobileclaw.llm.chatGptHeaders
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -17,6 +16,35 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+
+interface RealtimeSideband : RealtimeDelegationSink {
+    fun connect(callId: String, generation: Long, listener: (RealtimeDelegationRequest) -> Unit)
+    fun close()
+}
+
+/** Serializes transport close against sideband attachment after call creation. */
+internal class TransportSidebandAttachment(private val sideband: RealtimeSideband?) : RealtimeDelegationSink {
+    private val lock = Any()
+    private var closed = false
+    fun attach(callId: String, generation: Long, listener: (RealtimeDelegationRequest) -> Unit): Boolean = synchronized(lock) {
+        if (closed) return@synchronized false
+        sideband?.connect(callId, generation, listener)
+        true
+    }
+    fun close() {
+        val firstClose = synchronized(lock) {
+            if (closed) false else { closed = true; true }
+        }
+        if (firstClose) sideband?.close()
+    }
+    override fun send(update: RealtimeDelegationUpdate): Boolean = synchronized(lock) {
+        if (closed) false else sideband?.send(update) == true
+    }
+}
+
+internal fun interface SidebandSocketFactory {
+    fun open(request: Request, listener: WebSocketListener): WebSocket
+}
 
 object FramelessDelegationProtocol {
     fun parse(text: String, generation: Long): RealtimeDelegationRequest? = runCatching {
@@ -75,9 +103,14 @@ class ChatGptRealtimeSidebandClient internal constructor(
     private val credentials: RealtimeCredentialProvider,
     private val http: OkHttpClient = OkHttpClient(),
     private val baseUrl: HttpUrl = HttpUrl.Builder().scheme("https").host("api.openai.com").addPathSegment("v1").build(),
-) : RealtimeDelegationSink {
+    private val socketFactory: SidebandSocketFactory = SidebandSocketFactory(http::newWebSocket),
+    private val beforeSocketOpen: suspend () -> Unit = {},
+) : RealtimeSideband {
     constructor(scope: CoroutineScope, auth: ChatGptAuthManager) : this(scope, RealtimeCredentialProvider { auth.getValidBackendCredentials() })
-    private val active = AtomicBoolean(false)
+    private val lock = Any()
+    private var active = false
+    private var lifecycleEpoch = 0L
+    private var openAttempt = 0L
     private var generation = -1L
     private var callId: String? = null
     private var listener: ((RealtimeDelegationRequest) -> Unit)? = null
@@ -85,29 +118,47 @@ class ChatGptRealtimeSidebandClient internal constructor(
     private var reconnect: Job? = null
     private val reconnectPolicy = SidebandReconnectPolicy()
 
-    fun connect(callId: String, generation: Long, listener: (RealtimeDelegationRequest) -> Unit) {
+    override fun connect(callId: String, generation: Long, listener: (RealtimeDelegationRequest) -> Unit) {
         require(callId.isNotBlank() && !callId.any(Char::isWhitespace))
-        close()
-        this.callId = callId
-        this.generation = generation
-        this.listener = listener
-        reconnectPolicy.begin(generation)
-        active.set(true)
-        open(generation)
+        val (epoch, previous) = synchronized(lock) {
+            lifecycleEpoch += 1
+            val old = socket to reconnect
+            socket = null
+            reconnect = null
+            this.callId = callId
+            this.generation = generation
+            this.listener = listener
+            reconnectPolicy.begin(generation)
+            active = true
+            lifecycleEpoch to old
+        }
+        previous.second?.cancel()
+        previous.first?.close(1000, "Voice sideband replaced")
+        open(epoch, generation)
     }
 
     override fun send(update: RealtimeDelegationUpdate): Boolean {
-        if (!active.get() || update.voiceSessionGeneration != generation) return false
-        val current = socket ?: return false
-        return FramelessDelegationProtocol.contextAppend(update).all(current::send)
+        return synchronized(lock) {
+            if (!active || update.voiceSessionGeneration != generation) return@synchronized false
+            val current = socket ?: return@synchronized false
+            FramelessDelegationProtocol.contextAppend(update).all(current::send)
+        }
     }
 
-    fun close() {
-        active.set(false)
-        reconnectPolicy.close()
-        reconnect?.cancel(); reconnect = null
-        socket?.close(1000, "Voice session ended"); socket = null
-        listener = null; callId = null
+    override fun close() {
+        val (oldSocket, oldReconnect) = synchronized(lock) {
+            lifecycleEpoch += 1
+            active = false
+            reconnectPolicy.close()
+            val result = socket to reconnect
+            socket = null
+            reconnect = null
+            listener = null
+            callId = null
+            result
+        }
+        oldReconnect?.cancel()
+        oldSocket?.close(1000, "Voice session ended")
     }
 
     internal fun request(callId: String, credential: ChatGptBackendCredentials): Request {
@@ -115,26 +166,65 @@ class ChatGptRealtimeSidebandClient internal constructor(
         return Request.Builder().url(url).chatGptHeaders(credential).build()
     }
 
-    private fun open(expected: Long) {
-        val id = callId ?: return
+    private fun open(epoch: Long, expectedGeneration: Long) {
+        val (id, attempt) = synchronized(lock) {
+            if (!isCurrentLocked(epoch, expectedGeneration)) return
+            requireNotNull(callId) to ++openAttempt
+        }
         scope.launch {
-            val credential = runCatching { credentials.credentials() }.getOrNull() ?: return@launch retry(expected)
-            if (!active.get() || generation != expected) return@launch
-            socket = http.newWebSocket(request(id, credential), object : WebSocketListener() {
-                override fun onOpen(webSocket: WebSocket, response: Response) { if (generation != expected) webSocket.close(1000, null) }
-                override fun onMessage(webSocket: WebSocket, text: String) {
-                    if (!active.get() || generation != expected) return
-                    FramelessDelegationProtocol.parse(text, expected)?.let { listener?.invoke(it) }
+            val credential = runCatching { credentials.credentials() }.getOrNull() ?: return@launch retry(epoch, expectedGeneration, attempt)
+            if (!synchronized(lock) { isCurrentAttemptLocked(epoch, expectedGeneration, attempt) }) return@launch
+            beforeSocketOpen()
+            if (!synchronized(lock) { isCurrentAttemptLocked(epoch, expectedGeneration, attempt) }) return@launch
+            val callback = object : WebSocketListener() {
+                override fun onOpen(webSocket: WebSocket, response: Response) {
+                    val keep = synchronized(lock) {
+                        if (!isCurrentAttemptLocked(epoch, expectedGeneration, attempt)) false
+                        else { socket = webSocket; true }
+                    }
+                    if (!keep) webSocket.close(1000, "Stale Voice sideband")
                 }
-                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { if (socket === webSocket) { socket = null; retry(expected) } }
-                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { if (socket === webSocket) { socket = null; retry(expected) } }
-            })
+                override fun onMessage(webSocket: WebSocket, text: String) {
+                    val target = synchronized(lock) {
+                        listener.takeIf { isCurrentAttemptLocked(epoch, expectedGeneration, attempt) && socket === webSocket }
+                    } ?: return
+                    FramelessDelegationProtocol.parse(text, expectedGeneration)?.let(target)
+                }
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) = socketEnded(webSocket, epoch, expectedGeneration, attempt)
+                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = socketEnded(webSocket, epoch, expectedGeneration, attempt)
+            }
+            val opened = socketFactory.open(request(id, credential), callback)
+            val keep = synchronized(lock) {
+                if (!isCurrentAttemptLocked(epoch, expectedGeneration, attempt)) false
+                else { socket = opened; true }
+            }
+            if (!keep) opened.close(1000, "Stale Voice sideband")
         }
     }
 
-    private fun retry(expected: Long) {
-        if (!active.get() || generation != expected || reconnect?.isActive == true) return
-        val wait = reconnectPolicy.nextDelay(expected) ?: return
-        reconnect = scope.launch { delay(wait); if (active.get() && generation == expected) open(expected) }
+    private fun socketEnded(webSocket: WebSocket, epoch: Long, expectedGeneration: Long, attempt: Long) {
+        val retry = synchronized(lock) {
+            if (!isCurrentAttemptLocked(epoch, expectedGeneration, attempt) || socket !== webSocket) false
+            else { socket = null; true }
+        }
+        if (retry) retry(epoch, expectedGeneration, attempt)
     }
+
+    private fun retry(epoch: Long, expectedGeneration: Long, attempt: Long) {
+        val wait = synchronized(lock) {
+            if (!isCurrentAttemptLocked(epoch, expectedGeneration, attempt) || reconnect?.isActive == true) return
+            reconnectPolicy.nextDelay(expectedGeneration)
+        } ?: return
+        val job = scope.launch {
+            delay(wait)
+            if (synchronized(lock) { isCurrentAttemptLocked(epoch, expectedGeneration, attempt) }) open(epoch, expectedGeneration)
+        }
+        synchronized(lock) {
+            if (isCurrentAttemptLocked(epoch, expectedGeneration, attempt)) reconnect = job else job.cancel()
+        }
+    }
+
+    private fun isCurrentLocked(epoch: Long, expectedGeneration: Long) = active && lifecycleEpoch == epoch && generation == expectedGeneration
+    private fun isCurrentAttemptLocked(epoch: Long, expectedGeneration: Long, attempt: Long) =
+        isCurrentLocked(epoch, expectedGeneration) && openAttempt == attempt
 }
