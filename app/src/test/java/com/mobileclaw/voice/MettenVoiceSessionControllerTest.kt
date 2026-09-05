@@ -15,17 +15,17 @@ import org.junit.Test
 class MettenVoiceSessionControllerTest {
     @Test fun `async TTS start stays STARTING and End rejects late initialization`() {
         val h = Harness(autoInitialize = false)
-        assertTrue(h.voice.start()); assertEquals(MettenVoicePhase.STARTING, h.voice.state.value.phase); assertTrue(h.fgs.isEmpty())
+        assertTrue(h.voice.start()); assertEquals(MettenVoicePhase.STARTING, h.voice.state.value.phase); assertEquals(listOf("start:1"), h.fgs)
         h.voice.stop(); h.output.finishInitialization(true)
-        assertEquals(MettenVoicePhase.IDLE, h.voice.state.value.phase); assertTrue(h.fgs.none { it }); assertEquals(0, h.input.starts)
+        assertEquals(MettenVoicePhase.IDLE, h.voice.state.value.phase); assertEquals(listOf("start:1", "stop:1"), h.fgs); assertEquals(0, h.input.starts)
     }
 
     @Test fun `fatal failure fully tears down exact Voice generation only`() {
         val h = Harness(); h.start(); h.input.emit(SpeechInputEvent.Final("Open Settings")); h.scope.advanceUntilIdle(); h.output.complete()
-        val chat = h.tasks.register("chat", TaskType.CHAT, false); val stale = h.input.listener!!
+        val chat = h.tasks.register("chat", TaskType.CHAT, false); val stale = h.input.listeners.last()
         h.input.emit(SpeechInputEvent.FatalError("recognizer died")); h.scope.advanceUntilIdle()
         assertEquals(MettenVoicePhase.FAILED, h.voice.state.value.phase); assertEquals("recognizer died", h.voice.state.value.message)
-        assertTrue(h.input.released); assertTrue(h.output.released); assertEquals(false, h.fgs.last()); assertNotNull(h.tasks.task(chat.taskId))
+        assertTrue(h.input.released); assertTrue(h.output.released); assertEquals("stop:1", h.fgs.last()); assertNotNull(h.tasks.task(chat.taskId))
         assertTrue(h.tasks.activeTasks.value.none { it.taskType == TaskType.PHONE_CONTROL })
         val calls = h.brain.calls; stale(SpeechInputEvent.Final("stale")); h.scope.advanceUntilIdle(); assertEquals(calls, h.brain.calls)
     }
@@ -82,11 +82,51 @@ class MettenVoiceSessionControllerTest {
         val tts = Harness(outputAvailable = false); assertFalse(tts.voice.start()); assertEquals(MettenVoicePhase.FAILED, tts.voice.state.value.phase)
     }
 
+    @Test fun `mute and unmute during speech waits for exact output completion`() {
+        val h = Harness(); h.start(); h.brain.next = VoiceTurnDecision("Ten.")
+        h.input.emit(SpeechInputEvent.Final("five plus five")); h.scope.advanceUntilIdle()
+        val starts = h.input.starts
+        h.voice.setMuted(true); h.voice.setMuted(false)
+        assertEquals(starts, h.input.starts)
+        h.output.complete()
+        assertEquals(starts + 1, h.input.starts)
+    }
+
+    @Test fun `output completion while muted waits until unmute and duplicate is stale`() {
+        val h = Harness(); h.start(); h.brain.next = VoiceTurnDecision("Ten.")
+        h.input.emit(SpeechInputEvent.Final("five plus five")); h.scope.advanceUntilIdle()
+        val callback = h.output.speechListener!!
+        h.voice.setMuted(true); callback(SpeechOutputEvent.Completed)
+        assertEquals(MettenVoicePhase.MUTED, h.voice.state.value.phase)
+        val starts = h.input.starts; callback(SpeechOutputEvent.Completed); assertEquals(starts, h.input.starts)
+        h.voice.setMuted(false); assertEquals(starts + 1, h.input.starts)
+    }
+
+    @Test fun `recoverable text failure preserves active phone work`() {
+        val h = Harness(); h.startPhone(); val task = h.tasks.activeTasks.value.single().taskId
+        h.brain.failure = VoiceTurnProcessingException.EmptyResponse()
+        h.input.emit(SpeechInputEvent.Final("what time is it")); h.scope.advanceUntilIdle()
+        assertNotNull(h.tasks.task(task))
+        assertEquals("I couldn't process that request. Please try again.", h.output.spoken.last())
+        assertEquals(MettenVoicePhase.SPEAKING, h.voice.state.value.phase)
+    }
+
+    @Test fun `three recognizer start failures exhaust bounded budget while no speech does not`() {
+        val h = Harness(); h.start()
+        repeat(5) { h.input.emit(SpeechInputEvent.RecoverableError("none", 300, SpeechInputFailureKind.NO_SPEECH)); h.scope.advanceUntilIdle() }
+        assertEquals(MettenVoicePhase.LISTENING, h.voice.state.value.phase)
+        repeat(3) { h.input.emit(SpeechInputEvent.RecoverableError("start", 300, SpeechInputFailureKind.START_FAILURE)); h.scope.advanceUntilIdle() }
+        assertEquals(MettenVoicePhase.FAILED, h.voice.state.value.phase)
+    }
+
     private class Harness(inputAvailable: Boolean = true, outputAvailable: Boolean = true, autoInitialize: Boolean = true) {
         val scope = TestScope(StandardTestDispatcher()); val input = FakeInput(inputAvailable); val output = FakeOutput(outputAvailable, autoInitialize); val brain = FakeBrain()
-        val tasks = AgentTaskController(); val goals = mutableListOf<String>(); val gates = ArrayDeque<CompletableDeferred<AgentResult>>(); val fgs = mutableListOf<Boolean>()
+        val tasks = AgentTaskController(); val goals = mutableListOf<String>(); val gates = ArrayDeque<CompletableDeferred<AgentResult>>(); val fgs = mutableListOf<String>()
         val coordinator = VoiceAgentCoordinator(scope, tasks, AgentTaskSubmissionService(tasks, scope) {}, { ReadinessLevel.READY }) { goal -> goals += goal; CompletableDeferred<AgentResult>().also(gates::add).await() }
-        val voice = MettenVoiceSessionController(scope, { input }, { output }, brain, coordinator, { true }, { true }, fgs::add)
+        val voice = MettenVoiceSessionController(scope, { input }, { output }, brain, coordinator, { true }, { true }, object : VoiceForegroundLease {
+            override fun acquire(generation: Long): Boolean { fgs += "start:$generation"; return true }
+            override fun release(generation: Long) { fgs += "stop:$generation" }
+        })
         init { brain.next = VoiceTurnDecision(phoneCommand = VoiceControlCommand.Start("Open Settings")) }
         fun start() { assertTrue(voice.start()); if (!autoInitialize) output.finishInitialization(true) }
         fun startPhone() { start(); input.emit(SpeechInputEvent.Final("Open Settings")); scope.advanceUntilIdle(); output.complete() }
@@ -110,8 +150,8 @@ class MettenVoiceSessionControllerTest {
         fun complete() { speechListener?.also { speechListener = null }?.invoke(SpeechOutputEvent.Completed) }
     }
     private class FakeBrain : VoiceTurnBrain {
-        var next = VoiceTurnDecision("Ten."); var calls = 0; var lastContext: VoiceTurnContext? = null
-        override suspend fun decide(userText: String, context: VoiceTurnContext): VoiceTurnDecision { calls++; lastContext = context; return next }
+        var next = VoiceTurnDecision("Ten."); var calls = 0; var lastContext: VoiceTurnContext? = null; var failure: VoiceTurnProcessingException? = null
+        override suspend fun decide(userText: String, context: VoiceTurnContext): VoiceTurnDecision { calls++; lastContext = context; failure?.let { throw it }; return next }
     }
     private companion object { fun result(ok: Boolean, text: String) = AgentResult(ok, text, AgentContext("voice", "goal")) }
 }

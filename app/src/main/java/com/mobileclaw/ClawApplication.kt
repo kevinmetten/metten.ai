@@ -46,6 +46,7 @@ import com.mobileclaw.permission.AndroidDeviceReadinessSignalsProvider
 import com.mobileclaw.permission.DeviceReadinessEngine
 import com.mobileclaw.permission.detectRom
 import com.mobileclaw.realtime.VoiceSessionForegroundService
+import com.mobileclaw.voice.SerializedVoiceForegroundLease
 import com.mobileclaw.voice.AndroidOfflineTextToSpeechOutput
 import com.mobileclaw.voice.AndroidOnDeviceSpeechInput
 import com.mobileclaw.voice.LlmVoiceTurnBrain
@@ -280,7 +281,10 @@ class ClawApplication : Application() {
             coordinator = voiceAgentCoordinator,
             microphonePermission = { androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED },
             chatGptTextReady = chatGptAuthManager::hasUsableSession,
-            foreground = { active -> if (active) VoiceSessionForegroundService.start(this) else VoiceSessionForegroundService.stop(this) },
+            foregroundLease = SerializedVoiceForegroundLease(
+                startForeground = { VoiceSessionForegroundService.start(this) },
+                stopForeground = { VoiceSessionForegroundService.stop(this) },
+            ),
         )
     }
 

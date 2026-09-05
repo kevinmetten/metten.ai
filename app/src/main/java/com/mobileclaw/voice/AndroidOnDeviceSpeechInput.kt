@@ -42,11 +42,11 @@ class AndroidOnDeviceSpeechInput(context: Context) : SpeechInputEngine {
         } catch (_: UnsupportedOperationException) {
             listener(SpeechInputEvent.FatalError("On-device speech recognition is not supported by this device."))
         } catch (_: IllegalStateException) {
-            listener(SpeechInputEvent.RecoverableError("The on-device recognizer could not start.", 1_200))
+            listener(SpeechInputEvent.RecoverableError("The on-device recognizer could not start.", 1_200, SpeechInputFailureKind.START_FAILURE))
         } catch (_: android.content.ActivityNotFoundException) {
             listener(SpeechInputEvent.FatalError("The on-device recognition service is unavailable."))
         } catch (_: RuntimeException) {
-            listener(SpeechInputEvent.RecoverableError("The on-device recognizer could not start.", 1_200))
+            listener(SpeechInputEvent.RecoverableError("The on-device recognizer could not start.", 1_200, SpeechInputFailureKind.START_FAILURE))
         }
     }
 
@@ -77,7 +77,12 @@ class AndroidOnDeviceSpeechInput(context: Context) : SpeechInputEngine {
                 SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> "On-device recognition is unavailable for the device language."
                 else -> "On-device recognition failed ($error)."
             }
-            if (benign) emit(SpeechInputEvent.RecoverableError(reason, if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 1_200 else 700))
+            if (benign) emit(SpeechInputEvent.RecoverableError(reason, if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 1_200 else 700,
+                when (error) {
+                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> SpeechInputFailureKind.BUSY
+                    SpeechRecognizer.ERROR_CLIENT -> SpeechInputFailureKind.CLIENT_CANCELLATION
+                    else -> SpeechInputFailureKind.NO_SPEECH
+                }))
             else emit(SpeechInputEvent.FatalError(reason))
         }
         override fun onEndOfSpeech() = Unit

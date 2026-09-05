@@ -7,9 +7,15 @@ sealed interface SpeechInputEvent {
     data object SpeechStarted : SpeechInputEvent
     data class Partial(val text: String) : SpeechInputEvent
     data class Final(val text: String) : SpeechInputEvent
-    data class RecoverableError(val reason: String, val retryDelayMillis: Long = 700) : SpeechInputEvent
+    data class RecoverableError(
+        val reason: String,
+        val retryDelayMillis: Long = 700,
+        val kind: SpeechInputFailureKind = SpeechInputFailureKind.NO_SPEECH,
+    ) : SpeechInputEvent
     data class FatalError(val reason: String) : SpeechInputEvent
 }
+
+enum class SpeechInputFailureKind { NO_SPEECH, BUSY, CLIENT_CANCELLATION, START_FAILURE }
 
 interface SpeechInputEngine {
     fun capability(): SpeechCapability

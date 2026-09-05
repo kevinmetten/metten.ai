@@ -13,6 +13,7 @@ import kotlinx.coroutines.sync.withLock
 
 enum class VoicePhoneTaskState { IDLE, STARTING, RUNNING, CANCELLING, SUCCEEDED, FAILED, CANCELLED }
 data class VoicePhoneTaskStatus(val taskId: String? = null, val state: VoicePhoneTaskState = VoicePhoneTaskState.IDLE, val summary: String = "No phone task is active.")
+enum class VoiceSessionAdmission { ACTIVATED, ALREADY_ACTIVE, STALE_OR_ENDED }
 
 /** Provider-independent owner of the one exact phone task belonging to the current Voice generation. */
 class VoiceAgentCoordinator(
@@ -35,6 +36,7 @@ class VoiceAgentCoordinator(
     private val lock = Any()
     private val operationMutex = Mutex()
     private var generation = 0L
+    private var generationActive = false
     private var sink: VoiceControlEventSink? = null
     private var owned: OwnedTask? = null
     private var priorGenerationCompletion: Deferred<AgentTaskCompletion<AgentResult>>? = null
@@ -43,12 +45,15 @@ class VoiceAgentCoordinator(
     private val _status = MutableStateFlow(VoicePhoneTaskStatus())
     val status: StateFlow<VoicePhoneTaskStatus> = _status.asStateFlow()
 
-    fun beginSession(newGeneration: Long, newSink: VoiceControlEventSink) {
+    fun beginSession(newGeneration: Long, newSink: VoiceControlEventSink): VoiceSessionAdmission {
         val prior = synchronized(lock) {
+            if (newGeneration < generation) return VoiceSessionAdmission.STALE_OR_ENDED
+            if (newGeneration == generation) return if (generationActive) VoiceSessionAdmission.ALREADY_ACTIVE else VoiceSessionAdmission.STALE_OR_ENDED
             val old = owned?.takeIf { it.generation != newGeneration }?.also {
                 it.cancellation = VoiceControlCancellationDisposition.SESSION_ENDED
             }
             generation = newGeneration
+            generationActive = true
             sink = newSink
             handled.clear()
             pending.clear()
@@ -59,16 +64,19 @@ class VoiceAgentCoordinator(
         prior?.let {
             taskController.cancelTask(it.taskId, AgentCancellationReason.SESSION_REPLACED)
         }
+        return VoiceSessionAdmission.ACTIVATED
     }
 
     fun endSession(endedGeneration: Long) {
         val target = synchronized(lock) {
             if (generation != endedGeneration) return
+            generationActive = false
             sink = null
             handled.clear()
             pending.clear()
             owned?.takeIf { it.generation == endedGeneration }?.also {
                 it.cancellation = VoiceControlCancellationDisposition.SESSION_ENDED
+                priorGenerationCompletion = it.completion
             }
         }
         target?.let {
@@ -79,7 +87,7 @@ class VoiceAgentCoordinator(
 
     fun accept(request: VoiceControlRequest) {
         val duplicate = synchronized(lock) {
-            if (request.generation != generation || sink == null) return
+            if (request.generation != generation || !generationActive || sink == null) return
             handled[request.requestId]?.let { return@synchronized sink to it }
             if (!pending.add(request.requestId)) return
             if (handled.size >= MAX_DELEGATIONS) handled.remove(handled.keys.first())
@@ -100,7 +108,11 @@ class VoiceAgentCoordinator(
     }
 
     private suspend fun start(request: VoiceControlRequest, goal: String) {
-        synchronized(lock) { priorGenerationCompletion }?.await()
+        val barrier = synchronized(lock) { priorGenerationCompletion }
+        barrier?.await()
+        if (barrier != null) synchronized(lock) {
+            if (priorGenerationCompletion === barrier) priorGenerationCompletion = null
+        }
         if (!isCurrent(request.generation)) return
         if (readiness(DeviceCapability.PHONE_CONTROL) == ReadinessLevel.BLOCKED ||
             readiness(DeviceCapability.LONG_RUNNING_PHONE_CONTROL) == ReadinessLevel.BLOCKED) {
@@ -122,7 +134,7 @@ class VoiceAgentCoordinator(
         beforeOwnershipPublication()
         val task = OwnedTask(request.generation, request.requestId, prepared.taskId, goal.take(120), prepared.completion)
         val claimed = synchronized(lock) {
-            if (generation == request.generation && sink != null && owned?.let { it.generation == generation } != true) {
+            if (generation == request.generation && generationActive && sink != null && owned?.let { it.generation == generation } != true) {
                 owned = task
                 true
             } else false
@@ -135,7 +147,7 @@ class VoiceAgentCoordinator(
             synchronized(lock) { if (owned?.taskId == task.taskId) owned = null }
             return
         }
-        if (!synchronized(lock) { generation == task.generation && sink != null && owned?.taskId == task.taskId }) return
+        if (!synchronized(lock) { generation == task.generation && generationActive && sink != null && owned?.taskId == task.taskId }) return
         _status.value = VoicePhoneTaskStatus(task.taskId, VoicePhoneTaskState.STARTING, goal.take(120))
         reply(VoiceControlEvent.Accepted(request.generation, request.requestId, task.taskId))
         scope.launch { observeCompletion(task) }
@@ -199,14 +211,14 @@ class VoiceAgentCoordinator(
 
     private fun reply(message: VoiceControlEvent) {
         val target = synchronized(lock) {
-            if (generation != message.generation || sink == null) return
+            if (generation != message.generation || !generationActive || sink == null) return
             handled[message.requestId] = message
             pending.remove(message.requestId)
             sink
         }
         target?.send(message)
     }
-    private fun isCurrent(value: Long) = synchronized(lock) { generation == value && sink != null }
+    private fun isCurrent(value: Long) = synchronized(lock) { generation == value && generationActive && sink != null }
     private fun safe(value: String) = value.filter { it >= ' ' && it != '\u007f' }.trim().take(240).ifBlank { "Phone task finished without details." }
     private companion object { const val MAX_DELEGATIONS = 128 }
 }

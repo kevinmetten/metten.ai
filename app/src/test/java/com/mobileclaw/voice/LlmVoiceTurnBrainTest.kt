@@ -40,6 +40,6 @@ class LlmVoiceTurnBrainTest {
 
     @Test fun `malformed unknown or incomplete output never becomes a phone command`() {
         listOf("not json", "{}", """{"action":"start","spoken_text":null,"goal":null}""", """{"action":"start","goal":"Open","coordinates":[1,2]}""")
-            .forEach { assertThrows(IllegalArgumentException::class.java) { parser().parse(it) } }
+            .forEach { assertThrows(VoiceTurnProcessingException.InvalidDecision::class.java) { parser().parse(it) } }
     }
 }

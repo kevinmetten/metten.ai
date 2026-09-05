@@ -12,12 +12,13 @@ class VoiceForegroundServicePolicyTest {
         assertTrue(manifest.contains("android:foregroundServiceType=\"microphone\""))
     }
 
-    @Test fun `service follows application-owned Metten lifecycle without constructing ownership graph`() {
+    @Test fun `service is a passive anchor without logical Voice lifetime ownership`() {
         val source = projectFile("src/main/java/com/mobileclaw/realtime/VoiceSessionForegroundService.kt").readText()
         listOf("ChatGptRealtimeSessionController(", "AndroidWebRtcVoiceTransport(", "VoiceAgentCoordinator(", "AgentRuntime(", "AgentTaskController(")
             .forEach { assertFalse(source.contains(it)) }
-        assertTrue(source.contains("mettenVoiceController.state"))
-        assertTrue(source.contains("MettenVoicePhase.IDLE") && source.contains("MettenVoicePhase.FAILED"))
+        assertFalse(source.contains("mettenVoiceController.state"))
+        assertFalse(source.contains("stopSelf()"))
+        assertTrue(source.contains("startForeground(ID, notification"))
     }
 
     @Test fun `product Voice wiring cannot reach ChatGPT Realtime or WebRTC`() {
