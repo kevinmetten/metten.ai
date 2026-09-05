@@ -28,6 +28,7 @@ class VoiceAgentCoordinator(
     private val taskController: AgentTaskController,
     private val submissions: AgentTaskSubmissionService,
     private val readiness: (DeviceCapability) -> ReadinessLevel,
+    private val beforeOwnershipPublication: suspend () -> Unit = {},
     private val phoneWorker: suspend (String) -> AgentResult,
 ) {
     private data class OwnedTask(
@@ -42,15 +43,22 @@ class VoiceAgentCoordinator(
     private var generation = 0L
     private var sink: RealtimeDelegationSink? = null
     private var owned: OwnedTask? = null
+    private var priorGenerationCompletion: Deferred<AgentTaskCompletion<AgentResult>>? = null
     private val handled = LinkedHashMap<String, RealtimeDelegationUpdate>()
     private val _status = MutableStateFlow(VoicePhoneTaskStatus())
     val status: StateFlow<VoicePhoneTaskStatus> = _status.asStateFlow()
 
-    fun beginSession(newGeneration: Long, newSink: RealtimeDelegationSink) = synchronized(lock) {
-        generation = newGeneration
-        sink = newSink
-        handled.clear()
-        _status.value = VoicePhoneTaskStatus()
+    fun beginSession(newGeneration: Long, newSink: RealtimeDelegationSink) {
+        val prior = synchronized(lock) {
+            val old = owned?.takeIf { it.generation != newGeneration }
+            generation = newGeneration
+            sink = newSink
+            handled.clear()
+            priorGenerationCompletion = old?.completion
+            _status.value = VoicePhoneTaskStatus()
+            old
+        }
+        prior?.let { taskController.cancelTask(it.taskId, AgentCancellationReason.SESSION_REPLACED) }
     }
 
     fun endSession(endedGeneration: Long) {
@@ -87,27 +95,43 @@ class VoiceAgentCoordinator(
         }
     }
 
-    private fun start(request: RealtimeDelegationRequest, goal: String) {
+    private suspend fun start(request: RealtimeDelegationRequest, goal: String) {
+        synchronized(lock) { priorGenerationCompletion }?.await()
         if (!isCurrent(request.voiceSessionGeneration)) return
         if (readiness(DeviceCapability.PHONE_CONTROL) == ReadinessLevel.BLOCKED ||
             readiness(DeviceCapability.LONG_RUNNING_PHONE_CONTROL) == ReadinessLevel.BLOCKED) {
             reply(request, json("phone_control_not_ready", "reason" to "PHONE_CONTROL_NOT_READY"), RealtimeDelegationChannel.SPEAKABLE)
             return
         }
-        val submission = submissions.trySubmitExclusive(AgentTaskSubmissionRequest(
+        val submission = submissions.reserveExclusive(AgentTaskSubmissionRequest(
             sessionId = "voice:${request.voiceSessionGeneration}:${request.delegationId}",
             taskType = TaskType.PHONE_CONTROL,
             foregroundRequested = true,
         ) { phoneWorker(goal) })
-        val handle = when (submission) {
-            is ExclusiveSubmissionResult.Accepted -> submission.handle
+        val prepared = when (submission) {
+            is ExclusiveSubmissionResult.Reserved -> submission.task
             is ExclusiveSubmissionResult.Busy -> {
                 reply(request, json("phone_task_rejected", "reason" to "PHONE_BUSY"), RealtimeDelegationChannel.SPEAKABLE)
                 return
             }
         }
-        val task = OwnedTask(request.voiceSessionGeneration, request.delegationId, handle.taskId, goal.take(120), handle.completion)
-        synchronized(lock) { if (generation == request.voiceSessionGeneration) owned = task else taskController.cancelTask(task.taskId, AgentCancellationReason.SESSION_REPLACED) }
+        beforeOwnershipPublication()
+        val task = OwnedTask(request.voiceSessionGeneration, request.delegationId, prepared.taskId, goal.take(120), prepared.completion)
+        val claimed = synchronized(lock) {
+            if (generation == request.voiceSessionGeneration && sink != null && owned?.let { it.generation == generation } != true) {
+                owned = task
+                true
+            } else false
+        }
+        if (!claimed) {
+            prepared.cancel(AgentCancellationReason.SESSION_REPLACED)
+            return
+        }
+        if (!prepared.start()) {
+            synchronized(lock) { if (owned?.taskId == task.taskId) owned = null }
+            return
+        }
+        if (!synchronized(lock) { generation == task.generation && sink != null && owned?.taskId == task.taskId }) return
         _status.value = VoicePhoneTaskStatus(task.taskId, VoicePhoneTaskState.STARTING, goal.take(120))
         reply(request, json("phone_task_started", "task_id" to task.taskId, "state" to "STARTING"), RealtimeDelegationChannel.COMMENTARY)
         scope.launch { observeCompletion(task) }

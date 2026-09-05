@@ -111,6 +111,48 @@ class VoiceAgentCoordinatorTest {
         }
     }
 
+    @Test fun `teardown after reservation but before ownership publication prevents worker start`() {
+        val scope = TestScope(StandardTestDispatcher())
+        val controller = AgentTaskController()
+        val submissions = AgentTaskSubmissionService(controller, scope) {}
+        val admissionReached = CompletableDeferred<Unit>()
+        val releaseAdmission = CompletableDeferred<Unit>()
+        var workerRan = false
+        val sink = RealtimeDelegationSink { true }
+        val coordinator = VoiceAgentCoordinator(
+            scope, controller, submissions, { ReadinessLevel.READY },
+            beforeOwnershipPublication = { admissionReached.complete(Unit); releaseAdmission.await() },
+        ) { workerRan = true; result(true, "unexpected") }
+        coordinator.beginSession(1, sink)
+        coordinator.accept(RealtimeDelegationRequest(1, "start", """{"op":"start_phone_task","goal":"Open Spotify"}"""))
+        scope.runCurrent()
+        assertTrue(admissionReached.isCompleted)
+        coordinator.endSession(1)
+        releaseAdmission.complete(Unit)
+        scope.advanceUntilIdle()
+        assertFalse(workerRan)
+        assertTrue(controller.activeTasks.value.isEmpty())
+        assertEquals(VoicePhoneTaskState.IDLE, coordinator.status.value.state)
+    }
+
+    @Test fun `new generation cancels exact prior voice owner and stale completion cannot publish`() {
+        val h = Harness()
+        h.start("old", "Open Spotify")
+        h.scope.runCurrent()
+        val oldId = h.coordinator.status.value.taskId!!
+        val updateCount = h.updates.size
+        h.coordinator.beginSession(2, h.sink)
+        h.scope.advanceUntilIdle()
+        assertNull(h.controller.task(oldId))
+        assertEquals(VoicePhoneTaskState.IDLE, h.coordinator.status.value.state)
+        assertEquals(updateCount, h.updates.size)
+        h.send("new", """{"op":"start_phone_task","goal":"Open YouTube"}""", generation = 2)
+        h.scope.runCurrent()
+        assertEquals("Open YouTube", h.startedGoals.last())
+        h.gates.last().complete(result(true, "YouTube is open"))
+        h.scope.advanceUntilIdle()
+    }
+
     private class Harness(private val blocked: DeviceCapability? = null) {
         val scope = TestScope(StandardTestDispatcher())
         val controller = AgentTaskController()
