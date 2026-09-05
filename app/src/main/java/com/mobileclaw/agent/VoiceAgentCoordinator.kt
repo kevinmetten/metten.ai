@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import android.util.Log
 
 enum class VoicePhoneTaskState { IDLE, STARTING, RUNNING, CANCELLING, SUCCEEDED, FAILED, CANCELLED }
 data class VoicePhoneTaskStatus(val taskId: String? = null, val state: VoicePhoneTaskState = VoicePhoneTaskState.IDLE, val summary: String = "No phone task is active.")
@@ -82,11 +83,13 @@ class VoiceAgentCoordinator(
             // Reserve before launching so duplicate callbacks cannot race into two actions.
             handled[request.delegationId] = update(request, "{\"op\":\"control_received\"}", RealtimeDelegationChannel.COMMENTARY)
         }
+        diagnostic("delegation delivered to coordinator")
         scope.launch { operationMutex.withLock { process(request) } }
     }
 
     private suspend fun process(request: RealtimeDelegationRequest) {
-        when (val envelope = VoiceControlEnvelopeParser.parse(request.instructionText)) {
+        val active = synchronized(lock) { owned?.generation == request.voiceSessionGeneration }
+        when (val envelope = VoiceControlEnvelopeParser.parseDelegated(request.instructionText, active)) {
             is VoiceControlEnvelope.Start -> start(request, envelope.goal)
             VoiceControlEnvelope.Status -> reportStatus(request)
             VoiceControlEnvelope.Cancel -> cancel(request)
@@ -109,7 +112,7 @@ class VoiceAgentCoordinator(
             foregroundRequested = true,
         ) { phoneWorker(goal) })
         val prepared = when (submission) {
-            is ExclusiveSubmissionResult.Reserved -> submission.task
+            is ExclusiveSubmissionResult.Reserved -> submission.task.also { diagnostic("phone task reserved") }
             is ExclusiveSubmissionResult.Busy -> {
                 reply(request, json("phone_task_rejected", "reason" to "PHONE_BUSY"), RealtimeDelegationChannel.SPEAKABLE)
                 return
@@ -131,6 +134,7 @@ class VoiceAgentCoordinator(
             synchronized(lock) { if (owned?.taskId == task.taskId) owned = null }
             return
         }
+        diagnostic("phone worker started")
         if (!synchronized(lock) { generation == task.generation && sink != null && owned?.taskId == task.taskId }) return
         _status.value = VoicePhoneTaskStatus(task.taskId, VoicePhoneTaskState.STARTING, goal.take(120))
         reply(request, json("phone_task_started", "task_id" to task.taskId, "state" to "STARTING"), RealtimeDelegationChannel.COMMENTARY)
@@ -142,6 +146,7 @@ class VoiceAgentCoordinator(
             _status.value = VoicePhoneTaskStatus(task.taskId, VoicePhoneTaskState.RUNNING, task.goal)
         }
         val completion = task.completion.await()
+        diagnostic("phone task terminal result")
         val (state, summary) = when (completion) {
             is AgentTaskCompletion.Succeeded -> if (completion.value.success) VoicePhoneTaskState.SUCCEEDED to safe(completion.value.summary) else VoicePhoneTaskState.FAILED to safe(completion.value.summary)
             is AgentTaskCompletion.Failed -> VoicePhoneTaskState.FAILED to safe(completion.message)
@@ -189,12 +194,14 @@ class VoiceAgentCoordinator(
         synchronized(lock) {
             if (generation != request.voiceSessionGeneration || sink == null) return
             handled[request.delegationId] = message
-            sink?.send(message)
+            val sent = sink?.send(message) == true
+            diagnostic(if (sent) "context append accepted for send" else "context append send failed")
         }
     }
     private fun isCurrent(value: Long) = synchronized(lock) { generation == value && sink != null }
     private fun update(r: RealtimeDelegationRequest, text: String, channel: RealtimeDelegationChannel) = RealtimeDelegationUpdate(r.voiceSessionGeneration, r.delegationId, text, channel)
     private fun json(op: String, vararg values: Pair<String, String?>) = JsonObject().apply { addProperty("op", op); values.forEach { (k, v) -> if (v == null) add(k, JsonNull.INSTANCE) else addProperty(k, v) } }.toString()
     private fun safe(value: String) = value.filter { it >= ' ' && it != '\u007f' }.trim().take(240).ifBlank { "Phone task finished without details." }
+    private fun diagnostic(event: String) = runCatching { Log.i("MobileClawVoice", event) }.let { Unit }
     private companion object { const val MAX_DELEGATIONS = 128 }
 }

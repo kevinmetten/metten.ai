@@ -70,6 +70,8 @@ import com.mobileclaw.llm.ChatGptModel
 import com.mobileclaw.memory.db.VideoGenerationTaskEntity
 import com.mobileclaw.perception.VirtualDisplayManager
 import com.mobileclaw.realtime.RealtimeVoicePhase
+import com.mobileclaw.realtime.RealtimeSidebandDiagnostics
+import com.mobileclaw.realtime.RealtimeVoiceRuntimeDiagnostics
 import com.mobileclaw.ui.ClawColors
 import com.mobileclaw.ui.ClawIconTile
 import com.mobileclaw.ui.ClawPageHeader
@@ -721,6 +723,8 @@ private fun ChatGptAccountCard(app: ClawApplication, c: ClawColors) {
     val manager = app.chatGptAuthManager
     val state by manager.state.collectAsState()
     val voiceState by app.realtimeVoiceController.state.collectAsState()
+    val sidebandState by RealtimeSidebandDiagnostics.state.collectAsState()
+    val voiceRuntimeState by RealtimeVoiceRuntimeDiagnostics.state.collectAsState()
     val actions = chatGptAccountActions(state is ChatGptAuthState.SignedIn, voiceState.phase)
     val context = LocalContext.current
     val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -772,6 +776,21 @@ private fun ChatGptAccountCard(app: ClawApplication, c: ClawColors) {
                         },
                         color = if (voiceState.phase == RealtimeVoicePhase.FAILED) MaterialTheme.colorScheme.error else c.subtext,
                         fontSize = 12.sp,
+                    )
+                    Text(
+                        "Sideband: ${sidebandState.phase} · Delegations: ${sidebandState.delegationEventsReceived}" +
+                            sidebandState.failureCategory?.let { " · Last failure: HTTP ${sidebandState.httpStatus ?: "—"} / $it" }.orEmpty(),
+                        color = c.subtext,
+                        fontSize = 11.sp,
+                        modifier = Modifier.testTag("live_voice_sideband_diagnostic"),
+                    )
+                    Text(
+                        "Process: ${voiceRuntimeState.processEpoch} · Voice generation: ${voiceRuntimeState.generation} · Peer: ${voiceRuntimeState.peerState} · Events: ${voiceRuntimeState.eventsDataChannelState}" +
+                            " · Terminal origin: ${when (voiceRuntimeState.terminalWasLocal) { true -> "LOCAL"; false -> "REMOTE"; null -> "NONE" }}" +
+                            voiceRuntimeState.lastReason?.let { " · Last event: $it" }.orEmpty(),
+                        color = c.subtext,
+                        fontSize = 11.sp,
+                        modifier = Modifier.testTag("live_voice_runtime_diagnostic"),
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (ChatGptAccountAction.START_VOICE in actions) {

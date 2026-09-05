@@ -30,6 +30,15 @@ class VoiceForegroundServicePolicyTest {
         assertTrue(endBody.contains("VoiceSessionForegroundService.stop(this)"))
     }
 
+    @Test fun `voice and agent foreground services use independent notifications and stop ownership`() {
+        val voice = projectFile("src/main/java/com/mobileclaw/realtime/VoiceSessionForegroundService.kt").readText()
+        val agent = projectFile("src/main/java/com/mobileclaw/agent/AgentExecutionForegroundService.kt").readText()
+        assertTrue(voice.contains("ID = 7302"))
+        assertTrue(agent.contains("NOTIFICATION_ID = 7301"))
+        assertFalse(voice.contains("AgentExecutionForegroundService"))
+        assertFalse(agent.contains("VoiceSessionForegroundService"))
+    }
+
     private fun projectFile(relative: String): File = sequenceOf(
         File(relative), File("app/$relative"), File(System.getProperty("user.dir"), relative), File(System.getProperty("user.dir"), "app/$relative"),
     ).first { it.isFile }

@@ -10,12 +10,36 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.advanceUntilIdle
 import org.junit.Assert.*
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class VoiceAgentCoordinatorTest {
+    @Test fun `natural handoffs start status replace and cancel without overlapping`() {
+        val h = Harness()
+        h.send("start", "Open Android Settings")
+        h.scope.runCurrent()
+        assertEquals(listOf("Open Android Settings"), h.startedGoals)
+        assertEquals(1, h.controller.activeTasks.value.count { it.taskType == TaskType.PHONE_CONTROL })
+
+        h.send("status", "What are you doing on my phone right now?")
+        h.scope.runCurrent()
+        assertEquals(1, h.startedGoals.size)
+        assertTrue(h.updates.any { "phone_task_status" in it.text })
+
+        h.send("replace", "Actually open YouTube instead")
+        h.scope.advanceUntilIdle()
+        assertEquals(listOf("Open Android Settings", "Actually open YouTube instead"), h.startedGoals)
+        assertEquals(1, h.controller.activeTasks.value.count { it.taskType == TaskType.PHONE_CONTROL })
+
+        h.send("cancel", "Cancel the phone task")
+        h.scope.advanceUntilIdle()
+        assertTrue(h.controller.activeTasks.value.none { it.taskType == TaskType.PHONE_CONTROL })
+        assertTrue(h.updates.any { "phone_task_cancelled" in it.text })
+    }
+
     @Test fun `different and duplicate concurrent starts admit exactly one worker and retain exact id`() {
         val h = Harness()
         h.start("a", "Open Spotify")

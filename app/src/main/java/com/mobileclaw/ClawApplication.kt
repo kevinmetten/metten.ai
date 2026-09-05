@@ -50,6 +50,7 @@ import com.mobileclaw.realtime.ChatGptRealtimeCallClient
 import com.mobileclaw.realtime.ChatGptRealtimeSessionController
 import com.mobileclaw.realtime.ChatGptRealtimeSidebandClient
 import com.mobileclaw.realtime.VoiceSessionForegroundService
+import com.mobileclaw.realtime.RealtimeVoiceRuntimeDiagnostics
 import com.mobileclaw.memory.MemoryContextBuilder
 import com.mobileclaw.runtime.PageRuntimeCapabilities
 import com.mobileclaw.server.ConsoleServer
@@ -191,6 +192,7 @@ class ClawApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        RealtimeVoiceRuntimeDiagnostics.initialize(this)
         agentTaskController = AgentTaskController()
         chatGptAuthManager = ChatGptAuthManager(this)
         chatGptModelService = ChatGptModelService(chatGptAuthManager)

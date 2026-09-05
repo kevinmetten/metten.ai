@@ -33,7 +33,18 @@ class RealtimeVoiceException(
     message: String,
 ) : Exception(message)
 
-data class RealtimeCallAnswer(val sdp: String, val callId: String)
+/** Non-secret identity needed to attach the control sideband to this exact media call. */
+data class RealtimeSidebandAttachment(
+    val callId: String,
+    val requestContext: RealtimeRequestContext,
+)
+
+data class RealtimeCallAnswer(
+    val sdp: String,
+    val sidebandAttachment: RealtimeSidebandAttachment,
+) {
+    val callId: String get() = sidebandAttachment.callId
+}
 
 /** Ephemeral, process-memory identifiers scoped to one transport/session generation. */
 data class RealtimeRequestContext(

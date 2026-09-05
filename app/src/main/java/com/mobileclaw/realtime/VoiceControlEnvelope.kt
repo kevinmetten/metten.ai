@@ -29,6 +29,23 @@ object VoiceControlEnvelopeParser {
         }
     }.getOrNull()
 
+    /**
+     * Normalizes content from a provider-authenticated client delegation. Frameless input_text
+     * is a handoff transcript, not a JSON wire schema, so natural language is valid here. This
+     * entry point must only be used after the adapter validates delegation.created/client.
+     */
+    fun parseDelegated(raw: String, hasActivePhoneTask: Boolean): VoiceControlEnvelope? {
+        parse(raw)?.let { return it }
+        val goal = raw.trim().takeIf { it.isNotEmpty() && it.length <= MAX_DELEGATED_GOAL_CHARS } ?: return null
+        // A malformed attempted envelope must not become an Android goal.
+        if (goal.startsWith('{') || goal.startsWith('[')) return null
+        val normalized = goal.lowercase().replace(Regex("[^a-z0-9]+"), " ").trim()
+        if (normalized.isEmpty()) return null
+        if (CANCEL_PATTERNS.any(normalized::contains)) return VoiceControlEnvelope.Cancel
+        if (STATUS_PATTERNS.any(normalized::contains)) return VoiceControlEnvelope.Status
+        return if (hasActivePhoneTask) VoiceControlEnvelope.Replace(goal) else VoiceControlEnvelope.Start(goal)
+    }
+
     private fun hasDuplicateTopLevelKeys(raw: String): Boolean {
         val names = mutableSetOf<String>()
         JsonReader(StringReader(raw)).use { reader ->
@@ -42,4 +59,14 @@ object VoiceControlEnvelopeParser {
         }
         return false
     }
+
+    private const val MAX_DELEGATED_GOAL_CHARS = 2_000
+    private val CANCEL_PATTERNS = listOf(
+        "cancel the phone task", "cancel phone task", "stop what you re doing on my phone",
+        "stop what you are doing on my phone", "stop the phone task", "stop phone task",
+    )
+    private val STATUS_PATTERNS = listOf(
+        "what are you doing on my phone", "phone task status", "status of the phone task",
+        "what is happening on my phone", "what s happening on my phone",
+    )
 }
