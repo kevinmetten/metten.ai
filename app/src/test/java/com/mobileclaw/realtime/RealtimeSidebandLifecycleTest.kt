@@ -80,12 +80,17 @@ class RealtimeSidebandLifecycleTest {
         client.connect(attachment("rtc_new"), 2) {}
         scope.runCurrent()
         val newer = factory.sockets.last()
+        newer.listener.onOpen(newer, response(newer.request()))
+        assertEquals(RealtimeSidebandPhase.CONNECTED, RealtimeSidebandDiagnostics.state.value.phase)
         old.listener.onOpen(old, response(old.request()))
         old.listener.onFailure(old, IllegalStateException("stale"), null)
         old.listener.onClosed(old, 1000, "stale")
-        newer.listener.onOpen(newer, response(newer.request()))
+        assertEquals(RealtimeSidebandPhase.CONNECTED, RealtimeSidebandDiagnostics.state.value.phase)
         assertTrue(client.send(update(2)))
         assertEquals(1, newer.sent.size)
+        newer.listener.onMessage(newer, """{"type":"delegation.created","item":{"type":"delegation","target":"client","id":"current","content":[{"type":"input_text","text":"Open Android Settings"}]}}""")
+        assertEquals(1, RealtimeSidebandDiagnostics.state.value.delegationEventsReceived)
+        assertEquals(RealtimeSidebandPhase.CONNECTED, RealtimeSidebandDiagnostics.state.value.phase)
         assertTrue(old.closed)
     }
 
@@ -140,8 +145,8 @@ class RealtimeSidebandLifecycleTest {
         scope.runCurrent()
         val recovered = factory.sockets.last()
         recovered.listener.onOpen(recovered, response(recovered.request()))
-        recovered.listener.onMessage(recovered, """{"type":"delegation.created","item":{"type":"delegation","target":"client","id":"d1","content":[{"type":"input_text","text":"{\"op\":\"start_phone_task\",\"goal\":\"Open Android Settings\"}"}]}}""")
-        assertEquals(listOf(RealtimeDelegationRequest(9, "d1", """{"op":"start_phone_task","goal":"Open Android Settings"}""")), received)
+        recovered.listener.onMessage(recovered, """{"type":"delegation.created","item":{"type":"delegation","target":"client","id":"d1","content":[{"type":"input_text","text":"Open Android Settings"}]}}""")
+        assertEquals(listOf(RealtimeDelegationRequest(9, "d1", "Open Android Settings")), received)
         assertEquals(1, RealtimeSidebandDiagnostics.state.value.delegationEventsReceived)
     }
 

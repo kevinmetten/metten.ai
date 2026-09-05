@@ -4,6 +4,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class VoiceControlEnvelopeTest {
+    @Test fun `validated natural delegation maps according to canonical active state`() {
+        assertEquals(VoiceControlEnvelope.Start("Open Android Settings"), VoiceControlEnvelopeParser.parseDelegated("Open Android Settings", false))
+        assertEquals(VoiceControlEnvelope.Replace("Actually open YouTube instead"), VoiceControlEnvelopeParser.parseDelegated("Actually open YouTube instead", true))
+        assertEquals(VoiceControlEnvelope.Cancel, VoiceControlEnvelopeParser.parseDelegated("Stop what you're doing on my phone", true))
+        assertEquals(VoiceControlEnvelope.Status, VoiceControlEnvelopeParser.parseDelegated("What are you doing on my phone right now?", true))
+        assertNull(VoiceControlEnvelopeParser.parseDelegated("{not valid", false))
+    }
+
     @Test fun `supported envelopes parse strictly`() {
         assertEquals(VoiceControlEnvelope.Start("Open Spotify"), VoiceControlEnvelopeParser.parse("""{"op":"start_phone_task","goal":"Open Spotify"}"""))
         assertEquals(VoiceControlEnvelope.Status, VoiceControlEnvelopeParser.parse("""{"op":"get_phone_task_status"}"""))

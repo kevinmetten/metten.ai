@@ -37,7 +37,9 @@ object RealtimeSidebandDiagnostics {
     internal fun report(phase: RealtimeSidebandPhase, category: String? = null, status: Int? = null, delegation: Boolean = false) {
         val previous = _state.value
         _state.value = RealtimeSidebandDiagnosticState(
-            phase, status, category,
+            phase,
+            if (phase == RealtimeSidebandPhase.FAILED) status else previous.httpStatus,
+            if (phase == RealtimeSidebandPhase.FAILED) category else previous.failureCategory,
             if (delegation) previous.delegationEventsReceived + 1 else previous.delegationEventsReceived,
         )
         val message = "sideband=$phase category=${category ?: "none"} http=${status ?: "none"} delegations=${_state.value.delegationEventsReceived}"
@@ -241,12 +243,16 @@ class ChatGptRealtimeSidebandClient internal constructor(
                     }
                 }
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                    RealtimeSidebandDiagnostics.report(RealtimeSidebandPhase.FAILED, t.javaClass.simpleName.take(80), response?.code)
-                    socketEnded(webSocket, epoch, expectedGeneration, attempt)
+                    socketEnded(webSocket, epoch, expectedGeneration, attempt)?.let {
+                        RealtimeSidebandDiagnostics.report(RealtimeSidebandPhase.FAILED, t.javaClass.simpleName.take(80), response?.code)
+                        retry(epoch, expectedGeneration, attempt)
+                    }
                 }
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                    RealtimeSidebandDiagnostics.report(RealtimeSidebandPhase.CLOSED, "websocket_close_$code")
-                    socketEnded(webSocket, epoch, expectedGeneration, attempt)
+                    socketEnded(webSocket, epoch, expectedGeneration, attempt)?.let {
+                        RealtimeSidebandDiagnostics.report(RealtimeSidebandPhase.CLOSED)
+                        retry(epoch, expectedGeneration, attempt)
+                    }
                 }
             }
             val opened = socketFactory.open(request(id, credential), callback)
@@ -262,12 +268,12 @@ class ChatGptRealtimeSidebandClient internal constructor(
         }
     }
 
-    private fun socketEnded(webSocket: WebSocket, epoch: Long, expectedGeneration: Long, attempt: Long) {
-        val retry = synchronized(lock) {
-            if (!isCurrentAttemptLocked(epoch, expectedGeneration, attempt) || socket !== webSocket) false
-            else { socket = null; socketOpen = false; true }
+    /** Returns Unit only when this callback ended the exact current socket. */
+    private fun socketEnded(webSocket: WebSocket, epoch: Long, expectedGeneration: Long, attempt: Long): Unit? {
+        return synchronized(lock) {
+            if (!isCurrentAttemptLocked(epoch, expectedGeneration, attempt) || socket !== webSocket) null
+            else { socket = null; socketOpen = false; Unit }
         }
-        if (retry) retry(epoch, expectedGeneration, attempt)
     }
 
     private fun retry(epoch: Long, expectedGeneration: Long, attempt: Long) {
@@ -275,7 +281,7 @@ class ChatGptRealtimeSidebandClient internal constructor(
             if (!isCurrentAttemptLocked(epoch, expectedGeneration, attempt) || reconnect?.isActive == true) return
             reconnectPolicy.nextDelay(expectedGeneration)
         } ?: return
-        RealtimeSidebandDiagnostics.report(RealtimeSidebandPhase.CONNECTING, "reconnect_scheduled")
+        runCatching { Log.i("MobileClawVoice", "sideband reconnect scheduled") }
         val job = scope.launch {
             delay(wait)
             if (synchronized(lock) { isCurrentAttemptLocked(epoch, expectedGeneration, attempt) }) open(epoch, expectedGeneration)

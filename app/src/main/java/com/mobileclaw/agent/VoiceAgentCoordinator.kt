@@ -88,7 +88,8 @@ class VoiceAgentCoordinator(
     }
 
     private suspend fun process(request: RealtimeDelegationRequest) {
-        when (val envelope = VoiceControlEnvelopeParser.parse(request.instructionText)) {
+        val active = synchronized(lock) { owned?.generation == request.voiceSessionGeneration }
+        when (val envelope = VoiceControlEnvelopeParser.parseDelegated(request.instructionText, active)) {
             is VoiceControlEnvelope.Start -> start(request, envelope.goal)
             VoiceControlEnvelope.Status -> reportStatus(request)
             VoiceControlEnvelope.Cancel -> cancel(request)
