@@ -14,3 +14,5 @@ dist/
 .claude/
 .stitch/
 tmp/
+/app/libs/sherpa-onnx-1.13.7.aar
+/app/src/debug/assets/tts/kitten-nano-en-v0_8-fp32/

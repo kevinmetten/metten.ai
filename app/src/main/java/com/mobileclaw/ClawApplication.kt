@@ -47,9 +47,9 @@ import com.mobileclaw.permission.DeviceReadinessEngine
 import com.mobileclaw.permission.detectRom
 import com.mobileclaw.realtime.VoiceSessionForegroundService
 import com.mobileclaw.voice.SerializedVoiceForegroundLease
-import com.mobileclaw.voice.AndroidOfflineTextToSpeechOutput
 import com.mobileclaw.voice.AndroidOnDeviceSpeechInput
 import com.mobileclaw.voice.LlmVoiceTurnBrain
+import com.mobileclaw.voice.MettenSpeechOutputFactory
 import com.mobileclaw.voice.MettenVoiceSessionController
 import com.mobileclaw.memory.MemoryContextBuilder
 import com.mobileclaw.runtime.PageRuntimeCapabilities
@@ -276,7 +276,7 @@ class ClawApplication : Application() {
         mettenVoiceController = MettenVoiceSessionController(
             scope = agentExecutionScope,
             inputFactory = { AndroidOnDeviceSpeechInput(this) },
-            outputFactory = { AndroidOfflineTextToSpeechOutput(this) },
+            outputFactory = { MettenSpeechOutputFactory.create(this) },
             brain = LlmVoiceTurnBrain(createLlmGateway()),
             coordinator = voiceAgentCoordinator,
             microphonePermission = { androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED },

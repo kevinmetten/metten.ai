@@ -43,10 +43,26 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.1.8937393" >> $GITHUB_ENV
 
       - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+        run: chmod +x gradlew scripts/provision_kitten_tts_model.sh
+
+      - name: Provision pinned neural speech artifacts
+        run: scripts/provision_kitten_tts_model.sh
+
+      - name: Test debug
+        run: ./gradlew :app:testDebugUnitTest --no-daemon
 
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --no-daemon
+
+      - name: Inspect neural debug APK
+        run: |
+          set -euo pipefail
+          apk="$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)"
+          test -n "$apk"
+          unzip -l "$apk" > "$RUNNER_TEMP/debug-apk.txt"
+          grep -q 'assets/tts/kitten-nano-en-v0_8-fp32/model.fp32.onnx' "$RUNNER_TEMP/debug-apk.txt"
+          grep -q 'assets/tts/kitten-nano-en-v0_8-fp32/metten-model-manifest.json' "$RUNNER_TEMP/debug-apk.txt"
+          grep -Eq 'lib/arm64-v8a/.*sherpa.*\.so' "$RUNNER_TEMP/debug-apk.txt"
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
