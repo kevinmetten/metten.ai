@@ -5,6 +5,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -81,9 +82,12 @@ class ChatGptRealtimeSessionControllerTest {
         val scope = TestScope(StandardTestDispatcher())
         var behavior = initial
         val transports = mutableListOf<FakeTransport>()
-        val controller = ChatGptRealtimeSessionController(scope) {
-            FakeTransport { behavior() }.also(transports::add)
-        }
+        val controller = ChatGptRealtimeSessionController(
+            scope = scope,
+            transports = RealtimeVoiceTransportFactory {
+                FakeTransport { behavior() }.also(transports::add)
+            },
+        )
         val last get() = transports.last()
     }
 

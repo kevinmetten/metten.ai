@@ -220,7 +220,7 @@ class MettenVoiceSessionControllerTest {
         h.output.finishInitialization(true); assertEquals(MettenVoicePhase.LISTENING, h.voice.state.value.phase)
     }
 
-    private class Harness(inputAvailable: Boolean = true, outputAvailable: Boolean = true, autoInitialize: Boolean = true, foregroundLease: VoiceForegroundLease? = null) {
+    private class Harness(inputAvailable: Boolean = true, outputAvailable: Boolean = true, private val autoInitialize: Boolean = true, foregroundLease: VoiceForegroundLease? = null) {
         val scope = TestScope(StandardTestDispatcher()); val input = FakeInput(inputAvailable); val output = FakeOutput(outputAvailable, autoInitialize); val brain = FakeBrain()
         val tasks = AgentTaskController(); val goals = mutableListOf<String>(); val gates = ArrayDeque<CompletableDeferred<AgentResult>>(); val fgs = mutableListOf<String>()
         val coordinator = VoiceAgentCoordinator(scope, tasks, AgentTaskSubmissionService(tasks, scope) {}, { ReadinessLevel.READY }) { goal -> goals += goal; CompletableDeferred<AgentResult>().also(gates::add).await() }
