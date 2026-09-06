@@ -16,6 +16,16 @@ internal class AndroidSpeechOutputLifecycle(
     fun interface PlaybackStateProvider { fun isSpeaking(): Boolean }
 
     data class WatchdogToken(val utteranceId: String, val sequence: Long)
+    internal data class WatchdogSnapshot(
+        val token: WatchdogToken,
+        val acceptedAtMillis: Long,
+        val startCallbackObserved: Boolean,
+        val startCallbackAtMillis: Long?,
+        val rangeCallbackObserved: Boolean,
+        val speakingObserved: Boolean,
+        val falseSinceMillis: Long?,
+        val scheduled: Any?,
+    )
     private data class State(
         val token: WatchdogToken,
         val acceptedAtMillis: Long,
@@ -39,7 +49,7 @@ internal class AndroidSpeechOutputLifecycle(
     }
 
     fun accepted(token: WatchdogToken) {
-        if (isActive(token)) schedule(token)
+        if (activeState(token) != null) schedule(token)
     }
 
     fun rejected(token: WatchdogToken, reason: String) = finish(token) { tracker.failed(token.utteranceId, reason) }
@@ -73,16 +83,15 @@ internal class AndroidSpeechOutputLifecycle(
     }
 
     private fun poll(token: WatchdogToken) {
-        val value = state ?: return
+        var value = activeState(token) ?: return
         value.scheduled = null
-        if (!isActive(token)) return
         val now = clock.nowMillis()
         if (now - value.acceptedAtMillis >= MAX_UTTERANCE_SAFETY_MILLIS) {
             finish(token) { tracker.failed(token.utteranceId, "Offline speech playback timed out.") }
             return
         }
         val speaking = try { playback.isSpeaking() } catch (_: RuntimeException) { null }
-        if (!isActive(token)) return
+        value = activeState(token) ?: return
         when (speaking) {
             true -> {
                 value.speakingObserved = true
@@ -108,16 +117,27 @@ internal class AndroidSpeechOutputLifecycle(
     }
 
     private fun schedule(token: WatchdogToken) {
-        val value = state ?: return
-        if (!isActive(token) || value.scheduled != null) return
-        value.scheduled = scheduler.schedule(WATCHDOG_POLL_INTERVAL_MILLIS) { poll(token) }
+        val value = activeState(token) ?: return
+        if (value.scheduled != null) return
+        val handle = scheduler.schedule(WATCHDOG_POLL_INTERVAL_MILLIS) { poll(token) }
+        if (activeState(token) === value && value.scheduled == null) {
+            value.scheduled = handle
+        } else {
+            scheduler.cancel(handle)
+        }
     }
 
     private fun activeFor(id: String): State? = state?.takeIf {
         !released && it.token.utteranceId == id && tracker.isCurrent(id)
     }
 
-    private fun isActive(token: WatchdogToken): Boolean = !released && state?.token == token && tracker.isCurrent(token.utteranceId)
+    private fun activeState(token: WatchdogToken): State? {
+        if (released) return null
+        val value = state ?: return null
+        if (value.token != token) return null
+        if (!tracker.isCurrent(token.utteranceId)) return null
+        return value
+    }
 
     private inline fun finishId(id: String, terminal: () -> SpeechOutputUtteranceTracker.Delivery?) {
         val value = activeFor(id) ?: return
@@ -125,10 +145,26 @@ internal class AndroidSpeechOutputLifecycle(
     }
 
     private inline fun finish(token: WatchdogToken, terminal: () -> SpeechOutputUtteranceTracker.Delivery?) {
-        if (!isActive(token)) return
+        val value = activeState(token) ?: return
         val result = terminal()
-        cancelCurrent()
+        if (state === value) {
+            value.scheduled?.let(scheduler::cancel)
+            state = null
+        }
         deliver(result)
+    }
+
+    internal fun watchdogSnapshot(): WatchdogSnapshot? = state?.let {
+        WatchdogSnapshot(
+            token = it.token,
+            acceptedAtMillis = it.acceptedAtMillis,
+            startCallbackObserved = it.startCallbackObserved,
+            startCallbackAtMillis = it.startCallbackAtMillis,
+            rangeCallbackObserved = it.rangeCallbackObserved,
+            speakingObserved = it.speakingObserved,
+            falseSinceMillis = it.falseSinceMillis,
+            scheduled = it.scheduled,
+        )
     }
 
     private fun cancelCurrent() {
