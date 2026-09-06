@@ -44,10 +44,20 @@ class MettenVoiceSessionController(
     private val coordinator: VoiceAgentCoordinator,
     private val microphonePermission: () -> Boolean,
     private val chatGptTextReady: () -> Boolean,
-    private val foregroundLease: VoiceForegroundLease = VoiceForegroundLease { true },
+    private val foregroundLease: VoiceForegroundLease = object : VoiceForegroundLease {
+        override fun acquire(generation: Long) = VoiceForegroundAcquireResult.Acquired
+        override fun release(generation: Long) = VoiceForegroundReleaseResult.NoOp
+    },
 ) {
     private data class StartupToken(val generation: Long, val epoch: Long)
     private data class OutputToken(val generation: Long, val outputId: Long)
+    private data class TerminationToken(val invalidatedGeneration: Long, val epoch: Long, val original: MettenVoiceState)
+    private data class TerminationResources(
+        val job: Job?,
+        val input: SpeechInputEngine?,
+        val output: SpeechOutputEngine?,
+        val token: TerminationToken,
+    )
     private val _state = MutableStateFlow(MettenVoiceState())
     val state: StateFlow<MettenVoiceState> = _state.asStateFlow()
     private var generation = 0L
@@ -57,6 +67,7 @@ class MettenVoiceSessionController(
     private var turnJob: Job? = null
     private var retryJob: Job? = null
     private var startupEpoch = 0L
+    private var lifecycleEpoch = 0L
     private var startupToken: StartupToken? = null
     private var outputId = 0L
     private var activeOutput: OutputToken? = null
@@ -81,6 +92,7 @@ class MettenVoiceSessionController(
                 return false
             }
             val id = ++generation
+            lifecycleEpoch++
             val token = StartupToken(id, ++startupEpoch)
             startupToken = token
             invalidateListeningLocked()
@@ -91,8 +103,19 @@ class MettenVoiceSessionController(
             token to requireNotNull(output)
         }
         val (token, engine) = startup
-        if (!foregroundLease.acquire(token.generation)) {
-            terminateExact(token.generation, MettenVoiceState(MettenVoicePhase.FAILED, "Voice foreground service could not start."))
+        when (val result = foregroundLease.acquire(token.generation)) {
+            VoiceForegroundAcquireResult.Acquired, VoiceForegroundAcquireResult.AlreadyOwned -> Unit
+            VoiceForegroundAcquireResult.StaleOrEnded -> {
+                terminateExact(token.generation, MettenVoiceState(MettenVoicePhase.FAILED, "Voice foreground service rejected an ended generation."))
+                return false
+            }
+            is VoiceForegroundAcquireResult.Failed -> {
+                terminateExact(token.generation, MettenVoiceState(MettenVoicePhase.FAILED, result.reason))
+                return false
+            }
+        }
+        if (!synchronized(this) { startupToken == token && generation == token.generation && _state.value.phase == MettenVoicePhase.STARTING }) {
+            foregroundLease.release(token.generation)
             return false
         }
         try {
@@ -284,6 +307,7 @@ class MettenVoiceSessionController(
         val resources = synchronized(this) {
             if (id != generation) return
             generation++
+            val terminationEpoch = ++lifecycleEpoch
             startupToken = null
             activeOutput = null
             startFailures = 0
@@ -295,13 +319,21 @@ class MettenVoiceSessionController(
             context.clear()
             pendingPhoneTurns.clear()
             _state.value = terminal
-            Triple(job, speechInput, speechOutput)
+            TerminationResources(job, speechInput, speechOutput, TerminationToken(generation, terminationEpoch, terminal))
         }
-        resources.first?.cancel()
-        resources.second?.stopListening(); resources.second?.release()
-        resources.third?.stop(); resources.third?.release()
+        resources.job?.cancel()
+        resources.input?.stopListening(); resources.input?.release()
+        resources.output?.stop(); resources.output?.release()
         coordinator.endSession(id)
-        foregroundLease.release(id)
+        val release = foregroundLease.release(id)
+        if (release is VoiceForegroundReleaseResult.Failed) synchronized(this) {
+            if (generation == resources.token.invalidatedGeneration && lifecycleEpoch == resources.token.epoch && _state.value == resources.token.original) {
+                val message = if (resources.token.original.phase == MettenVoicePhase.FAILED) {
+                    listOfNotNull(resources.token.original.message, release.reason).distinct().joinToString(" ").take(320)
+                } else release.reason
+                _state.value = MettenVoiceState(MettenVoicePhase.FAILED, message)
+            }
+        }
     }
 
     private fun invalidateListeningLocked() {

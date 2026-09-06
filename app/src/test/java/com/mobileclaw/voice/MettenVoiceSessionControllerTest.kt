@@ -10,6 +10,8 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import org.junit.Assert.*
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MettenVoiceSessionControllerTest {
@@ -119,14 +121,89 @@ class MettenVoiceSessionControllerTest {
         assertEquals(MettenVoicePhase.FAILED, h.voice.state.value.phase)
     }
 
-    private class Harness(inputAvailable: Boolean = true, outputAvailable: Boolean = true, autoInitialize: Boolean = true) {
+    @Test fun `foreground start exception fails cleanly and newer generation recovers`() {
+        var starts = 0
+        val lease = SerializedVoiceForegroundLease({ if (++starts == 1) throw SecurityException("not allowed") }, {})
+        val h = Harness(foregroundLease = lease)
+        val chat = h.tasks.register("chat", TaskType.CHAT, false)
+        val phone = h.tasks.tryRegisterExclusiveTaskType("ui", TaskType.PHONE_CONTROL, true) as AgentTaskController.RegistrationAttempt.Registered
+        assertFalse(h.voice.start()); assertEquals(MettenVoicePhase.FAILED, h.voice.state.value.phase)
+        assertTrue(h.input.released); assertTrue(h.output.released)
+        assertEquals(SerializedVoiceForegroundLease.PhysicalState.None, lease.stateSnapshot())
+        assertNotNull(h.tasks.task(chat.taskId)); assertNotNull(h.tasks.task(phone.registration.taskId))
+        assertTrue(h.voice.start()); assertEquals(MettenVoicePhase.LISTENING, h.voice.state.value.phase)
+        assertEquals(SerializedVoiceForegroundLease.PhysicalState.Active(3), lease.stateSnapshot())
+    }
+
+    @Test fun `already owned foreground is idempotent and duplicate Start is rejected`() {
+        var starts = 0
+        val lease = SerializedVoiceForegroundLease({ starts++ }, {})
+        assertEquals(VoiceForegroundAcquireResult.Acquired, lease.acquire(1))
+        val h = Harness(autoInitialize = false, foregroundLease = lease)
+        assertTrue(h.voice.start()); assertEquals(1, h.output.initializeCalls); assertEquals(1, starts)
+        assertFalse(h.voice.start()); assertEquals(1, h.output.initializeCalls); assertEquals(1, starts)
+        h.output.finishInitialization(true); assertEquals(MettenVoicePhase.LISTENING, h.voice.state.value.phase)
+    }
+
+    @Test fun `stale foreground acquisition never initializes speech`() {
+        val lease = object : VoiceForegroundLease {
+            override fun acquire(generation: Long) = VoiceForegroundAcquireResult.StaleOrEnded
+            override fun release(generation: Long) = VoiceForegroundReleaseResult.NoOp
+        }
+        val h = Harness(autoInitialize = false, foregroundLease = lease)
+        assertFalse(h.voice.start()); assertEquals(0, h.output.initializeCalls)
+        assertEquals(MettenVoicePhase.FAILED, h.voice.state.value.phase)
+        assertTrue(h.input.released); assertTrue(h.output.released)
+    }
+
+    @Test fun `failed foreground release preserves cleanup and newer generation resolves old stop`() {
+        var stopFails = true; val calls = mutableListOf<String>(); var starting = 1L
+        val lease = SerializedVoiceForegroundLease({ calls += "start:$starting" }, { calls += "stop"; if (stopFails) throw IllegalStateException("blocked") })
+        val h = Harness(foregroundLease = lease); h.start()
+        h.voice.stop()
+        assertEquals(MettenVoicePhase.FAILED, h.voice.state.value.phase)
+        assertTrue(h.input.released); assertTrue(h.output.released)
+        assertTrue(lease.stateSnapshot() is SerializedVoiceForegroundLease.PhysicalState.StopFailed)
+        stopFails = false; starting = 3
+        assertTrue(h.voice.start()); assertEquals(MettenVoicePhase.LISTENING, h.voice.state.value.phase)
+        assertEquals(listOf("start:1", "stop", "stop", "start:3"), calls)
+    }
+
+    @Test fun `foreground cleanup failure preserves primary fatal speech reason`() {
+        val lease = SerializedVoiceForegroundLease({}, { throw IllegalStateException("stop failed") })
+        val h = Harness(foregroundLease = lease); h.start()
+        h.input.emit(SpeechInputEvent.FatalError("recognizer died"))
+        assertEquals(MettenVoicePhase.FAILED, h.voice.state.value.phase)
+        assertTrue(h.voice.state.value.message.orEmpty().startsWith("recognizer died"))
+        assertTrue(h.input.released); assertTrue(h.output.released)
+        assertTrue(lease.stateSnapshot() is SerializedVoiceForegroundLease.PhysicalState.StopFailed)
+    }
+
+    @Test fun `delayed old cleanup failure cannot overwrite newer Start`() {
+        val stopEntered = CountDownLatch(1); val allowStop = CountDownLatch(1); var stops = 0
+        val lease = SerializedVoiceForegroundLease(
+            { },
+            { if (++stops == 1) { stopEntered.countDown(); check(allowStop.await(2, TimeUnit.SECONDS)); throw IllegalStateException("old stop") } },
+        )
+        val h = Harness(autoInitialize = false, foregroundLease = lease); assertTrue(h.voice.start()); h.output.finishInitialization(true)
+        val ended = CountDownLatch(1); val endThread = Thread { h.voice.stop(); ended.countDown() }; endThread.start()
+        assertTrue(stopEntered.await(2, TimeUnit.SECONDS))
+        val started = CountDownLatch(1); val startThread = Thread { h.voice.start(); started.countDown() }; startThread.start()
+        allowStop.countDown(); assertTrue(ended.await(2, TimeUnit.SECONDS)); assertTrue(started.await(2, TimeUnit.SECONDS))
+        endThread.join(2_000); startThread.join(2_000); assertFalse(endThread.isAlive); assertFalse(startThread.isAlive)
+        assertEquals(MettenVoicePhase.STARTING, h.voice.state.value.phase)
+        h.output.finishInitialization(true); assertEquals(MettenVoicePhase.LISTENING, h.voice.state.value.phase)
+    }
+
+    private class Harness(inputAvailable: Boolean = true, outputAvailable: Boolean = true, autoInitialize: Boolean = true, foregroundLease: VoiceForegroundLease? = null) {
         val scope = TestScope(StandardTestDispatcher()); val input = FakeInput(inputAvailable); val output = FakeOutput(outputAvailable, autoInitialize); val brain = FakeBrain()
         val tasks = AgentTaskController(); val goals = mutableListOf<String>(); val gates = ArrayDeque<CompletableDeferred<AgentResult>>(); val fgs = mutableListOf<String>()
         val coordinator = VoiceAgentCoordinator(scope, tasks, AgentTaskSubmissionService(tasks, scope) {}, { ReadinessLevel.READY }) { goal -> goals += goal; CompletableDeferred<AgentResult>().also(gates::add).await() }
-        val voice = MettenVoiceSessionController(scope, { input }, { output }, brain, coordinator, { true }, { true }, object : VoiceForegroundLease {
-            override fun acquire(generation: Long): Boolean { fgs += "start:$generation"; return true }
-            override fun release(generation: Long) { fgs += "stop:$generation" }
-        })
+        private val recordingLease = object : VoiceForegroundLease {
+            override fun acquire(generation: Long): VoiceForegroundAcquireResult { fgs += "start:$generation"; return VoiceForegroundAcquireResult.Acquired }
+            override fun release(generation: Long): VoiceForegroundReleaseResult { fgs += "stop:$generation"; return VoiceForegroundReleaseResult.Released }
+        }
+        val voice = MettenVoiceSessionController(scope, { input }, { output }, brain, coordinator, { true }, { true }, foregroundLease ?: recordingLease)
         init { brain.next = VoiceTurnDecision(phoneCommand = VoiceControlCommand.Start("Open Settings")) }
         fun start() { assertTrue(voice.start()); if (!autoInitialize) output.finishInitialization(true) }
         fun startPhone() { start(); input.emit(SpeechInputEvent.Final("Open Settings")); scope.advanceUntilIdle(); output.complete() }
@@ -140,9 +217,9 @@ class MettenVoiceSessionControllerTest {
         fun emit(event: SpeechInputEvent) = listeners.lastOrNull()?.invoke(event) ?: Unit
     }
     private class FakeOutput(private val available: Boolean, private val auto: Boolean) : SpeechOutputEngine {
-        val spoken = mutableListOf<String>(); var speechListener: ((SpeechOutputEvent) -> Unit)? = null; var initialization: ((SpeechCapability) -> Unit)? = null; var released = false
+        val spoken = mutableListOf<String>(); var speechListener: ((SpeechOutputEvent) -> Unit)? = null; var initialization: ((SpeechCapability) -> Unit)? = null; var released = false; var initializeCalls = 0
         override fun capability() = SpeechCapability(available && auto, if (available) "initializing" else "No offline TTS voice.", initializing = available && !auto)
-        override fun initialize(listener: (SpeechCapability) -> Unit) { if (auto) listener(SpeechCapability(available, if (available) null else "No offline TTS voice.")) else initialization = listener }
+        override fun initialize(listener: (SpeechCapability) -> Unit) { initializeCalls++; if (auto) listener(SpeechCapability(available, if (available) null else "No offline TTS voice.")) else initialization = listener }
         fun finishInitialization(success: Boolean) { initialization?.also { initialization = null }?.invoke(SpeechCapability(success, if (success) null else "No offline TTS voice.")) }
         override fun speak(text: String, listener: (SpeechOutputEvent) -> Unit) { spoken += text; speechListener = listener; listener(SpeechOutputEvent.Started) }
         override fun stop() = Unit

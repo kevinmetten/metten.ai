@@ -39,7 +39,7 @@ class VoiceAgentCoordinator(
     private var generationActive = false
     private var sink: VoiceControlEventSink? = null
     private var owned: OwnedTask? = null
-    private var priorGenerationCompletion: Deferred<AgentTaskCompletion<AgentResult>>? = null
+    private val priorGenerationSettlement = PriorGenerationSettlementBarrier<AgentTaskCompletion<AgentResult>>()
     private val handled = LinkedHashMap<String, VoiceControlEvent>()
     private val pending = mutableSetOf<String>()
     private val _status = MutableStateFlow(VoicePhoneTaskStatus())
@@ -57,7 +57,7 @@ class VoiceAgentCoordinator(
             sink = newSink
             handled.clear()
             pending.clear()
-            priorGenerationCompletion = old?.completion
+            if (old != null) priorGenerationSettlement.install(old.completion)
             _status.value = VoicePhoneTaskStatus()
             old
         }
@@ -76,11 +76,11 @@ class VoiceAgentCoordinator(
             pending.clear()
             owned?.takeIf { it.generation == endedGeneration }?.also {
                 it.cancellation = VoiceControlCancellationDisposition.SESSION_ENDED
-                priorGenerationCompletion = it.completion
+                priorGenerationSettlement.install(it.completion)
+                _status.value = VoicePhoneTaskStatus(it.taskId, VoicePhoneTaskState.CANCELLING, "Cancelling phone task.")
             }
         }
         target?.let {
-            _status.value = VoicePhoneTaskStatus(it.taskId, VoicePhoneTaskState.CANCELLING, "Cancelling phone task.")
             taskController.cancelTask(it.taskId, AgentCancellationReason.USER_REQUEST)
         }
     }
@@ -108,10 +108,10 @@ class VoiceAgentCoordinator(
     }
 
     private suspend fun start(request: VoiceControlRequest, goal: String) {
-        val barrier = synchronized(lock) { priorGenerationCompletion }
+        val barrier = synchronized(lock) { priorGenerationSettlement.snapshot() }
         barrier?.await()
         if (barrier != null) synchronized(lock) {
-            if (priorGenerationCompletion === barrier) priorGenerationCompletion = null
+            priorGenerationSettlement.clearIfSame(barrier)
         }
         if (!isCurrent(request.generation)) return
         if (readiness(DeviceCapability.PHONE_CONTROL) == ReadinessLevel.BLOCKED ||
@@ -147,15 +147,20 @@ class VoiceAgentCoordinator(
             synchronized(lock) { if (owned?.taskId == task.taskId) owned = null }
             return
         }
-        if (!synchronized(lock) { generation == task.generation && generationActive && sink != null && owned?.taskId == task.taskId }) return
-        _status.value = VoicePhoneTaskStatus(task.taskId, VoicePhoneTaskState.STARTING, goal.take(120))
+        if (!synchronized(lock) {
+            val current = generation == task.generation && generationActive && sink != null && owned?.taskId == task.taskId
+            if (current) _status.value = VoicePhoneTaskStatus(task.taskId, VoicePhoneTaskState.STARTING, goal.take(120))
+            current
+        }) return
         reply(VoiceControlEvent.Accepted(request.generation, request.requestId, task.taskId))
         scope.launch { observeCompletion(task) }
     }
 
     private suspend fun observeCompletion(task: OwnedTask) {
-        if (synchronized(lock) { generation == task.generation && owned?.taskId == task.taskId }) {
-            _status.value = VoicePhoneTaskStatus(task.taskId, VoicePhoneTaskState.RUNNING, task.goal)
+        synchronized(lock) {
+            if (generation == task.generation && generationActive && owned?.taskId == task.taskId) {
+                _status.value = VoicePhoneTaskStatus(task.taskId, VoicePhoneTaskState.RUNNING, task.goal)
+            }
         }
         val completion = task.completion.await()
         val (state, summary) = when (completion) {
@@ -164,12 +169,12 @@ class VoiceAgentCoordinator(
             AgentTaskCompletion.Cancelled -> VoicePhoneTaskState.CANCELLED to "Phone task cancelled."
         }
         val publish = synchronized(lock) {
-            if (generation == task.generation && owned?.taskId == task.taskId) {
-                owned = null
-                true
-            } else false
+            val exactOwnership = owned?.taskId == task.taskId
+            val currentPublication = exactOwnership && generation == task.generation && generationActive && sink != null
+            if (exactOwnership) owned = null
+            if (currentPublication) _status.value = VoicePhoneTaskStatus(task.taskId, state, summary)
+            currentPublication
         }
-        if (publish) _status.value = VoicePhoneTaskStatus(task.taskId, state, summary)
         if (publish && isCurrent(task.generation) && task.cancellation != VoiceControlCancellationDisposition.SUPERSEDED) {
             val terminal = when (state) {
                 VoicePhoneTaskState.SUCCEEDED -> VoiceControlTerminalState.SUCCEEDED
@@ -219,6 +224,7 @@ class VoiceAgentCoordinator(
         target?.send(message)
     }
     private fun isCurrent(value: Long) = synchronized(lock) { generation == value && generationActive && sink != null }
+    internal fun ownsTask(taskId: String) = synchronized(lock) { owned?.taskId == taskId }
     private fun safe(value: String) = value.filter { it >= ' ' && it != '\u007f' }.trim().take(240).ifBlank { "Phone task finished without details." }
     private companion object { const val MAX_DELEGATIONS = 128 }
 }

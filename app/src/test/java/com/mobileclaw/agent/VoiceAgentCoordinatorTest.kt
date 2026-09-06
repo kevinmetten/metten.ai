@@ -6,7 +6,10 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -66,9 +69,57 @@ class VoiceAgentCoordinatorTest {
     }
 
     @Test fun `new generation cancels exact prior and stale completion cannot publish`() {
-        val h = Harness(); h.start("old", "Open Spotify"); h.scope.runCurrent(); val oldId = h.coordinator.status.value.taskId!!; val count = h.events.size
-        h.coordinator.beginSession(2, h.sink); h.scope.advanceUntilIdle()
-        assertNull(h.controller.task(oldId)); assertEquals(count, h.events.size); assertEquals(VoicePhoneTaskState.IDLE, h.coordinator.status.value.state)
+        val h = Harness(); h.start("old", "Open Spotify"); h.scope.runCurrent(); val oldId = h.coordinator.status.value.taskId!!
+        val newerEvents = mutableListOf<VoiceControlEvent>(); val newerSink = VoiceControlEventSink { newerEvents += it }
+        h.coordinator.beginSession(3, newerSink); h.scope.advanceUntilIdle()
+        assertNull(h.controller.task(oldId)); assertFalse(h.coordinator.ownsTask(oldId))
+        assertTrue(newerEvents.isEmpty()); assertEquals(VoicePhoneTaskState.IDLE, h.coordinator.status.value.state)
+        h.coordinator.accept(VoiceControlRequest(3, "new", VoiceControlCommand.Start("Open Maps"))); h.scope.runCurrent()
+        val newId = h.coordinator.status.value.taskId!!
+        assertNotEquals(oldId, newId); assertTrue(h.coordinator.ownsTask(newId))
+        assertEquals(1, h.controller.activeTasks.value.count { it.taskType == TaskType.PHONE_CONTROL })
+        h.gates.last().complete(result(true, "Maps opened.")); h.scope.advanceUntilIdle()
+    }
+
+    @Test fun `unsettled old cancellation blocks newer phone worker until exact settlement`() {
+        val scope = TestScope(StandardTestDispatcher()); val controller = AgentTaskController()
+        val oldEvents = mutableListOf<VoiceControlEvent>(); val newEvents = mutableListOf<VoiceControlEvent>()
+        val g1Entered = CompletableDeferred<Unit>(); val g1Running = CompletableDeferred<AgentResult>()
+        val cancellationObserved = CompletableDeferred<Unit>(); val cancellationSettlement = CompletableDeferred<Unit>()
+        val g3Entered = CompletableDeferred<Unit>(); val g3Result = CompletableDeferred<AgentResult>()
+        val order = mutableListOf<String>()
+        val coordinator = VoiceAgentCoordinator(
+            scope, controller, AgentTaskSubmissionService(controller, scope) {}, { ReadinessLevel.READY },
+        ) { goal ->
+            if (goal == "G1") {
+                order += "g1-entered"; g1Entered.complete(Unit)
+                try { g1Running.await() } catch (cancelled: CancellationException) {
+                    cancellationObserved.complete(Unit)
+                    withContext(NonCancellable) { cancellationSettlement.await() }
+                    order += "g1-settled"
+                    throw cancelled
+                }
+            } else {
+                order += "g3-entered"; g3Entered.complete(Unit); g3Result.await()
+            }
+        }
+        coordinator.beginSession(1, VoiceControlEventSink { oldEvents += it })
+        coordinator.accept(VoiceControlRequest(1, "old", VoiceControlCommand.Start("G1"))); scope.runCurrent()
+        assertTrue(g1Entered.isCompleted); val oldId = coordinator.status.value.taskId!!
+        coordinator.endSession(1); scope.runCurrent()
+        assertTrue(cancellationObserved.isCompleted); assertEquals(AgentTaskPhase.CANCELLING, controller.task(oldId)?.phase)
+        assertEquals(VoiceSessionAdmission.ACTIVATED, coordinator.beginSession(3, VoiceControlEventSink { newEvents += it }))
+        coordinator.accept(VoiceControlRequest(3, "new", VoiceControlCommand.Start("G3"))); scope.runCurrent()
+        assertEquals(VoiceSessionAdmission.ALREADY_ACTIVE, coordinator.beginSession(3, VoiceControlEventSink { newEvents += it }))
+        assertFalse(g3Entered.isCompleted); assertEquals(1, controller.activeTasks.value.count { it.taskType == TaskType.PHONE_CONTROL })
+        assertEquals(AgentTaskPhase.CANCELLING, controller.task(oldId)?.phase)
+        assertEquals(VoicePhoneTaskState.IDLE, coordinator.status.value.state); assertTrue(newEvents.isEmpty())
+        cancellationSettlement.complete(Unit); scope.runCurrent()
+        assertNull(controller.task(oldId)); assertFalse(coordinator.ownsTask(oldId)); assertTrue(g3Entered.isCompleted)
+        assertEquals(listOf("g1-entered", "g1-settled", "g3-entered"), order)
+        assertEquals(1, controller.activeTasks.value.count { it.taskType == TaskType.PHONE_CONTROL })
+        assertTrue(newEvents.none { it.generation == 1L })
+        g3Result.complete(result(true, "G3 done")); scope.advanceUntilIdle()
     }
 
     @Test fun `replace waits for old settlement never overlaps and suppresses superseded terminal event`() {
