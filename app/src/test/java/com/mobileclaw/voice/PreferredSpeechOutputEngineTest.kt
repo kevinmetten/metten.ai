@@ -16,6 +16,22 @@ class PreferredSpeechOutputEngineTest {
         assertTrue(primary.released); assertEquals(1, fallback.initialized); assertEquals(1, fallback.spoken)
     }
 
+    @Test fun `stop routes only to selected primary and is ignored after release`() {
+        val primary = FakeEngine(true); val fallback = FakeEngine(true)
+        val engine = PreferredSpeechOutputEngine({ primary }, { fallback }); engine.initialize {}
+
+        engine.stop()
+
+        assertEquals(1, primary.stopped)
+        assertEquals(0, fallback.stopped)
+
+        engine.release()
+        engine.stop()
+
+        assertEquals(1, primary.stopped)
+        assertEquals(0, fallback.stopped)
+    }
+
     @Test fun `primary callback after release is stale`() {
         val primary = DelayedEngine(); val fallback = DelayedEngine()
         val results = mutableListOf<SpeechCapability>()
@@ -76,11 +92,11 @@ class PreferredSpeechOutputEngineTest {
         override fun release() { released = true }
     }
     private class FakeEngine(private val ready: Boolean) : SpeechOutputEngine {
-        var initialized = 0; var spoken = 0; var released = false
+        var initialized = 0; var spoken = 0; var stopped = 0; var released = false
         override fun capability() = SpeechCapability(ready, if (ready) null else "unavailable")
         override fun initialize(listener: (SpeechCapability) -> Unit) { initialized++; listener(capability()) }
         override fun speak(text: String, listener: (SpeechOutputEvent) -> Unit) { spoken++; listener(SpeechOutputEvent.Completed) }
-        override fun stop() = Unit
+        override fun stop() { stopped++ }
         override fun release() { released = true }
     }
 }

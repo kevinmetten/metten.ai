@@ -76,7 +76,10 @@ class PreferredSpeechOutputEngine(
         if (engine == null) listener(SpeechOutputEvent.Failed(capability.reason ?: "Speech output is unavailable."))
         else engine.speak(text, listener)
     }
-    override fun stop() = synchronized(monitor) { selected }?.stop()
+    override fun stop() {
+        val engine = synchronized(monitor) { if (released) null else selected }
+        engine?.stop()
+    }
     override fun release() {
         val engines = synchronized(monitor) {
             if (released) return
