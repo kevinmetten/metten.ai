@@ -21,7 +21,7 @@ class ChatGptRealtimeSessionControllerTest {
         assertEquals(RealtimeVoicePhase.CONNECTED, harness.controller.state.value.phase)
         harness.controller.setMuted(true)
         assertEquals(RealtimeVoicePhase.MUTED, harness.controller.state.value.phase)
-        assertTrue(harness.last.muted)
+        assertTrue(harness.last.mutedState)
         harness.controller.setMuted(false)
         assertEquals(RealtimeVoicePhase.CONNECTED, harness.controller.state.value.phase)
         harness.controller.stop()
@@ -94,10 +94,10 @@ class ChatGptRealtimeSessionControllerTest {
     private class FakeTransport(private val behavior: suspend () -> Unit) : RealtimeVoiceTransport {
         var closeCount = 0
         val closed get() = closeCount > 0
-        var muted = false
+        var mutedState = false
         var callback: ((RealtimeVoiceException?) -> Unit)? = null
         override suspend fun connect(onDisconnected: (RealtimeVoiceException?) -> Unit) { callback = onDisconnected; behavior() }
-        override fun setMuted(muted: Boolean) { this.muted = muted }
+        override fun setMuted(muted: Boolean) { mutedState = muted }
         override fun close() { closeCount++ }
     }
 }
