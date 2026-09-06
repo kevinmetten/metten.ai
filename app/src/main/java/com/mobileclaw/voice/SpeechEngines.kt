@@ -33,6 +33,10 @@ sealed interface SpeechOutputEvent {
 interface SpeechOutputEngine {
     fun capability(): SpeechCapability
     fun initialize(listener: (SpeechCapability) -> Unit) = listener(capability())
+    /**
+     * Accepts one replaceable utterance. Unless invalidated by replacement, [stop], or [release],
+     * it delivers exactly one terminal [SpeechOutputEvent.Completed] or [SpeechOutputEvent.Failed].
+     */
     fun speak(text: String, listener: (SpeechOutputEvent) -> Unit)
     fun stop()
     fun release()

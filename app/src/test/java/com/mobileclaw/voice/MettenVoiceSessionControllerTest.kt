@@ -121,6 +121,31 @@ class MettenVoiceSessionControllerTest {
         assertEquals(MettenVoicePhase.FAILED, h.voice.state.value.phase)
     }
 
+    @Test fun `recovered output completion permits a second conversational turn and stale completion is ignored`() {
+        val h = Harness(); h.start(); h.brain.next = VoiceTurnDecision("Ten.")
+        h.input.emit(SpeechInputEvent.Final("what is five plus five")); h.scope.advanceUntilIdle()
+        val firstOutput = h.output.listeners.lastIndex
+        h.output.complete(firstOutput)
+        assertEquals(MettenVoicePhase.LISTENING, h.voice.state.value.phase)
+        h.brain.next = VoiceTurnDecision("Twelve.")
+        h.input.emit(SpeechInputEvent.Final("what is six plus six")); h.scope.advanceUntilIdle()
+        assertEquals(2, h.brain.calls); assertEquals(listOf("Ten.", "Twelve."), h.output.spoken)
+        h.output.complete(firstOutput)
+        assertEquals(MettenVoicePhase.SPEAKING, h.voice.state.value.phase)
+    }
+
+    @Test fun `terminal phone result permits a second phone command`() {
+        val h = Harness(); h.start()
+        h.input.emit(SpeechInputEvent.Final("open android settings")); h.scope.advanceUntilIdle()
+        h.output.complete()
+        h.gates.removeFirst().complete(result(true, "Settings are open.")); h.scope.advanceUntilIdle()
+        assertEquals("Settings are open.", h.output.spoken.last())
+        h.output.complete(); assertEquals(MettenVoicePhase.LISTENING, h.voice.state.value.phase)
+        h.brain.next = VoiceTurnDecision(phoneCommand = VoiceControlCommand.Start("Open apps"))
+        h.input.emit(SpeechInputEvent.Final("open apps")); h.scope.advanceUntilIdle()
+        assertEquals(2, h.brain.calls); assertEquals(listOf("Open Settings", "Open apps"), h.goals)
+    }
+
     @Test fun `foreground start exception fails cleanly and newer generation recovers`() {
         var starts = 0
         val lease = SerializedVoiceForegroundLease({ if (++starts == 1) throw SecurityException("not allowed") }, {})
@@ -217,14 +242,14 @@ class MettenVoiceSessionControllerTest {
         fun emit(event: SpeechInputEvent) = listeners.lastOrNull()?.invoke(event) ?: Unit
     }
     private class FakeOutput(private val available: Boolean, private val auto: Boolean) : SpeechOutputEngine {
-        val spoken = mutableListOf<String>(); var speechListener: ((SpeechOutputEvent) -> Unit)? = null; var initialization: ((SpeechCapability) -> Unit)? = null; var released = false; var initializeCalls = 0
+        val spoken = mutableListOf<String>(); val listeners = mutableListOf<(SpeechOutputEvent) -> Unit>(); val speechListener get() = listeners.lastOrNull(); var initialization: ((SpeechCapability) -> Unit)? = null; var released = false; var initializeCalls = 0
         override fun capability() = SpeechCapability(available && auto, if (available) "initializing" else "No offline TTS voice.", initializing = available && !auto)
         override fun initialize(listener: (SpeechCapability) -> Unit) { initializeCalls++; if (auto) listener(SpeechCapability(available, if (available) null else "No offline TTS voice.")) else initialization = listener }
         fun finishInitialization(success: Boolean) { initialization?.also { initialization = null }?.invoke(SpeechCapability(success, if (success) null else "No offline TTS voice.")) }
-        override fun speak(text: String, listener: (SpeechOutputEvent) -> Unit) { spoken += text; speechListener = listener; listener(SpeechOutputEvent.Started) }
+        override fun speak(text: String, listener: (SpeechOutputEvent) -> Unit) { spoken += text; listeners += listener; listener(SpeechOutputEvent.Started) }
         override fun stop() = Unit
         override fun release() { released = true }
-        fun complete() { speechListener?.also { speechListener = null }?.invoke(SpeechOutputEvent.Completed) }
+        fun complete(index: Int = listeners.lastIndex) { listeners.getOrNull(index)?.invoke(SpeechOutputEvent.Completed) }
     }
     private class FakeBrain : VoiceTurnBrain {
         var next = VoiceTurnDecision("Ten."); var calls = 0; var lastContext: VoiceTurnContext? = null; var failure: VoiceTurnProcessingException? = null

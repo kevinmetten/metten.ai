@@ -17,7 +17,8 @@ class LocalSpeechPolicyTest {
         val source = projectFile("src/main/java/com/mobileclaw/voice/AndroidOfflineTextToSpeechOutput.kt").readText()
         assertTrue(source.contains("selectCompatibleOfflineVoice"))
         assertTrue(source.contains("it.isNetworkConnectionRequired"))
-        assertTrue(source.contains("tts?.shutdown()"))
+        assertTrue(source.contains("engine?.shutdown()"))
+        assertTrue(source.contains("setOnUtteranceProgressListener(progressListener)"))
     }
 
     @Test fun `offline voice selection is exact then same-language and never network or unrelated`() {
