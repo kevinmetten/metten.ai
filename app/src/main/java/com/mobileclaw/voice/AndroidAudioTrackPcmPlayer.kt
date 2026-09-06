@@ -40,6 +40,30 @@ internal class ExactPcmDrainState {
     fun matches(value: PcmDrainToken) = token == value && token?.track === value.track
 }
 
+/** Pure no-progress deadline state used by the Android adapter and deterministic JVM tests. */
+internal class PcmWriteProgressState(private val stallTimeoutMillis: Long) {
+    private var token: PcmDrainToken? = null
+    private var deadlineMillis = 0L
+    private var complete = false
+
+    fun arm(value: PcmDrainToken, nowMillis: Long) {
+        token = value
+        deadlineMillis = nowMillis + stallTimeoutMillis
+        complete = false
+    }
+
+    fun wrote(value: PcmDrainToken, written: Int, nowMillis: Long): Boolean {
+        if (!matches(value) || complete || written <= 0) return false
+        deadlineMillis = nowMillis + stallTimeoutMillis
+        return true
+    }
+
+    fun stalled(value: PcmDrainToken, nowMillis: Long) = matches(value) && !complete && nowMillis >= deadlineMillis
+    fun submitted(value: PcmDrainToken): Boolean = matches(value).also { if (it) complete = true }
+    fun invalidate() { token = null; complete = false }
+    fun matches(value: PcmDrainToken) = token == value && token?.track === value.track
+}
+
 /** Per-utterance AudioTrack player with authoritative playback-head drain accounting. */
 class AndroidAudioTrackPcmPlayer : PcmSpeechPlayer {
     private val thread = HandlerThread("MettenPcmPlayback").apply { start() }
@@ -55,6 +79,7 @@ class AndroidAudioTrackPcmPlayer : PcmSpeechPlayer {
         val samples: FloatArray,
         val listener: (PcmPlaybackEvent) -> Unit,
         val drain: ExactPcmDrainState,
+        val writeProgress: PcmWriteProgressState,
         val token: PcmDrainToken,
         var offset: Int = 0,
         var started: Boolean = false,
@@ -67,7 +92,11 @@ class AndroidAudioTrackPcmPlayer : PcmSpeechPlayer {
             if (released) { listener(PcmPlaybackEvent.Failed("PCM playback was released.")); return@post }
             cancelCurrent()
             val format = speech.format
-            val minBuffer = AudioTrack.getMinBufferSize(format.sampleRateHz, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT)
+            val minBuffer = try {
+                AudioTrack.getMinBufferSize(format.sampleRateHz, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT)
+            } catch (failure: RuntimeException) {
+                listener(PcmPlaybackEvent.Failed(failure.message ?: "PCM playback format could not initialize.")); return@post
+            }
             if (minBuffer <= 0) { listener(PcmPlaybackEvent.Failed("PCM playback format is unavailable.")); return@post }
             val track = try {
                 AudioTrack.Builder()
@@ -84,18 +113,28 @@ class AndroidAudioTrackPcmPlayer : PcmSpeechPlayer {
             }
             val playerGeneration = generation.incrementAndGet()
             val total = speech.samples.size.toLong()
+            if (total !in 1..Int.MAX_VALUE.toLong()) {
+                discard(track); listener(PcmPlaybackEvent.Failed("PCM playback has no playable audio.")); return@post
+            }
             val drain = ExactPcmDrainState()
             val token = PcmDrainToken(track, identity, playerGeneration, total, playerGeneration)
             drain.arm(token) // Complete-waveform total is immutable before any frame is playable.
+            val writeProgress = PcmWriteProgressState(WRITE_STALL_TIMEOUT_MILLIS)
+            writeProgress.arm(token, android.os.SystemClock.uptimeMillis())
             val duration = total * 1_000L / format.sampleRateHz
-            val session = Session(identity, playerGeneration, track, speech.samples, listener, drain, token,
+            val session = Session(identity, playerGeneration, track, speech.samples, listener, drain, writeProgress, token,
                 deadlineMillis = android.os.SystemClock.uptimeMillis() + duration + DRAIN_MARGIN_MILLIS)
             current = session
-            track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
-                override fun onMarkerReached(audioTrack: AudioTrack) { handler.post { checkDrain(session, audioTrack) } }
-                override fun onPeriodicNotification(audioTrack: AudioTrack) = Unit
-            }, handler)
-            if (track.setNotificationMarkerPosition(total.toInt()) != AudioTrack.SUCCESS) {
+            val markerResult = try {
+                track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
+                    override fun onMarkerReached(audioTrack: AudioTrack) { handler.post { checkDrain(session, audioTrack) } }
+                    override fun onPeriodicNotification(audioTrack: AudioTrack) = Unit
+                }, handler)
+                track.setNotificationMarkerPosition(total.toInt())
+            } catch (failure: RuntimeException) {
+                fail(session, failure.message ?: "PCM drain tracking could not initialize."); return@post
+            }
+            if (markerResult != AudioTrack.SUCCESS) {
                 fail(session, "PCM drain tracking could not initialize."); return@post
             }
             writeMore(session)
@@ -106,8 +145,17 @@ class AndroidAudioTrackPcmPlayer : PcmSpeechPlayer {
         if (!isCurrent(session)) return
         val count = minOf(WRITE_FRAMES, session.samples.size - session.offset)
         if (count > 0) {
-            val written = session.track.write(session.samples, session.offset, count, AudioTrack.WRITE_NON_BLOCKING)
+            val now = android.os.SystemClock.uptimeMillis()
+            val written = try {
+                session.track.write(session.samples, session.offset, count, AudioTrack.WRITE_NON_BLOCKING)
+            } catch (failure: RuntimeException) {
+                fail(session, failure.message ?: "PCM playback write failed."); return
+            }
             if (written < 0) { fail(session, "PCM playback write failed ($written)."); return }
+            if (written == 0 && session.writeProgress.stalled(session.token, now)) {
+                fail(session, "PCM playback stopped accepting audio."); return
+            }
+            session.writeProgress.wrote(session.token, written, now)
             session.offset += written
             if (written > 0 && !session.started) {
                 try { session.track.play(); session.started = true; session.listener(PcmPlaybackEvent.Started) }
@@ -115,6 +163,7 @@ class AndroidAudioTrackPcmPlayer : PcmSpeechPlayer {
             }
         }
         if (session.offset == session.samples.size) {
+            session.writeProgress.submitted(session.token)
             session.drain.submitted(session.token)
             checkDrain(session, session.track)
         } else handler.postDelayed({ writeMore(session) }, WRITE_RETRY_MILLIS)
@@ -154,12 +203,12 @@ class AndroidAudioTrackPcmPlayer : PcmSpeechPlayer {
     private fun isCurrent(value: Session) = !released && current === value && !value.terminal
     private fun fail(value: Session, reason: String) {
         if (!isCurrent(value)) return
-        value.terminal = true; current = null; value.drain.invalidate(); discard(value.track)
+        value.terminal = true; current = null; value.drain.invalidate(); value.writeProgress.invalidate(); discard(value.track)
         value.listener(PcmPlaybackEvent.Failed(reason))
     }
     private fun cancelCurrent() {
         val value = current ?: return
-        current = null; value.terminal = true; value.drain.invalidate(); discard(value.track)
+        current = null; value.terminal = true; value.drain.invalidate(); value.writeProgress.invalidate(); discard(value.track)
     }
     private fun discard(track: AudioTrack) {
         try { if (track.playState == AudioTrack.PLAYSTATE_PLAYING) track.pause() } catch (_: IllegalStateException) {}
@@ -175,6 +224,7 @@ class AndroidAudioTrackPcmPlayer : PcmSpeechPlayer {
     private companion object {
         const val WRITE_FRAMES = 1_024
         const val WRITE_RETRY_MILLIS = 5L
+        const val WRITE_STALL_TIMEOUT_MILLIS = 3_000L
         const val HEAD_CHECK_MILLIS = 75L
         const val DRAIN_MARGIN_MILLIS = 5_000L
     }

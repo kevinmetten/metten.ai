@@ -45,6 +45,21 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew scripts/provision_kitten_tts_model.sh
 
+      - name: Test release isolation
+        run: ./gradlew :app:testReleaseUnitTest --no-daemon
+
+      - name: Build unsigned release isolation APK
+        run: ./gradlew :app:assembleRelease --no-daemon
+
+      - name: Verify release runtime excludes sherpa
+        run: |
+          set -euo pipefail
+          ./gradlew :app:dependencies --configuration releaseRuntimeClasspath > "$RUNNER_TEMP/release-dependencies.txt"
+          if grep -qi 'sherpa-onnx' "$RUNNER_TEMP/release-dependencies.txt"; then
+            echo "Release runtime unexpectedly contains sherpa-onnx."
+            exit 1
+          fi
+
       - name: Provision pinned neural speech artifacts
         run: scripts/provision_kitten_tts_model.sh
 
@@ -53,6 +68,12 @@ jobs:
 
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --no-daemon
+
+      - name: Verify debug runtime contains pinned sherpa
+        run: |
+          set -euo pipefail
+          ./gradlew :app:dependencies --configuration debugRuntimeClasspath > "$RUNNER_TEMP/debug-dependencies.txt"
+          grep -q 'sherpa-onnx-1.13.7.aar' "$RUNNER_TEMP/debug-dependencies.txt"
 
       - name: Inspect neural debug APK
         run: |

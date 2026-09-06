@@ -36,4 +36,46 @@ class AndroidAudioTrackPcmPlayerStateTest {
         assertFalse(state.check(replacement, 1_000))
         assertTrue(state.check(old, 1_000))
     }
+
+    @Test fun `zero writes fail only when the write progress deadline is reached`() {
+        val value = token()
+        val state = PcmWriteProgressState(3_000)
+        state.arm(value, 100)
+
+        assertFalse(state.stalled(value, 100))
+        assertFalse(state.stalled(value, 3_099))
+        assertTrue(state.stalled(value, 3_100))
+    }
+
+    @Test fun `positive partial write resets the write progress deadline`() {
+        val value = token()
+        val state = PcmWriteProgressState(3_000)
+        state.arm(value, 100)
+
+        assertTrue(state.wrote(value, 128, 3_000))
+        assertFalse(state.stalled(value, 5_999))
+        assertTrue(state.stalled(value, 6_000))
+    }
+
+    @Test fun `final submission disables write stall failure`() {
+        val value = token()
+        val state = PcmWriteProgressState(3_000)
+        state.arm(value, 100)
+
+        assertTrue(state.submitted(value))
+        assertFalse(state.stalled(value, Long.MAX_VALUE))
+    }
+
+    @Test fun `stale write retry cannot inspect or mutate replacement`() {
+        val old = token()
+        val replacement = token(track = Any(), id = "u2", generation = 2)
+        val state = PcmWriteProgressState(3_000)
+        state.arm(old, 0)
+        state.arm(replacement, 1_000)
+
+        assertFalse(state.stalled(old, Long.MAX_VALUE))
+        assertFalse(state.wrote(old, 128, 10_000))
+        assertFalse(state.stalled(replacement, 3_999))
+        assertTrue(state.stalled(replacement, 4_000))
+    }
 }

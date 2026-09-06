@@ -11,22 +11,29 @@ class SherpaKittenTtsSynthesizer(private val assets: AssetManager) : LocalTtsSyn
     @Volatile private var cancelled = false
     private var tts: OfflineTts? = null
 
-    override fun initialize(): Result<Unit> = runCatching {
-        check(tts == null) { "Neural speech is already initialized." }
-        val kitten = OfflineTtsKittenModelConfig(
-            model = KittenTtsModelSpec.MODEL,
-            voices = KittenTtsModelSpec.VOICES,
-            tokens = KittenTtsModelSpec.TOKENS,
-            dataDir = KittenTtsModelSpec.DATA_DIR,
-        )
-        val engine = OfflineTts(
-            assetManager = assets,
-            config = OfflineTtsConfig(model = OfflineTtsModelConfig(kitten = kitten, numThreads = 2)),
-        )
-        check(KittenTtsModelSpec.SPEAKER_ID >= 0 && KittenTtsModelSpec.SPEAKER_ID < engine.numSpeakers()) {
-            "The configured Kitten voice is unavailable."
+    override fun initialize(): Result<Unit> {
+        var candidate: OfflineTts? = null
+        val result = runCatching {
+            check(tts == null) { "Neural speech is already initialized." }
+            val kitten = OfflineTtsKittenModelConfig(
+                model = KittenTtsModelSpec.MODEL,
+                voices = KittenTtsModelSpec.VOICES,
+                tokens = KittenTtsModelSpec.TOKENS,
+                dataDir = KittenTtsModelSpec.DATA_DIR,
+            )
+            candidate = OfflineTts(
+                assetManager = assets,
+                config = OfflineTtsConfig(model = OfflineTtsModelConfig(kitten = kitten, numThreads = 2)),
+            )
+            val engine = checkNotNull(candidate)
+            check(KittenTtsModelSpec.SPEAKER_ID >= 0 && KittenTtsModelSpec.SPEAKER_ID < engine.numSpeakers()) {
+                "The configured Kitten voice is unavailable."
+            }
+            tts = engine
+            candidate = null
         }
-        tts = engine
+        if (result.isFailure) runCatching { candidate?.release() }
+        return result
     }
 
     override fun synthesize(text: String): Result<SynthesizedSpeech> = runCatching {
