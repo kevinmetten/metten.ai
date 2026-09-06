@@ -71,6 +71,7 @@ class MettenVoiceSessionController(
     private var startupToken: StartupToken? = null
     private var outputId = 0L
     private var activeOutput: OutputToken? = null
+    private var pendingEchoText: String? = null
     private var startFailures = 0
     private var muted = false
     private val context = ArrayDeque<VoiceConversationTurn>()
@@ -99,6 +100,7 @@ class MettenVoiceSessionController(
             muted = false
             context.clear()
             pendingPhoneTurns.clear()
+            pendingEchoText = null
             _state.value = MettenVoiceState(MettenVoicePhase.STARTING)
             token to requireNotNull(output)
         }
@@ -186,8 +188,16 @@ class MettenVoiceSessionController(
         when (event) {
             SpeechInputEvent.Ready, SpeechInputEvent.SpeechStarted -> synchronized(this) { if (id == generation && attempt == listenAttempt) startFailures = 0 }
             is SpeechInputEvent.Final -> {
-                synchronized(this) { if (id != generation || attempt != listenAttempt) return; startFailures = 0; invalidateListeningLocked() }
-                processTurn(id, event.text)
+                val isOutputEcho = synchronized(this) {
+                    if (id != generation || attempt != listenAttempt) return
+                    startFailures = 0
+                    invalidateListeningLocked()
+                    val normalized = normalizeForEchoGuard(event.text)
+                    val echoed = normalized.isNotEmpty() && normalized == pendingEchoText
+                    pendingEchoText = null
+                    echoed
+                }
+                if (isOutputEcho) listen(id) else processTurn(id, event.text)
             }
             is SpeechInputEvent.RecoverableError -> {
                 val exhausted = synchronized(this) {
@@ -279,6 +289,7 @@ class MettenVoiceSessionController(
             _state.value = MettenVoiceState(MettenVoicePhase.SPEAKING)
             val token = OutputToken(id, ++outputId)
             activeOutput = token
+            pendingEchoText = normalizeForEchoGuard(text)
             (output ?: return) to token
         } ?: return
         val (engine, token) = speech
@@ -318,6 +329,7 @@ class MettenVoiceSessionController(
             muted = false
             context.clear()
             pendingPhoneTurns.clear()
+            pendingEchoText = null
             _state.value = terminal
             TerminationResources(job, speechInput, speechOutput, TerminationToken(generation, terminationEpoch, terminal))
         }
@@ -342,6 +354,7 @@ class MettenVoiceSessionController(
     }
     @Synchronized private fun currentGeneration() = generation
     private fun remember(user: String, assistant: String) { context += VoiceConversationTurn(user, assistant); while (context.size > MAX_TURNS) context.removeFirst() }
+    private fun normalizeForEchoGuard(text: String) = text.trim().lowercase().replace(Regex("\\s+"), " ")
     private companion object {
         const val MAX_TURNS = 8
         const val MAX_START_FAILURES = 3

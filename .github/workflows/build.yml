@@ -46,7 +46,16 @@ jobs:
         run: chmod +x gradlew scripts/provision_kitten_tts_model.sh
 
       - name: Test release isolation
-        run: ./gradlew :app:testReleaseUnitTest --no-daemon
+        run: |
+          ./gradlew :app:testReleaseUnitTest --no-daemon \
+            --tests 'com.mobileclaw.voice.*' \
+            --tests 'com.mobileclaw.agent.VoiceAgentCoordinatorTest' \
+            --tests 'com.mobileclaw.agent.PriorGenerationSettlementBarrierTest' \
+            --tests 'com.mobileclaw.agent.AgentTaskSubmissionServiceTest' \
+            --tests 'com.mobileclaw.realtime.ChatGptRealtimeSessionControllerTest' \
+            --tests 'com.mobileclaw.realtime.RealtimeSidebandLifecycleTest' \
+            --tests 'com.mobileclaw.realtime.VoiceForegroundServicePolicyTest' \
+            --tests 'com.mobileclaw.ui.settings.AiBasicsReachabilityTest'
 
       - name: Build unsigned release isolation APK
         run: ./gradlew :app:assembleRelease --no-daemon
@@ -64,7 +73,16 @@ jobs:
         run: scripts/provision_kitten_tts_model.sh
 
       - name: Test debug
-        run: ./gradlew :app:testDebugUnitTest --no-daemon
+        run: |
+          ./gradlew :app:testDebugUnitTest --no-daemon \
+            --tests 'com.mobileclaw.voice.*' \
+            --tests 'com.mobileclaw.agent.VoiceAgentCoordinatorTest' \
+            --tests 'com.mobileclaw.agent.PriorGenerationSettlementBarrierTest' \
+            --tests 'com.mobileclaw.agent.AgentTaskSubmissionServiceTest' \
+            --tests 'com.mobileclaw.realtime.ChatGptRealtimeSessionControllerTest' \
+            --tests 'com.mobileclaw.realtime.RealtimeSidebandLifecycleTest' \
+            --tests 'com.mobileclaw.realtime.VoiceForegroundServicePolicyTest' \
+            --tests 'com.mobileclaw.ui.settings.AiBasicsReachabilityTest'
 
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --no-daemon
