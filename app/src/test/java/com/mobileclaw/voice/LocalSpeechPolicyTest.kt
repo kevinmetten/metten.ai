@@ -18,7 +18,7 @@ class LocalSpeechPolicyTest {
         assertTrue(Regex("override fun startListening\\([^=]+= onMain \\{").containsMatchIn(source))
         assertTrue(source.contains("override fun stopListening() = onMain"))
         assertTrue(source.contains("override fun release() = onMain"))
-        assertTrue(Regex("private fun onMain\\([^)]*\\) \\{ main\\.post\\(action\\) }").containsMatchIn(source))
+        assertTrue(Regex("""private\s+fun\s+onMain\s*\(\s*action:\s*\(\s*\)\s*->\s*Unit\s*\)\s*\{\s*main\.post\(action\)\s*}""").containsMatchIn(source))
         assertFalse(source.contains("Looper.myLooper() == Looper.getMainLooper()"))
     }
 

@@ -48,8 +48,10 @@ class MettenVoiceSessionControllerTest {
 
     @Test fun `mute after output ownership installation cannot orphan speech`() {
         val h = Harness(); h.start(); h.brain.next = VoiceTurnDecision("Ten.")
-        h.input.onStop = { if (h.input.stops == 2) h.voice.setMuted(true) }
-        h.input.emit(SpeechInputEvent.Final("five plus five")); h.scope.advanceUntilIdle()
+        h.input.emit(SpeechInputEvent.Final("five plus five"))
+        assertEquals(1, h.input.stops)
+        h.input.onStop = { h.voice.setMuted(true) }
+        h.scope.advanceUntilIdle()
 
         assertEquals(MettenVoicePhase.MUTED, h.voice.state.value.phase)
         assertEquals(listOf("Ten."), h.output.spoken)
