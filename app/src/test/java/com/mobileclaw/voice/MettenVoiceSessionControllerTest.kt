@@ -221,7 +221,7 @@ class MettenVoiceSessionControllerTest {
     }
 
     private class Harness(inputAvailable: Boolean = true, outputAvailable: Boolean = true, private val autoInitialize: Boolean = true, foregroundLease: VoiceForegroundLease? = null) {
-        val scope = TestScope(StandardTestDispatcher()); val input = FakeInput(inputAvailable); val output = FakeOutput(outputAvailable, autoInitialize) { scope.runCurrent() }; val brain = FakeBrain()
+        val scope = TestScope(StandardTestDispatcher()); val input = FakeInput(inputAvailable); val output = FakeOutput(outputAvailable, autoInitialize); val brain = FakeBrain()
         val tasks = AgentTaskController(); val goals = mutableListOf<String>(); val gates = ArrayDeque<CompletableDeferred<AgentResult>>(); val fgs = mutableListOf<String>()
         val coordinator = VoiceAgentCoordinator(scope, tasks, AgentTaskSubmissionService(tasks, scope) {}, { ReadinessLevel.READY }) { goal -> goals += goal; CompletableDeferred<AgentResult>().also(gates::add).await() }
         private val recordingLease = object : VoiceForegroundLease {
@@ -241,7 +241,7 @@ class MettenVoiceSessionControllerTest {
         override fun release() { released = true }
         fun emit(event: SpeechInputEvent) = listeners.lastOrNull()?.invoke(event) ?: Unit
     }
-    private class FakeOutput(private val available: Boolean, private val auto: Boolean, private val drainCallbacks: () -> Unit) : SpeechOutputEngine {
+    private class FakeOutput(private val available: Boolean, private val auto: Boolean) : SpeechOutputEngine {
         val spoken = mutableListOf<String>(); val listeners = mutableListOf<(SpeechOutputEvent) -> Unit>(); val speechListener get() = listeners.lastOrNull(); var initialization: ((SpeechCapability) -> Unit)? = null; var released = false; var initializeCalls = 0
         override fun capability() = SpeechCapability(available && auto, if (available) "initializing" else "No offline TTS voice.", initializing = available && !auto)
         override fun initialize(listener: (SpeechCapability) -> Unit) { initializeCalls++; if (auto) listener(SpeechCapability(available, if (available) null else "No offline TTS voice.")) else initialization = listener }
@@ -249,12 +249,7 @@ class MettenVoiceSessionControllerTest {
         override fun speak(text: String, listener: (SpeechOutputEvent) -> Unit) { spoken += text; listeners += listener; listener(SpeechOutputEvent.Started) }
         override fun stop() = Unit
         override fun release() { released = true }
-        fun complete(index: Int = listeners.lastIndex) {
-            listeners.getOrNull(index)?.invoke(SpeechOutputEvent.Completed)
-            // Real output completion is delivered from outside the controller's dispatcher.
-            // Drain work it schedules before the harness emits the next recognizer event.
-            drainCallbacks()
-        }
+        fun complete(index: Int = listeners.lastIndex) { listeners.getOrNull(index)?.invoke(SpeechOutputEvent.Completed) }
     }
     private class FakeBrain : VoiceTurnBrain {
         var next = VoiceTurnDecision("Ten."); var calls = 0; var lastContext: VoiceTurnContext? = null; var failure: VoiceTurnProcessingException? = null

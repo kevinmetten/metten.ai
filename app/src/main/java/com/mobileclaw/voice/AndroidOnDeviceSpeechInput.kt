@@ -52,7 +52,7 @@ class AndroidOnDeviceSpeechInput(context: Context) : SpeechInputEngine {
 
     override fun stopListening() = onMain { recognizer?.cancel() }
     override fun release() = onMain { released = true; recognizer?.destroy(); recognizer = null }
-    private fun onMain(action: () -> Unit) { if (Looper.myLooper() == Looper.getMainLooper()) action() else main.post(action) }
+    private fun onMain(action: () -> Unit) { main.post(action) }
 
     private class AndroidListener(private val emit: (SpeechInputEvent) -> Unit) : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) = emit(SpeechInputEvent.Ready)

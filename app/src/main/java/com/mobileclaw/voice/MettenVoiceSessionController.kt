@@ -1,20 +1,10 @@
 package com.mobileclaw.voice
 
-import com.mobileclaw.agent.VoiceAgentCoordinator
-import com.mobileclaw.agent.VoiceSessionAdmission
-import com.mobileclaw.agent.VoiceControlCancellationDisposition
-import com.mobileclaw.agent.VoiceControlEvent
-import com.mobileclaw.agent.VoiceControlEventSink
-import com.mobileclaw.agent.VoiceControlRequest
-import com.mobileclaw.agent.VoiceControlTerminalState
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
+import com.mobileclaw.agent.*
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
 import java.util.UUID
 
 enum class MettenVoicePhase { IDLE, STARTING, LISTENING, THINKING, SPEAKING, MUTED, ENDING, FAILED }
@@ -51,20 +41,35 @@ class MettenVoiceSessionController(
 ) {
     private data class StartupToken(val generation: Long, val epoch: Long)
     private data class OutputToken(val generation: Long, val outputId: Long)
+    private data class TurnToken(val generation: Long, val turnId: Long)
+    private data class TurnJobHandle(val token: TurnToken, val job: Job)
+    private data class PreparedListen(val generation: Long, val attempt: Long, val engine: SpeechInputEngine)
+    private data class PreparedSpeech(val token: OutputToken, val engine: SpeechOutputEngine, val input: SpeechInputEngine?, val text: String)
+    private sealed interface ListenCause {
+        data class Startup(val token: StartupToken) : ListenCause
+        data class OutputCompleted(val token: OutputToken) : ListenCause
+        data object Unmuted : ListenCause
+        data class Retry(val priorAttempt: Long) : ListenCause
+        data class EchoConsumed(val priorAttempt: Long) : ListenCause
+        data class TurnCompletedWithoutSpeech(val token: TurnToken) : ListenCause
+        data object OwnerSettled : ListenCause
+    }
+    private enum class MutedResumeOwner { STARTUP, LISTENING, THINKING, OUTPUT }
     private data class TerminationToken(val invalidatedGeneration: Long, val epoch: Long, val original: MettenVoiceState)
     private data class TerminationResources(
-        val job: Job?,
-        val input: SpeechInputEngine?,
-        val output: SpeechOutputEngine?,
-        val token: TerminationToken,
+        val job: TurnJobHandle?, val input: SpeechInputEngine?, val output: SpeechOutputEngine?, val token: TerminationToken,
     )
+
     private val _state = MutableStateFlow(MettenVoiceState())
     val state: StateFlow<MettenVoiceState> = _state.asStateFlow()
+    private val inputEngineGate = Any()
     private var generation = 0L
     private var listenAttempt = 0L
+    private var nextTurnId = 0L
     private var input: SpeechInputEngine? = null
     private var output: SpeechOutputEngine? = null
-    private var turnJob: Job? = null
+    private var activeTurn: TurnToken? = null
+    private var turnJob: TurnJobHandle? = null
     private var retryJob: Job? = null
     private var startupEpoch = 0L
     private var lifecycleEpoch = 0L
@@ -74,8 +79,10 @@ class MettenVoiceSessionController(
     private var pendingEchoText: String? = null
     private var startFailures = 0
     private var muted = false
+    private var mutedResumeOwner = MutedResumeOwner.LISTENING
     private val context = ArrayDeque<VoiceConversationTurn>()
     private val pendingPhoneTurns = mutableMapOf<String, String>()
+    private val acceptedPhoneTurns = mutableMapOf<String, String>()
 
     @Synchronized fun readiness(): MettenVoiceReadiness {
         val probeInput = input ?: inputFactory().also { input = it }
@@ -89,270 +96,328 @@ class MettenVoiceSessionController(
             val ready = readiness()
             if (!ready.microphonePermission || !ready.onDeviceSpeech.available || !ready.chatGptTextReady ||
                 (!ready.offlineTts.available && !ready.offlineTts.initializing)) {
-                _state.value = MettenVoiceState(MettenVoicePhase.FAILED, ready.reason)
-                return false
+                _state.value = MettenVoiceState(MettenVoicePhase.FAILED, ready.reason); return false
             }
             val id = ++generation
             lifecycleEpoch++
             val token = StartupToken(id, ++startupEpoch)
             startupToken = token
             invalidateListeningLocked()
+            activeTurn = null; turnJob = null; activeOutput = null
             muted = false
-            context.clear()
-            pendingPhoneTurns.clear()
-            pendingEchoText = null
+            context.clear(); pendingPhoneTurns.clear(); acceptedPhoneTurns.clear(); pendingEchoText = null
             _state.value = MettenVoiceState(MettenVoicePhase.STARTING)
             token to requireNotNull(output)
         }
         val (token, engine) = startup
         when (val result = foregroundLease.acquire(token.generation)) {
             VoiceForegroundAcquireResult.Acquired, VoiceForegroundAcquireResult.AlreadyOwned -> Unit
-            VoiceForegroundAcquireResult.StaleOrEnded -> {
-                terminateExact(token.generation, MettenVoiceState(MettenVoicePhase.FAILED, "Voice foreground service rejected an ended generation."))
-                return false
-            }
-            is VoiceForegroundAcquireResult.Failed -> {
-                terminateExact(token.generation, MettenVoiceState(MettenVoicePhase.FAILED, result.reason))
-                return false
-            }
+            VoiceForegroundAcquireResult.StaleOrEnded -> { terminateExact(token.generation, MettenVoiceState(MettenVoicePhase.FAILED, "Voice foreground service rejected an ended generation.")); return false }
+            is VoiceForegroundAcquireResult.Failed -> { terminateExact(token.generation, MettenVoiceState(MettenVoicePhase.FAILED, result.reason)); return false }
         }
-        if (!synchronized(this) { startupToken == token && generation == token.generation && _state.value.phase == MettenVoicePhase.STARTING }) {
-            foregroundLease.release(token.generation)
-            return false
-        }
-        try {
-            engine.initialize { capability -> onOutputInitialized(token, capability) }
-        } catch (failure: Exception) {
-            fail(token.generation, failure.message ?: "Offline Text-to-Speech could not initialize.")
-            return false
-        }
-        return true // Accepted startup; Android TTS initialization completes asynchronously.
+        if (!synchronized(this) { startupToken == token && generation == token.generation }) { foregroundLease.release(token.generation); return false }
+        try { engine.initialize { capability -> onOutputInitialized(token, capability) } }
+        catch (failure: Exception) { fail(token.generation, failure.message ?: "Offline Text-to-Speech could not initialize."); return false }
+        return true
     }
 
     private fun onOutputInitialized(token: StartupToken, capability: SpeechCapability) {
-        if (!synchronized(this) { startupToken == token && token.generation == generation && _state.value.phase == MettenVoicePhase.STARTING }) return
+        if (!synchronized(this) { startupToken == token && token.generation == generation }) return
         if (!capability.available) { fail(token.generation, capability.reason ?: "Offline Text-to-Speech is unavailable."); return }
-        when (coordinator.beginSession(token.generation, VoiceControlEventSink { event -> onPhoneEvent(token.generation, event) })) {
+        when (coordinator.beginSession(token.generation, VoiceControlEventSink { onPhoneEvent(token.generation, it) })) {
             VoiceSessionAdmission.ACTIVATED -> {
-                val activated = synchronized(this) {
-                    if (startupToken != token || token.generation != generation || _state.value.phase != MettenVoicePhase.STARTING) false
-                    else { startupToken = null; true }
+                val prepared = synchronized(this) {
+                    if (startupToken != token || token.generation != generation) null
+                    else {
+                        startupToken = null
+                        if (muted) { refreshMutedOwnerLocked(); null }
+                        else prepareListenLocked(token.generation, ListenCause.Startup(token))
+                    }
                 }
-                if (!activated) { coordinator.endSession(token.generation); return }
-                listen(token.generation)
+                if (prepared == null && !synchronized(this) { generation == token.generation && muted }) { coordinator.endSession(token.generation); return }
+                prepared?.let(::submitPreparedListen)
             }
             VoiceSessionAdmission.ALREADY_ACTIVE, VoiceSessionAdmission.STALE_OR_ENDED -> Unit
         }
     }
 
     fun setMuted(value: Boolean) {
-        val shouldListen = synchronized(this) {
-            if (_state.value.phase in setOf(MettenVoicePhase.IDLE, MettenVoicePhase.ENDING, MettenVoicePhase.FAILED)) return
-            muted = value
+        var stop: SpeechInputEngine? = null
+        var prepared: PreparedListen? = null
+        synchronized(this) {
+            if (_state.value.phase in setOf(MettenVoicePhase.IDLE, MettenVoicePhase.ENDING, MettenVoicePhase.FAILED) || muted == value) return
             if (value) {
-                invalidateListeningLocked(); input?.stopListening(); _state.value = MettenVoiceState(MettenVoicePhase.MUTED)
+                muted = true; invalidateListeningLocked(); stop = input
+                refreshMutedOwnerLocked(); _state.value = MettenVoiceState(MettenVoicePhase.MUTED)
+            } else {
+                refreshMutedOwnerLocked(); val owner = mutedResumeOwner; muted = false
+                when (owner) {
+                    MutedResumeOwner.OUTPUT -> if (activeOutput != null) _state.value = MettenVoiceState(MettenVoicePhase.SPEAKING) else prepared = prepareListenLocked(generation, ListenCause.Unmuted)
+                    MutedResumeOwner.STARTUP -> _state.value = MettenVoiceState(MettenVoicePhase.STARTING)
+                    MutedResumeOwner.THINKING -> _state.value = MettenVoiceState(MettenVoicePhase.THINKING)
+                    MutedResumeOwner.LISTENING -> prepared = prepareListenLocked(generation, ListenCause.Unmuted)
+                }
             }
-            !value && activeOutput == null
         }
-        if (shouldListen) listen(currentGeneration())
+        stop?.let(::submitStop); prepared?.let(::submitPreparedListen)
     }
 
     @Synchronized fun microphonePermissionMissing() {
-        if (_state.value.phase == MettenVoicePhase.IDLE || _state.value.phase == MettenVoicePhase.FAILED)
+        if (_state.value.phase in setOf(MettenVoicePhase.IDLE, MettenVoicePhase.FAILED))
             _state.value = MettenVoiceState(MettenVoicePhase.FAILED, "Microphone permission is required for Metten Voice.")
     }
 
     fun stop() {
-        val ended = synchronized(this) {
-            if (_state.value.phase == MettenVoicePhase.IDLE) return
-            _state.value = MettenVoiceState(MettenVoicePhase.ENDING)
-            generation
-        }
+        val ended = synchronized(this) { if (_state.value.phase == MettenVoicePhase.IDLE) return; _state.value = MettenVoiceState(MettenVoicePhase.ENDING); generation }
         terminateExact(ended, MettenVoiceState())
     }
 
-    private fun listen(id: Long) {
-        val attemptAndInput = synchronized(this) {
-            if (id != generation || muted || activeOutput != null || input == null || _state.value.phase in setOf(MettenVoicePhase.THINKING, MettenVoicePhase.SPEAKING, MettenVoicePhase.ENDING, MettenVoicePhase.FAILED)) return
-            retryJob?.cancel(); retryJob = null
-            val attempt = ++listenAttempt
-            _state.value = MettenVoiceState(MettenVoicePhase.LISTENING)
-            attempt to requireNotNull(input)
+    private fun prepareListenLocked(id: Long, cause: ListenCause): PreparedListen? {
+        if (id != generation || muted || activeOutput != null || input == null) return null
+        val valid = when (cause) {
+            is ListenCause.Startup -> cause.token.generation == id && startupToken == null
+            is ListenCause.OutputCompleted -> activeOutput == null && cause.token.generation == id
+            ListenCause.Unmuted -> !hasThinkingOwnershipLocked() && startupToken == null
+            is ListenCause.Retry -> cause.priorAttempt == listenAttempt && _state.value.phase == MettenVoicePhase.LISTENING
+            is ListenCause.EchoConsumed -> cause.priorAttempt + 1 == listenAttempt
+            is ListenCause.TurnCompletedWithoutSpeech -> activeTurn != cause.token && !hasThinkingOwnershipLocked()
+            ListenCause.OwnerSettled -> !hasThinkingOwnershipLocked() && startupToken == null
         }
-        val (attempt, engine) = attemptAndInput
-        engine.startListening { event -> onInput(id, attempt, event) }
+        if (!valid) return null
+        retryJob?.cancel(); retryJob = null
+        val attempt = ++listenAttempt
+        _state.value = MettenVoiceState(MettenVoicePhase.LISTENING)
+        return PreparedListen(id, attempt, requireNotNull(input))
     }
+
+    private fun submitPreparedListen(prepared: PreparedListen) = synchronized(inputEngineGate) {
+        val valid = synchronized(this) {
+            prepared.generation == generation && prepared.attempt == listenAttempt && _state.value.phase == MettenVoicePhase.LISTENING &&
+                !muted && activeOutput == null && input === prepared.engine
+        }
+        if (valid) prepared.engine.startListening { event -> onInput(prepared.generation, prepared.attempt, event) }
+    }
+    private fun submitStop(engine: SpeechInputEngine) = synchronized(inputEngineGate) { engine.stopListening() }
 
     private fun onInput(id: Long, attempt: Long, event: SpeechInputEvent) {
         if (!synchronized(this) { id == generation && attempt == listenAttempt && !muted && _state.value.phase == MettenVoicePhase.LISTENING }) return
         when (event) {
             SpeechInputEvent.Ready, SpeechInputEvent.SpeechStarted -> synchronized(this) { if (id == generation && attempt == listenAttempt) startFailures = 0 }
-            is SpeechInputEvent.Final -> {
-                val isOutputEcho = synchronized(this) {
-                    if (id != generation || attempt != listenAttempt) return
-                    startFailures = 0
-                    invalidateListeningLocked()
-                    val normalized = normalizeForEchoGuard(event.text)
-                    val echoed = normalized.isNotEmpty() && normalized == pendingEchoText
-                    pendingEchoText = null
-                    echoed
-                }
-                if (isOutputEcho) listen(id) else processTurn(id, event.text)
-            }
+            is SpeechInputEvent.Final -> acceptFinal(id, attempt, event.text)
             is SpeechInputEvent.RecoverableError -> {
-                val exhausted = synchronized(this) {
-                    if (event.kind == SpeechInputFailureKind.START_FAILURE) ++startFailures >= MAX_START_FAILURES else false
-                }
-                if (exhausted) fail(id, "The on-device recognizer repeatedly failed to start.")
-                else scheduleRetry(id, attempt, event.retryDelayMillis)
+                val exhausted = synchronized(this) { if (event.kind == SpeechInputFailureKind.START_FAILURE) ++startFailures >= MAX_START_FAILURES else false }
+                if (exhausted) fail(id, "The on-device recognizer repeatedly failed to start.") else scheduleRetry(id, attempt, event.retryDelayMillis)
             }
             is SpeechInputEvent.FatalError -> fail(id, event.reason)
-            is SpeechInputEvent.Partial -> Unit // Partial text is deliberately not logged or persisted.
+            is SpeechInputEvent.Partial -> Unit
         }
+    }
+
+    private fun acceptFinal(id: Long, attempt: Long, text: String) {
+        var echoListen: PreparedListen? = null
+        var turn: TurnToken? = null
+        var stop: SpeechInputEngine? = null
+        synchronized(this) {
+            if (id != generation || attempt != listenAttempt || muted || _state.value.phase != MettenVoicePhase.LISTENING) return
+            startFailures = 0
+            val normalized = normalizeForEchoGuard(text)
+            val echoed = normalized.isNotEmpty() && normalized == pendingEchoText
+            pendingEchoText = null
+            invalidateListeningLocked()
+            if (echoed) echoListen = prepareListenLocked(id, ListenCause.EchoConsumed(attempt))
+            else {
+                val token = TurnToken(id, ++nextTurnId)
+                activeTurn = token; _state.value = MettenVoiceState(MettenVoicePhase.THINKING)
+                turn = token; stop = input
+            }
+        }
+        echoListen?.let(::submitPreparedListen)
+        turn?.let { token -> stop?.let(::submitStop); launchTurn(token, text) }
     }
 
     private fun scheduleRetry(id: Long, attempt: Long, delayMillis: Long) {
         synchronized(this) {
-            if (id != generation || attempt != listenAttempt || _state.value.phase != MettenVoicePhase.LISTENING) return
+            if (id != generation || attempt != listenAttempt || muted || _state.value.phase != MettenVoicePhase.LISTENING) return
             retryJob?.cancel()
             retryJob = scope.launch {
                 delay(delayMillis.coerceIn(300, 2_000))
-                val rearm = synchronized(this@MettenVoiceSessionController) {
-                    id == generation && attempt == listenAttempt && !muted && _state.value.phase == MettenVoicePhase.LISTENING
-                }
-                if (rearm) listen(id)
+                val prepared = synchronized(this@MettenVoiceSessionController) { prepareListenLocked(id, ListenCause.Retry(attempt)) }
+                prepared?.let(::submitPreparedListen)
             }
         }
     }
 
-    private fun processTurn(id: Long, text: String) {
-        synchronized(this) {
-            if (id != generation) return
-            input?.stopListening()
-            _state.value = MettenVoiceState(MettenVoicePhase.THINKING)
+    private fun launchTurn(token: TurnToken, text: String) {
+        lateinit var job: Job
+        job = scope.launch(start = CoroutineStart.LAZY) { runExactTurn(token, text, job) }
+        val installed = synchronized(this) {
+            if (generation == token.generation && activeTurn == token) { turnJob = TurnJobHandle(token, job); true } else false
         }
-        turnJob = scope.launch {
-            try {
-                val turnContext = synchronized(this@MettenVoiceSessionController) {
-                    VoiceTurnContext(context.toList(), coordinator.status.value)
-                }
-                val decision = brain.decide(text, turnContext)
-                if (!synchronized(this@MettenVoiceSessionController) { id == generation }) return@launch
-                val command = decision.phoneCommand
-                if (command != null) {
-                    val requestId = UUID.randomUUID().toString()
-                    synchronized(this@MettenVoiceSessionController) { if (id == generation) pendingPhoneTurns[requestId] = text else return@launch }
-                    coordinator.accept(VoiceControlRequest(id, requestId, command))
-                } else if (decision.spokenText != null) {
-                    synchronized(this@MettenVoiceSessionController) { remember(text, decision.spokenText) }
-                    speak(id, decision.spokenText)
-                } else listen(id)
-            } catch (_: CancellationException) {
-            } catch (_: VoiceTurnProcessingException) {
-                speak(id, RECOVERABLE_TURN_FAILURE)
+        if (installed) job.start() else job.cancel()
+    }
+
+    private suspend fun runExactTurn(token: TurnToken, text: String, job: Job) {
+        try {
+            val turnContext = synchronized(this) { VoiceTurnContext(context.toList(), coordinator.status.value) }
+            val decision = brain.decide(text, turnContext)
+            val command = decision.phoneCommand
+            when {
+                command != null -> transferTurnToPhone(token, text, command)
+                decision.spokenText != null -> prepareTurnSpeech(token, text, decision.spokenText)?.let(::submitSpeech)
+                else -> settleTurnWithoutSpeech(token)
+            }
+        } catch (_: CancellationException) {
+        } catch (_: VoiceTurnProcessingException) {
+            prepareTurnSpeech(token, text, RECOVERABLE_TURN_FAILURE)?.let(::submitSpeech)
+        } finally {
+            synchronized(this) {
+                if (turnJob?.token == token && turnJob?.job === job) turnJob = null
+                // A result path transfers/settles ownership. Only an exceptional stale path may still own it.
+                if (activeTurn == token && token.generation != generation) activeTurn = null
             }
         }
+    }
+
+    private fun transferTurnToPhone(token: TurnToken, text: String, command: VoiceControlCommand) {
+        val request = synchronized(this) {
+            if (token.generation != generation || activeTurn != token) return
+            val requestId = UUID.randomUUID().toString()
+            pendingPhoneTurns[requestId] = text
+            activeTurn = null
+            if (muted) refreshMutedOwnerLocked()
+            VoiceControlRequest(token.generation, requestId, command)
+        }
+        coordinator.accept(request)
+    }
+
+    private fun prepareTurnSpeech(token: TurnToken, userText: String, spoken: String): PreparedSpeech? = synchronized(this) {
+        if (token.generation != generation || activeTurn != token) return null
+        remember(userText, spoken)
+        val prepared = installSpeechLocked(token.generation, spoken)
+        activeTurn = null
+        if (muted) { refreshMutedOwnerLocked(); null } else prepared
+    }
+
+    private fun settleTurnWithoutSpeech(token: TurnToken) {
+        val prepared = synchronized(this) {
+            if (token.generation != generation || activeTurn != token) return
+            activeTurn = null
+            if (muted) { refreshMutedOwnerLocked(); null }
+            else if (hasThinkingOwnershipLocked()) { _state.value = MettenVoiceState(MettenVoicePhase.THINKING); null }
+            else prepareListenLocked(token.generation, ListenCause.TurnCompletedWithoutSpeech(token))
+        }
+        prepared?.let(::submitPreparedListen)
     }
 
     private fun onPhoneEvent(id: Long, event: VoiceControlEvent) {
-        if (!synchronized(this) { id == generation && event.generation == id }) return
-        when (event) {
-            is VoiceControlEvent.Accepted -> {
-                synchronized(this) { pendingPhoneTurns.remove(event.requestId)?.let { remember(it, ACKNOWLEDGEMENT) } }
-                speak(id, ACKNOWLEDGEMENT)
-            }
-            is VoiceControlEvent.Rejected -> {
-                synchronized(this) { pendingPhoneTurns.remove(event.requestId) }
-                speak(id, if (event.reason == "PHONE_CONTROL_NOT_READY") "Phone control is not ready." else "Another phone task is already active.")
-            }
-            is VoiceControlEvent.Status -> {
-                synchronized(this) { pendingPhoneTurns.remove(event.requestId)?.let { remember(it, event.status.summary) } }
-                speak(id, event.status.summary)
-            }
-            is VoiceControlEvent.Completed -> {
-                val spoken = when (event.state) {
+        var preparedSpeech: PreparedSpeech? = null
+        var preparedListen: PreparedListen? = null
+        synchronized(this) {
+            if (id != generation || event.generation != id) return
+            val pendingUser = pendingPhoneTurns.remove(event.requestId)
+            val user = when (event) {
+                is VoiceControlEvent.Accepted -> pendingUser?.also { acceptedPhoneTurns[event.requestId] = it }
+                is VoiceControlEvent.Completed -> pendingUser ?: acceptedPhoneTurns.remove(event.requestId)
+                else -> pendingUser
+            } ?: return
+            val spoken = when (event) {
+                is VoiceControlEvent.Accepted -> ACKNOWLEDGEMENT
+                is VoiceControlEvent.Rejected -> if (event.reason == "PHONE_CONTROL_NOT_READY") "Phone control is not ready." else "Another phone task is already active."
+                is VoiceControlEvent.Status -> event.status.summary
+                is VoiceControlEvent.Completed -> when (event.state) {
                     VoiceControlTerminalState.SUCCEEDED -> event.summary
                     VoiceControlTerminalState.FAILED -> "The phone task did not complete: ${event.summary}"
                     VoiceControlTerminalState.CANCELLED -> if (event.cancellation == VoiceControlCancellationDisposition.USER_REQUEST) "Phone task cancelled." else null
                 }
-                synchronized(this) { pendingPhoneTurns.remove(event.requestId)?.let { user -> spoken?.let { remember(user, it) } } }
-                spoken?.let { speak(id, it) }
             }
+            if (spoken != null) remember(user, spoken)
+            if (muted) refreshMutedOwnerLocked()
+            else if (spoken != null) preparedSpeech = installSpeechLocked(id, spoken)
+            else if (hasThinkingOwnershipLocked()) _state.value = MettenVoiceState(MettenVoicePhase.THINKING)
+            else preparedListen = prepareListenLocked(id, ListenCause.OwnerSettled)
         }
+        preparedSpeech?.let(::submitSpeech); preparedListen?.let(::submitPreparedListen)
     }
 
-    private fun speak(id: Long, text: String) {
-        val speech = synchronized(this) {
-            if (id != generation || muted) return
-            invalidateListeningLocked()
-            input?.stopListening() // Conservative self-loop policy.
-            _state.value = MettenVoiceState(MettenVoicePhase.SPEAKING)
-            val token = OutputToken(id, ++outputId)
-            activeOutput = token
-            pendingEchoText = normalizeForEchoGuard(text)
-            (output ?: return) to token
-        } ?: return
-        val (engine, token) = speech
-        engine.speak(text) callback@{ event ->
-            if (!synchronized(this) { id == generation && activeOutput == token }) return@callback
+    private fun installSpeechLocked(id: Long, text: String): PreparedSpeech? {
+        if (id != generation || muted) return null
+        invalidateListeningLocked()
+        val token = OutputToken(id, ++outputId)
+        activeOutput = token
+        pendingEchoText = normalizeForEchoGuard(text)
+        _state.value = MettenVoiceState(MettenVoicePhase.SPEAKING)
+        return PreparedSpeech(token, output ?: return null, input, text)
+    }
+
+    private fun submitSpeech(speech: PreparedSpeech) {
+        speech.input?.let(::submitStop)
+        if (!synchronized(this) { speech.token.generation == generation && activeOutput == speech.token && !muted }) return
+        speech.engine.speak(speech.text) callback@{ event ->
             when (event) {
-                SpeechOutputEvent.Completed -> {
-                    val resume = synchronized(this) {
-                        if (activeOutput != token) false else { activeOutput = null; !muted }
-                    }
-                    if (resume) listen(id)
-                }
+                SpeechOutputEvent.Completed -> completeSpeech(speech.token)
                 is SpeechOutputEvent.Failed -> {
-                    synchronized(this) { if (activeOutput == token) activeOutput = null }
-                    fail(id, event.reason)
+                    val exact = synchronized(this) { if (activeOutput == speech.token && generation == speech.token.generation) { activeOutput = null; true } else false }
+                    if (exact) fail(speech.token.generation, event.reason)
                 }
                 SpeechOutputEvent.Started -> Unit
             }
         }
     }
 
+    private fun completeSpeech(token: OutputToken) {
+        val prepared = synchronized(this) {
+            if (token.generation != generation || activeOutput != token) return
+            activeOutput = null
+            when {
+                muted -> { refreshMutedOwnerLocked(); _state.value = MettenVoiceState(MettenVoicePhase.MUTED); null }
+                startupToken?.generation == generation -> { _state.value = MettenVoiceState(MettenVoicePhase.STARTING); null }
+                hasThinkingOwnershipLocked() -> { _state.value = MettenVoiceState(MettenVoicePhase.THINKING); null }
+                else -> prepareListenLocked(token.generation, ListenCause.OutputCompleted(token))
+            }
+        }
+        prepared?.let(::submitPreparedListen)
+    }
+
     private fun fail(id: Long, reason: String) = terminateExact(id, MettenVoiceState(MettenVoicePhase.FAILED, reason))
 
-    /** Invalidates under our lock, then invokes coordinator/engine/FGS callbacks without holding it. */
     private fun terminateExact(id: Long, terminal: MettenVoiceState) {
         val resources = synchronized(this) {
             if (id != generation) return
             generation++
             val terminationEpoch = ++lifecycleEpoch
-            startupToken = null
-            activeOutput = null
-            startFailures = 0
+            startupToken = null; activeOutput = null; activeTurn = null; startFailures = 0
             invalidateListeningLocked()
             val job = turnJob.also { turnJob = null }
             val speechInput = input.also { input = null }
             val speechOutput = output.also { output = null }
-            muted = false
-            context.clear()
-            pendingPhoneTurns.clear()
-            pendingEchoText = null
+            muted = false; context.clear(); pendingPhoneTurns.clear(); acceptedPhoneTurns.clear(); pendingEchoText = null
             _state.value = terminal
             TerminationResources(job, speechInput, speechOutput, TerminationToken(generation, terminationEpoch, terminal))
         }
-        resources.job?.cancel()
-        resources.input?.stopListening(); resources.input?.release()
+        resources.job?.job?.cancel()
+        resources.input?.let { synchronized(inputEngineGate) { it.stopListening(); it.release() } }
         resources.output?.stop(); resources.output?.release()
         coordinator.endSession(id)
         val release = foregroundLease.release(id)
         if (release is VoiceForegroundReleaseResult.Failed) synchronized(this) {
             if (generation == resources.token.invalidatedGeneration && lifecycleEpoch == resources.token.epoch && _state.value == resources.token.original) {
-                val message = if (resources.token.original.phase == MettenVoicePhase.FAILED) {
-                    listOfNotNull(resources.token.original.message, release.reason).distinct().joinToString(" ").take(320)
-                } else release.reason
+                val message = if (resources.token.original.phase == MettenVoicePhase.FAILED)
+                    listOfNotNull(resources.token.original.message, release.reason).distinct().joinToString(" ").take(320) else release.reason
                 _state.value = MettenVoiceState(MettenVoicePhase.FAILED, message)
             }
         }
     }
 
-    private fun invalidateListeningLocked() {
-        listenAttempt++
-        retryJob?.cancel(); retryJob = null
+    private fun hasThinkingOwnershipLocked() = activeTurn?.generation == generation || pendingPhoneTurns.isNotEmpty()
+    private fun refreshMutedOwnerLocked() {
+        mutedResumeOwner = when {
+            activeOutput != null -> MutedResumeOwner.OUTPUT
+            startupToken?.generation == generation -> MutedResumeOwner.STARTUP
+            hasThinkingOwnershipLocked() -> MutedResumeOwner.THINKING
+            else -> MutedResumeOwner.LISTENING
+        }
     }
-    @Synchronized private fun currentGeneration() = generation
+    private fun invalidateListeningLocked() { listenAttempt++; retryJob?.cancel(); retryJob = null }
     private fun remember(user: String, assistant: String) { context += VoiceConversationTurn(user, assistant); while (context.size > MAX_TURNS) context.removeFirst() }
     private fun normalizeForEchoGuard(text: String) = text.trim().lowercase().replace(Regex("\\s+"), " ")
     private companion object {
