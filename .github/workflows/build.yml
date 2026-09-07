@@ -87,11 +87,16 @@ jobs:
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --no-daemon
 
-      - name: Verify debug runtime contains pinned sherpa
+      - name: Verify provisioned pinned sherpa AAR
         run: |
           set -euo pipefail
-          ./gradlew :app:dependencies --configuration debugRuntimeClasspath > "$RUNNER_TEMP/debug-dependencies.txt"
-          grep -q 'sherpa-onnx-1.13.7.aar' "$RUNNER_TEMP/debug-dependencies.txt"
+          aar="app/libs/sherpa-onnx-1.13.7.aar"
+          test -f "$aar"
+          actual_size="$(stat -c %s "$aar")"
+          test "$actual_size" = "49113869"
+          printf '%s %s\n' \
+            'c4ef49e309f24fcee5c106b8a279481aaecaabb078cd37b2cd6e9a62cc8a73c8' \
+            "$aar" | sha256sum -c -
 
       - name: Inspect neural debug APK
         run: |
@@ -101,7 +106,7 @@ jobs:
           unzip -l "$apk" > "$RUNNER_TEMP/debug-apk.txt"
           grep -q 'assets/tts/kitten-nano-en-v0_8-fp32/model.fp32.onnx' "$RUNNER_TEMP/debug-apk.txt"
           grep -q 'assets/tts/kitten-nano-en-v0_8-fp32/metten-model-manifest.json' "$RUNNER_TEMP/debug-apk.txt"
-          grep -Eq 'lib/arm64-v8a/.*sherpa.*\.so' "$RUNNER_TEMP/debug-apk.txt"
+          grep -q 'lib/arm64-v8a/libsherpa-onnx-jni.so' "$RUNNER_TEMP/debug-apk.txt"
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
