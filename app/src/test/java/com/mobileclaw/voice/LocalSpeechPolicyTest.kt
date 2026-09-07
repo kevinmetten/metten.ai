@@ -13,6 +13,15 @@ class LocalSpeechPolicyTest {
         assertTrue(source.contains("Build.VERSION.SDK_INT < Build.VERSION_CODES.S"))
     }
 
+    @Test fun `input lifecycle operations always share posted main ordering`() {
+        val source = projectFile("src/main/java/com/mobileclaw/voice/AndroidOnDeviceSpeechInput.kt").readText()
+        assertTrue(Regex("override fun startListening\\([^=]+= onMain \\{").containsMatchIn(source))
+        assertTrue(source.contains("override fun stopListening() = onMain"))
+        assertTrue(source.contains("override fun release() = onMain"))
+        assertTrue(Regex("private fun onMain\\([^)]*\\) \\{ main\\.post\\(action\\) }").containsMatchIn(source))
+        assertFalse(source.contains("Looper.myLooper() == Looper.getMainLooper()"))
+    }
+
     @Test fun `output excludes network-required voices and owns shutdown`() {
         val source = projectFile("src/main/java/com/mobileclaw/voice/AndroidOfflineTextToSpeechOutput.kt").readText()
         assertTrue(source.contains("selectCompatibleOfflineVoice"))

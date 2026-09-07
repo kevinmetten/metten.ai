@@ -45,6 +45,12 @@ class MettenVoiceSessionController(
     private data class TurnJobHandle(val token: TurnToken, val job: Job)
     private data class PreparedListen(val generation: Long, val attempt: Long, val engine: SpeechInputEngine)
     private data class PreparedSpeech(val token: OutputToken, val engine: SpeechOutputEngine, val input: SpeechInputEngine?, val text: String)
+    private sealed interface StartupActivationOutcome {
+        data object Stale : StartupActivationOutcome
+        data object ActivatedMuted : StartupActivationOutcome
+        data class ActivatedListening(val prepared: PreparedListen) : StartupActivationOutcome
+        data object Inconsistent : StartupActivationOutcome
+    }
     private sealed interface ListenCause {
         data class Startup(val token: StartupToken) : ListenCause
         data class OutputCompleted(val token: OutputToken) : ListenCause
@@ -126,16 +132,27 @@ class MettenVoiceSessionController(
         if (!capability.available) { fail(token.generation, capability.reason ?: "Offline Text-to-Speech is unavailable."); return }
         when (coordinator.beginSession(token.generation, VoiceControlEventSink { onPhoneEvent(token.generation, it) })) {
             VoiceSessionAdmission.ACTIVATED -> {
-                val prepared = synchronized(this) {
-                    if (startupToken != token || token.generation != generation) null
+                val outcome = synchronized(this) {
+                    if (startupToken != token || token.generation != generation) StartupActivationOutcome.Stale
                     else {
                         startupToken = null
-                        if (muted) { refreshMutedOwnerLocked(); null }
-                        else prepareListenLocked(token.generation, ListenCause.Startup(token))
+                        if (muted) {
+                            refreshMutedOwnerLocked()
+                            _state.value = MettenVoiceState(MettenVoicePhase.MUTED)
+                            StartupActivationOutcome.ActivatedMuted
+                        } else {
+                            prepareListenLocked(token.generation, ListenCause.Startup(token))
+                                ?.let { StartupActivationOutcome.ActivatedListening(it) }
+                                ?: StartupActivationOutcome.Inconsistent
+                        }
                     }
                 }
-                if (prepared == null && !synchronized(this) { generation == token.generation && muted }) { coordinator.endSession(token.generation); return }
-                prepared?.let(::submitPreparedListen)
+                when (outcome) {
+                    StartupActivationOutcome.Stale -> coordinator.endSession(token.generation)
+                    StartupActivationOutcome.ActivatedMuted -> Unit
+                    is StartupActivationOutcome.ActivatedListening -> submitPreparedListen(outcome.prepared)
+                    StartupActivationOutcome.Inconsistent -> fail(token.generation, "Voice could not start its first listening attempt.")
+                }
             }
             VoiceSessionAdmission.ALREADY_ACTIVE, VoiceSessionAdmission.STALE_OR_ENDED -> Unit
         }
@@ -341,17 +358,20 @@ class MettenVoiceSessionController(
 
     private fun installSpeechLocked(id: Long, text: String): PreparedSpeech? {
         if (id != generation || muted) return null
+        val engine = output ?: return null
         invalidateListeningLocked()
         val token = OutputToken(id, ++outputId)
         activeOutput = token
         pendingEchoText = normalizeForEchoGuard(text)
         _state.value = MettenVoiceState(MettenVoicePhase.SPEAKING)
-        return PreparedSpeech(token, output ?: return null, input, text)
+        return PreparedSpeech(token, engine, input, text)
     }
 
     private fun submitSpeech(speech: PreparedSpeech) {
         speech.input?.let(::submitStop)
-        if (!synchronized(this) { speech.token.generation == generation && activeOutput == speech.token && !muted }) return
+        if (!synchronized(this) {
+                speech.token.generation == generation && activeOutput == speech.token && output === speech.engine
+            }) return
         speech.engine.speak(speech.text) callback@{ event ->
             when (event) {
                 SpeechOutputEvent.Completed -> completeSpeech(speech.token)
