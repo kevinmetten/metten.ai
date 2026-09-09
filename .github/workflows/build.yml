@@ -106,6 +106,7 @@ jobs:
           unzip -l "$apk" > "$RUNNER_TEMP/debug-apk.txt"
           grep -q 'assets/tts/kitten-nano-en-v0_8-fp32/model.fp32.onnx' "$RUNNER_TEMP/debug-apk.txt"
           grep -q 'assets/tts/kitten-nano-en-v0_8-fp32/metten-model-manifest.json' "$RUNNER_TEMP/debug-apk.txt"
+          grep -q 'assets/tts/kitten-nano-en-v0_8-fp32/espeak-ng-data/.' "$RUNNER_TEMP/debug-apk.txt"
           grep -q 'lib/arm64-v8a/libsherpa-onnx-jni.so' "$RUNNER_TEMP/debug-apk.txt"
 
       - name: Upload debug APK
