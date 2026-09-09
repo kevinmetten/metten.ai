@@ -1,13 +1,15 @@
 package com.mobileclaw.voice
 
-import android.content.res.AssetManager
+import android.content.Context
 import com.k2fsa.sherpa.onnx.OfflineTts
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsKittenModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
+import java.io.File
 
 /** Debug-only sherpa adapter. Phase 1 intentionally uses complete-waveform generation. */
-class SherpaKittenTtsSynthesizer(private val assets: AssetManager) : LocalTtsSynthesizer {
+class SherpaKittenTtsSynthesizer(context: Context) : LocalTtsSynthesizer {
+    private val applicationContext = context.applicationContext
     @Volatile private var cancelled = false
     private var tts: OfflineTts? = null
 
@@ -15,14 +17,24 @@ class SherpaKittenTtsSynthesizer(private val assets: AssetManager) : LocalTtsSyn
         var candidate: OfflineTts? = null
         val result = runCatching {
             check(tts == null) { "Neural speech is already initialized." }
+            val externalFilesRoot = checkNotNull(applicationContext.getExternalFilesDir(null)) {
+                "External files storage is unavailable for neural speech data."
+            }
+            val dataDirectory = AssetTreeMaterializer(
+                list = { applicationContext.assets.list(it).orEmpty() },
+                open = applicationContext.assets::open,
+            ).materialize(KittenTtsModelSpec.DATA_DIR, externalFilesRoot)
+            check(dataDirectory.isAbsolute && dataDirectory.isDirectory && dataDirectory.walkTopDown().any(File::isFile)) {
+                "Kitten espeak data was not materialized to a filesystem directory."
+            }
             val kitten = OfflineTtsKittenModelConfig(
                 model = KittenTtsModelSpec.MODEL,
                 voices = KittenTtsModelSpec.VOICES,
                 tokens = KittenTtsModelSpec.TOKENS,
-                dataDir = KittenTtsModelSpec.DATA_DIR,
+                dataDir = dataDirectory.absolutePath,
             )
             candidate = OfflineTts(
-                assetManager = assets,
+                assetManager = applicationContext.assets,
                 config = OfflineTtsConfig(model = OfflineTtsModelConfig(kitten = kitten, numThreads = 2)),
             )
             val engine = checkNotNull(candidate)
