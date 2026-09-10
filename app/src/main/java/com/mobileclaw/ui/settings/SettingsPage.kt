@@ -69,7 +69,7 @@ import com.mobileclaw.llm.OpenAiGateway
 import com.mobileclaw.llm.ChatGptModel
 import com.mobileclaw.memory.db.VideoGenerationTaskEntity
 import com.mobileclaw.perception.VirtualDisplayManager
-import com.mobileclaw.realtime.RealtimeVoicePhase
+import com.mobileclaw.voice.MettenVoicePhase
 import com.mobileclaw.ui.ClawColors
 import com.mobileclaw.ui.ClawIconTile
 import com.mobileclaw.ui.ClawPageHeader
@@ -136,11 +136,11 @@ internal fun aiBasicsRootSections(): List<AiBasicsRootSection> = listOf(
 internal enum class ChatGptAccountAction { SIGN_IN, DEVICE_CODE, START_VOICE, END_VOICE, MUTE_VOICE, SIGN_OUT }
 
 /** The action contract consumed by [ChatGptAccountCard] for its signed-out and signed-in states. */
-internal fun chatGptAccountActions(signedIn: Boolean, voicePhase: RealtimeVoicePhase): Set<ChatGptAccountAction> = when {
+internal fun chatGptAccountActions(signedIn: Boolean, voicePhase: MettenVoicePhase): Set<ChatGptAccountAction> = when {
     !signedIn -> setOf(ChatGptAccountAction.SIGN_IN, ChatGptAccountAction.DEVICE_CODE)
-    voicePhase in setOf(RealtimeVoicePhase.IDLE, RealtimeVoicePhase.FAILED) ->
+    voicePhase in setOf(MettenVoicePhase.IDLE, MettenVoicePhase.FAILED) ->
         setOf(ChatGptAccountAction.START_VOICE, ChatGptAccountAction.SIGN_OUT)
-    voicePhase in setOf(RealtimeVoicePhase.CONNECTED, RealtimeVoicePhase.MUTED) ->
+    voicePhase in setOf(MettenVoicePhase.LISTENING, MettenVoicePhase.MUTED) ->
         setOf(ChatGptAccountAction.END_VOICE, ChatGptAccountAction.MUTE_VOICE, ChatGptAccountAction.SIGN_OUT)
     else -> setOf(ChatGptAccountAction.END_VOICE, ChatGptAccountAction.SIGN_OUT)
 }
@@ -720,11 +720,11 @@ fun SettingsPage(
 private fun ChatGptAccountCard(app: ClawApplication, c: ClawColors) {
     val manager = app.chatGptAuthManager
     val state by manager.state.collectAsState()
-    val voiceState by app.realtimeVoiceController.state.collectAsState()
+    val voiceState by app.mettenVoiceController.state.collectAsState()
     val actions = chatGptAccountActions(state is ChatGptAuthState.SignedIn, voiceState.phase)
     val context = LocalContext.current
     val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) app.startLiveVoice() else app.realtimeVoiceController.microphonePermissionMissing()
+        if (granted) app.startLiveVoice() else app.mettenVoiceController.microphonePermissionMissing()
     }
     Box(Modifier.fillMaxWidth().testTag("chatgpt_account_card")) {
         SettingsHubCard(c) {
@@ -763,16 +763,23 @@ private fun ChatGptAccountCard(app: ClawApplication, c: ClawColors) {
                     current.account.planType?.let { Text(it.replaceFirstChar(Char::uppercase), color = c.subtext, fontSize = 12.sp) }
                     Text(
                         when (voiceState.phase) {
-                            RealtimeVoicePhase.IDLE -> "Manual full-duplex voice test"
-                            RealtimeVoicePhase.CONNECTING -> "Connecting…"
-                            RealtimeVoicePhase.CONNECTED -> "Live"
-                            RealtimeVoicePhase.MUTED -> "Muted"
-                            RealtimeVoicePhase.ENDING -> "Ending…"
-                            RealtimeVoicePhase.FAILED -> voiceState.message ?: "Live Voice failed."
+                            MettenVoicePhase.IDLE -> "Metten Voice: IDLE"
+                            MettenVoicePhase.STARTING -> "Metten Voice: STARTING"
+                            MettenVoicePhase.LISTENING -> "Metten Voice: LISTENING"
+                            MettenVoicePhase.THINKING -> "Metten Voice: THINKING"
+                            MettenVoicePhase.SPEAKING -> "Metten Voice: SPEAKING"
+                            MettenVoicePhase.MUTED -> "Metten Voice: MUTED"
+                            MettenVoicePhase.ENDING -> "Metten Voice: ENDING"
+                            MettenVoicePhase.FAILED -> voiceState.message ?: "Metten Voice failed."
                         },
-                        color = if (voiceState.phase == RealtimeVoicePhase.FAILED) MaterialTheme.colorScheme.error else c.subtext,
+                        color = if (voiceState.phase == MettenVoicePhase.FAILED) MaterialTheme.colorScheme.error else c.subtext,
                         fontSize = 12.sp,
                     )
+                    val voiceReadiness = app.mettenVoiceController.readiness()
+                    Text("On-device speech recognition: ${if (voiceReadiness.onDeviceSpeech.available) "Available" else "Unavailable"}", color = c.subtext, fontSize = 12.sp)
+                    Text("Offline TTS: ${when { voiceReadiness.offlineTts.initializing -> "Initializing"; voiceReadiness.offlineTts.available -> "Available"; else -> "Unavailable" }}", color = c.subtext, fontSize = 12.sp)
+                    Text("ChatGPT text: ${if (voiceReadiness.chatGptTextReady) "Ready" else "Not ready"}", color = c.subtext, fontSize = 12.sp)
+                    Text("Phone control: ${app.deviceReadinessEngine.evaluate(com.mobileclaw.permission.DeviceCapability.PHONE_CONTROL).level.name.lowercase().replaceFirstChar(Char::uppercase)}", color = c.subtext, fontSize = 12.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (ChatGptAccountAction.START_VOICE in actions) {
                             Button(
@@ -785,17 +792,17 @@ private fun ChatGptAccountCard(app: ClawApplication, c: ClawColors) {
                                 },
                                 modifier = Modifier.testTag("live_voice_start"),
                                 colors = ButtonDefaults.buttonColors(containerColor = c.text, contentColor = c.bg),
-                            ) { Text("Start Live Voice") }
+                            ) { Text("Start Metten Voice") }
                         } else {
                             OutlinedButton(onClick = app::endLiveVoice, modifier = Modifier.testTag("live_voice_end"), border = androidx.compose.foundation.BorderStroke(0.8.dp, c.border)) {
                                 Text("End", color = c.text)
                             }
                             if (ChatGptAccountAction.MUTE_VOICE in actions) {
                                 OutlinedButton(
-                                    onClick = { app.realtimeVoiceController.setMuted(voiceState.phase != RealtimeVoicePhase.MUTED) },
+                                    onClick = { app.mettenVoiceController.setMuted(voiceState.phase != MettenVoicePhase.MUTED) },
                                     modifier = Modifier.testTag("live_voice_mute"),
                                     border = androidx.compose.foundation.BorderStroke(0.8.dp, c.border),
-                                ) { Text(if (voiceState.phase == RealtimeVoicePhase.MUTED) "Unmute" else "Mute", color = c.text) }
+                                ) { Text(if (voiceState.phase == MettenVoicePhase.MUTED) "Unmute" else "Mute", color = c.text) }
                             }
                         }
                     }

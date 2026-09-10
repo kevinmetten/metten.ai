@@ -5,6 +5,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -20,7 +21,7 @@ class ChatGptRealtimeSessionControllerTest {
         assertEquals(RealtimeVoicePhase.CONNECTED, harness.controller.state.value.phase)
         harness.controller.setMuted(true)
         assertEquals(RealtimeVoicePhase.MUTED, harness.controller.state.value.phase)
-        assertTrue(harness.last.muted)
+        assertTrue(harness.last.mutedState)
         harness.controller.setMuted(false)
         assertEquals(RealtimeVoicePhase.CONNECTED, harness.controller.state.value.phase)
         harness.controller.stop()
@@ -81,19 +82,22 @@ class ChatGptRealtimeSessionControllerTest {
         val scope = TestScope(StandardTestDispatcher())
         var behavior = initial
         val transports = mutableListOf<FakeTransport>()
-        val controller = ChatGptRealtimeSessionController(scope) {
-            FakeTransport { behavior() }.also(transports::add)
-        }
+        val controller = ChatGptRealtimeSessionController(
+            scope = scope,
+            transports = RealtimeVoiceTransportFactory {
+                FakeTransport { behavior() }.also(transports::add)
+            },
+        )
         val last get() = transports.last()
     }
 
     private class FakeTransport(private val behavior: suspend () -> Unit) : RealtimeVoiceTransport {
         var closeCount = 0
         val closed get() = closeCount > 0
-        var muted = false
+        var mutedState = false
         var callback: ((RealtimeVoiceException?) -> Unit)? = null
         override suspend fun connect(onDisconnected: (RealtimeVoiceException?) -> Unit) { callback = onDisconnected; behavior() }
-        override fun setMuted(muted: Boolean) { this.muted = muted }
+        override fun setMuted(muted: Boolean) { mutedState = muted }
         override fun close() { closeCount++ }
     }
 }
