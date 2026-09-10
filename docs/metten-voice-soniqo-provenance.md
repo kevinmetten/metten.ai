@@ -1,8 +1,15 @@
 # Metten Voice Soniqo candidate provenance
 
-The debug conversational candidate uses `audio.soniqo:speech:0.0.20`, inspected at
+The debug conversational candidate uses Soniqo speech-android 0.0.20, built from
 speech-android commit `a019eaf2896443c5e889a3f26463b81c42e9db1f` with speech-core
-commit `c2cdcf2f1b90f15acac640cf8cf5233ed1f388a9`.
+commit `c2cdcf2f1b90f15acac640cf8cf5233ed1f388a9`. The pinned artifact is
+`app/libs/soniqo-speech-0.0.20-metten-onnx-only.aar`.
+
+* ONNX Runtime: 1.27.0.
+* LiteRT: intentionally disabled in the Metten Soniqo build. Metten's separate
+  LiteRT-LM runtime remains unchanged.
+* AAR byte size: `PENDING_ONE_TIME_BUILD`.
+* AAR SHA-256: `PENDING_ONE_TIME_BUILD`.
 
 Version 0.0.20 is selected because its Android SDK is compatible with compileSdk 35.
 Version 0.0.21 moved to compileSdk 37 and newer Android/OkHttp dependencies that are
