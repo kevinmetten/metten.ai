@@ -192,7 +192,7 @@ jobs:
     permissions:
       contents: write
     env:
-      METTEN_BRANCH: codex/continue-pr-#37-with-soniqo-build-adjustments
+      METTEN_BRANCH: codex/implement-full-duplex-conversational-speech-path
       SPEECH_ANDROID_SHA: a019eaf2896443c5e889a3f26463b81c42e9db1f
       SPEECH_CORE_SHA: c2cdcf2f1b90f15acac640cf8cf5233ed1f388a9
       ORT_VERSION: 1.27.0
@@ -207,7 +207,7 @@ jobs:
       - name: Checkout the existing Metten PR branch
         uses: actions/checkout@v4
         with:
-          ref: codex/continue-pr-#37-with-soniqo-build-adjustments
+          ref: codex/implement-full-duplex-conversational-speech-path
           fetch-depth: 0
 
       - name: Remember the branch head used by this build
