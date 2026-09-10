@@ -137,7 +137,12 @@ internal class SoniqoConversationalSpeechSession(
             pipeline
         } ?: return post { listener(SpeechInputEvent.FatalError("Soniqo is not prepared.")) }
         value.resumeListening()
-        capture.start { samples -> synchronized(lock) { if (!muted && !initialization.isReleased()) pipeline }?.pushAudio(samples) }
+        capture.start { samples ->
+            val activePipeline: SpeechPipeline? = synchronized(lock) {
+                if (!muted && !initialization.isReleased()) pipeline else null
+            }
+            activePipeline?.pushAudio(samples)
+        }
             .onSuccess { started ->
                 interruption.configure(started.acousticEchoCancelerEnabled)
                 Log.i(TAG, if (started.acousticEchoCancelerEnabled) "Barge-in confirmation: 500ms, AEC enabled" else "Barge-in confirmation: 1000ms, AEC unavailable")

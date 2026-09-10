@@ -45,6 +45,24 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew scripts/provision_kitten_tts_model.sh
 
+      - name: Provision pinned neural speech artifacts
+        run: scripts/provision_kitten_tts_model.sh
+
+      - name: Compile debug Voice candidate
+        run: ./gradlew :app:compileDebugKotlin --no-daemon
+
+      - name: Test debug
+        run: |
+          ./gradlew :app:testDebugUnitTest --no-daemon \
+            --tests 'com.mobileclaw.voice.*' \
+            --tests 'com.mobileclaw.agent.VoiceAgentCoordinatorTest' \
+            --tests 'com.mobileclaw.agent.PriorGenerationSettlementBarrierTest' \
+            --tests 'com.mobileclaw.agent.AgentTaskSubmissionServiceTest' \
+            --tests 'com.mobileclaw.realtime.ChatGptRealtimeSessionControllerTest' \
+            --tests 'com.mobileclaw.realtime.RealtimeSidebandLifecycleTest' \
+            --tests 'com.mobileclaw.realtime.VoiceForegroundServicePolicyTest' \
+            --tests 'com.mobileclaw.ui.settings.AiBasicsReachabilityTest'
+
       - name: Test release isolation
         run: |
           ./gradlew :app:testReleaseUnitTest --no-daemon \
@@ -72,21 +90,6 @@ jobs:
             echo "Release runtime unexpectedly contains Soniqo."
             exit 1
           fi
-
-      - name: Provision pinned neural speech artifacts
-        run: scripts/provision_kitten_tts_model.sh
-
-      - name: Test debug
-        run: |
-          ./gradlew :app:testDebugUnitTest --no-daemon \
-            --tests 'com.mobileclaw.voice.*' \
-            --tests 'com.mobileclaw.agent.VoiceAgentCoordinatorTest' \
-            --tests 'com.mobileclaw.agent.PriorGenerationSettlementBarrierTest' \
-            --tests 'com.mobileclaw.agent.AgentTaskSubmissionServiceTest' \
-            --tests 'com.mobileclaw.realtime.ChatGptRealtimeSessionControllerTest' \
-            --tests 'com.mobileclaw.realtime.RealtimeSidebandLifecycleTest' \
-            --tests 'com.mobileclaw.realtime.VoiceForegroundServicePolicyTest' \
-            --tests 'com.mobileclaw.ui.settings.AiBasicsReachabilityTest'
 
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --no-daemon
