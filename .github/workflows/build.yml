@@ -128,6 +128,16 @@ jobs:
             echo "Soniqo candidate unexpectedly packages sherpa JNI."
             exit 1
           fi
+          prebuilt_dir="$(find "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+          test -n "$prebuilt_dir"
+          readelf_bin="$prebuilt_dir/bin/llvm-readelf"
+          if [ ! -x "$readelf_bin" ]; then
+            echo "Expected executable llvm-readelf at: $readelf_bin" >&2
+            ls -la "$prebuilt_dir/bin" | grep -E 'llvm-readelf|llvm-readobj' || true
+            exit 1
+          fi
+          echo "Using llvm-readelf: $readelf_bin"
+          ls -l "$readelf_bin"
           while IFS= read -r abi; do
             abi_dir="$native_root/$abi"
             test -d "$abi_dir"
@@ -135,8 +145,6 @@ jobs:
             test "$(find "$abi_dir" -maxdepth 1 -name 'libLiteRt.so' -type f | wc -l)" -eq 1
             test -f "$abi_dir/libspeech_android.so"
             test ! -f "$abi_dir/libsherpa-onnx-jni.so"
-            readelf_bin="$(find "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt" -name llvm-readelf -type f | head -n 1)"
-            test -x "$readelf_bin"
             if "$readelf_bin" -d "$abi_dir/libspeech_android.so" | grep -q 'Shared library: \[libLiteRt.so\]'; then
               echo "$abi libspeech_android.so unexpectedly depends on libLiteRt.so."
               exit 1
@@ -298,15 +306,30 @@ jobs:
           inspect="$RUNNER_TEMP/soniqo-aar"
           mkdir -p "$inspect"
           unzip -q "$source_aar" -d "$inspect"
+          echo 'Soniqo AAR native entries:'
+          unzip -Z1 "$source_aar" | grep -E '(^|/)jni/|libspeech_android|libonnxruntime|libLiteRt' || true
           if find "$inspect" -name libLiteRt.so -print -quit | grep -q .; then
             echo 'Soniqo AAR unexpectedly contains LiteRT.'
             exit 1
           fi
-          readelf_bin="$(find "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt" -name llvm-readelf -type f | head -n 1)"
-          test -x "$readelf_bin"
+          prebuilt_dir="$(find "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+          test -n "$prebuilt_dir"
+          readelf_bin="$prebuilt_dir/bin/llvm-readelf"
+          if [ ! -x "$readelf_bin" ]; then
+            echo "Expected executable llvm-readelf at: $readelf_bin" >&2
+            ls -la "$prebuilt_dir/bin" | grep -E 'llvm-readelf|llvm-readobj' || true
+            exit 1
+          fi
+          echo "Using llvm-readelf: $readelf_bin"
+          ls -l "$readelf_bin"
           for abi in arm64-v8a x86_64; do
-            test -f "$inspect/jni/$abi/libspeech_android.so"
-            test -f "$inspect/jni/$abi/libonnxruntime.so"
+            for library in libspeech_android.so libonnxruntime.so; do
+              required_path="$inspect/jni/$abi/$library"
+              if [ ! -f "$required_path" ]; then
+                echo "Missing required Soniqo AAR native library: jni/$abi/$library" >&2
+                exit 1
+              fi
+            done
             if "$readelf_bin" -d "$inspect/jni/$abi/libspeech_android.so" | grep -q 'Shared library: \[libLiteRt.so\]'; then
               echo "$abi libspeech_android.so unexpectedly depends on LiteRT."
               exit 1
