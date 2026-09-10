@@ -53,7 +53,7 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.1.8937393" >> $GITHUB_ENV
 
       - name: Grant execute permission for gradlew
-        run: chmod +x gradlew scripts/provision_kitten_tts_model.sh
+        run: chmod +x gradlew scripts/provision_kitten_tts_model.sh scripts/verify_soniqo_aar.sh
 
       - name: Provision pinned neural speech artifacts
         run: scripts/provision_kitten_tts_model.sh
@@ -243,8 +243,8 @@ jobs:
 
       - name: Install pinned Android native toolchain
         run: |
-          sdkmanager 'platforms;android-35' 'ndk;25.1.8937393' 'cmake;3.22.1'
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.1.8937393" >> "$GITHUB_ENV"
+          sdkmanager 'platforms;android-35' 'ndk;29.0.14206865' 'cmake;3.22.1'
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
 
       - name: Provision ONNX Runtime 1.27.0 only
         working-directory: .soniqo-build
@@ -263,15 +263,20 @@ jobs:
           done
           if compgen -G "$RUNNER_TEMP/ort-aar/headers/*.h" >/dev/null; then
             cp -R "$RUNNER_TEMP/ort-aar/headers/." ort/include/
-          else
-            headers="$RUNNER_TEMP/onnxruntime-$ORT_VERSION.tar.gz"
-            curl --fail --location --retry 3 \
-              "https://github.com/microsoft/onnxruntime/archive/refs/tags/v$ORT_VERSION.tar.gz" \
-              --output "$headers"
-            tar -xzf "$headers" -C "$RUNNER_TEMP"
-            cp -R "$RUNNER_TEMP/onnxruntime-$ORT_VERSION/include/onnxruntime/core/session/." ort/include/
           fi
+          for header in \
+            onnxruntime_c_api.h \
+            onnxruntime_ep_c_api.h \
+            onnxruntime_float16.h; do
+            if [ ! -f "ort/include/$header" ]; then
+              curl --fail --location --retry 3 \
+                "https://raw.githubusercontent.com/microsoft/onnxruntime/v$ORT_VERSION/include/onnxruntime/core/session/$header" \
+                --output "ort/include/$header"
+            fi
+          done
           test -f ort/include/onnxruntime_c_api.h
+          test -f ort/include/onnxruntime_ep_c_api.h
+          test -f ort/include/onnxruntime_float16.h
           test -f ort/lib/arm64-v8a/libonnxruntime.so
           test -f ort/lib/x86_64/libonnxruntime.so
           if find "$PWD" -name libLiteRt.so -print -quit | grep -q .; then
@@ -286,6 +291,7 @@ jobs:
       - name: Inspect and pin the ONNX-only AAR
         run: |
           set -euo pipefail
+          chmod +x scripts/verify_soniqo_aar.sh
           source_aar=".soniqo-build/sdk/build/outputs/aar/sdk-release.aar"
           target_aar="app/libs/soniqo-speech-0.0.20-metten-onnx-only.aar"
           test -f "$source_aar"
