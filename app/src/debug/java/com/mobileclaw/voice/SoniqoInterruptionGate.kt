@@ -54,8 +54,15 @@ internal class SoniqoInterruptionGate(
     private fun confirm(id: Long, output: PlaybackIdentity) {
         val emit = synchronized(this) {
             val value = segment
-            if (closed || value?.id != id || value.output != output || value.confirmed || currentOutput() != output) false
-            else { value.confirmed = true; timer = null; true }
+            if (closed || value?.id != id || value.output != output || value.confirmed) false
+            else {
+                timer = null
+                when (currentOutput()) {
+                    output -> { value.confirmed = true; true }
+                    null -> { value.confirmed = true; false }
+                    else -> false
+                }
+            }
         }
         if (emit) emitConfirmed()
     }

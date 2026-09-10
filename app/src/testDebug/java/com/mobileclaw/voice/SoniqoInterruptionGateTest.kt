@@ -22,11 +22,26 @@ class SoniqoInterruptionGateTest {
         assertTrue(h.gate.allowFinal())
     }
 
-    @Test fun `stale output and muted speech cannot interrupt`() {
+    @Test fun `replacement output keeps old segment stale and ineligible`() {
         val h = Harness()
         h.gate.speechStarted(h.output, muted = false)
         h.output = PlaybackIdentity("new", 2); h.scheduler.fireAll()
         assertEquals(0, h.interruptions)
+        h.gate.speechEnded()
+        assertFalse(h.gate.allowFinal())
+    }
+
+    @Test fun `output finishing while speech continues past threshold preserves final without interruption`() {
+        val h = Harness()
+        h.gate.speechStarted(h.output, muted = false)
+        h.output = null; h.scheduler.fireAll()
+        assertEquals(0, h.interruptions)
+        h.gate.speechEnded()
+        assertTrue(h.gate.allowFinal())
+    }
+
+    @Test fun `muted speech cannot interrupt`() {
+        val h = Harness()
         h.gate.speechStarted(h.output, muted = true); h.scheduler.fireAll()
         assertEquals(0, h.interruptions)
     }
