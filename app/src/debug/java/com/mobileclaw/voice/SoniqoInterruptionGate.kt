@@ -11,12 +11,13 @@ internal class SoniqoInterruptionGate(
     private val currentOutput: () -> PlaybackIdentity?,
     private val emitConfirmed: () -> Unit,
 ) {
-    private data class Segment(val id: Long, val output: PlaybackIdentity, var confirmed: Boolean = false)
+    private enum class Disposition { ALLOW, DISCARD }
+    private data class Segment(val id: Long, val output: PlaybackIdentity?, var confirmed: Boolean = output == null)
     private var thresholdMillis = CONSERVATIVE_CONFIRMATION_MS
     private var nextSegment = 0L
     private var segment: Segment? = null
     private var timer: CancellableTimer? = null
-    private var discardNextFinal = false
+    private val completed = ArrayDeque<Disposition>()
     private var closed = false
 
     @Synchronized fun configure(acousticEchoCancelerEnabled: Boolean) {
@@ -26,28 +27,29 @@ internal class SoniqoInterruptionGate(
 
     @Synchronized fun speechStarted(output: PlaybackIdentity?, muted: Boolean) {
         cancelPending()
-        discardNextFinal = false
-        if (closed || muted || output == null) return
+        if (closed || muted) return
         val value = Segment(++nextSegment, output)
         segment = value
-        timer = scheduler.schedule(thresholdMillis) { confirm(value.id, value.output) }
+        if (output != null) timer = scheduler.schedule(thresholdMillis) { confirm(value.id, output) }
     }
 
     @Synchronized fun speechEnded() {
         val value = segment ?: return
-        if (!value.confirmed) discardNextFinal = true
+        completed += if (value.confirmed) Disposition.ALLOW else Disposition.DISCARD
         cancelPending()
         segment = null
     }
 
-    /** A confirmed segment remains eligible; a short during-output echo consumes one final. */
+    /** Finals consume completed VAD segments in order; later speech cannot erase an older discard. */
     @Synchronized fun allowFinal(): Boolean {
-        if (discardNextFinal) { discardNextFinal = false; return false }
-        return segment?.confirmed != false
+        return when (completed.removeFirstOrNull()) {
+            Disposition.DISCARD -> false
+            Disposition.ALLOW, null -> segment?.confirmed != false
+        }
     }
 
-    @Synchronized fun muted() { cancelPending(); segment = null; discardNextFinal = false }
-    @Synchronized fun close() { closed = true; muted() }
+    @Synchronized fun muted() { cancelPending(); segment = null }
+    @Synchronized fun close() { closed = true; muted(); completed.clear() }
 
     private fun confirm(id: Long, output: PlaybackIdentity) {
         val emit = synchronized(this) {

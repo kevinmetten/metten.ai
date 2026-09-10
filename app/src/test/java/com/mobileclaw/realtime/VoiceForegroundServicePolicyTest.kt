@@ -27,8 +27,12 @@ class VoiceForegroundServicePolicyTest {
         listOf("ChatGptRealtimeSessionController", "AndroidWebRtcVoiceTransport", "ChatGptRealtimeCallClient", "ChatGptRealtimeSidebandClient", "/v1/live")
             .forEach { forbidden -> assertFalse("product Voice wiring referenced $forbidden", forbidden in application || forbidden in settings) }
         assertTrue(application.contains("MettenVoiceSessionController("))
-        assertTrue(application.contains("AndroidOnDeviceSpeechInput(this)"))
-        assertTrue(application.contains("outputFactory = { MettenSpeechOutputFactory.create(this) }"))
+        assertTrue(application.contains("MettenSpeechEngineFactory.create(this)"))
+
+        val releaseFactory = projectFile("src/release/java/com/mobileclaw/voice/MettenSpeechEngineFactory.kt").readText()
+        assertTrue(releaseFactory.contains("AndroidOnDeviceSpeechInput(context)"))
+        assertTrue(releaseFactory.contains("MettenSpeechOutputFactory.create(context)"))
+        assertFalse(releaseFactory.contains("SoniqoConversationalSpeechSession"))
     }
 
     private fun projectFile(relative: String): File = sequenceOf(File(relative), File("app/$relative"), File(System.getProperty("user.dir"), relative), File(System.getProperty("user.dir"), "app/$relative")).first { it.isFile }

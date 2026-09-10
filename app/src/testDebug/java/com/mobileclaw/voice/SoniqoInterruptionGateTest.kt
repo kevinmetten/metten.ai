@@ -42,6 +42,24 @@ class SoniqoInterruptionGateTest {
         assertEquals(0, h.interruptions)
     }
 
+    @Test fun `later speech onset cannot erase older echo disposition`() {
+        val h = Harness()
+        h.gate.speechStarted(h.output, muted = false); h.gate.speechEnded()
+        h.output = null
+        h.gate.speechStarted(null, muted = false)
+        assertFalse(h.gate.allowFinal())
+        h.gate.speechEnded()
+        assertTrue(h.gate.allowFinal())
+    }
+
+    @Test fun `completed segment dispositions are consumed in event order`() {
+        val h = Harness()
+        h.gate.speechStarted(h.output, muted = false); h.gate.speechEnded()
+        h.output = null; h.gate.speechStarted(null, muted = false); h.gate.speechEnded()
+        assertFalse(h.gate.allowFinal())
+        assertTrue(h.gate.allowFinal())
+    }
+
     private class Harness {
         val scheduler = FakeScheduler(); var output: PlaybackIdentity? = PlaybackIdentity("old", 1); var interruptions = 0
         val gate = SoniqoInterruptionGate(scheduler, { output }, { interruptions++ })

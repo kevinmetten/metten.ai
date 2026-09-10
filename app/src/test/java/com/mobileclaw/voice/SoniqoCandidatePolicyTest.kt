@@ -27,10 +27,13 @@ class SoniqoCandidatePolicyTest {
 
     @Test fun `model licenses and fixed interruption limitation are recorded`() {
         val notice = projectFile("../docs/metten-voice-soniqo-provenance.md").readText()
+        val normalized = notice.replace(Regex("\\s+"), " ")
         assertTrue(notice.contains("Parakeet-EOU-120M-ONNX-INT8`: CC-BY-4.0"))
         assertTrue(notice.contains("Pocket-TTS-100M-ONNX-INT8`: CC-BY-4.0"))
-        assertTrue(notice.contains("fixed 1.0 second minimum"))
-        assertTrue(notice.contains("not claimed solved", ignoreCase = true))
+        assertTrue(normalized.contains("fixed 1.0 second minimum"))
+        assertTrue(normalized.contains("500 ms")); assertTrue(normalized.contains("1,000 ms"))
+        assertTrue(normalized.contains("not claimed solved", ignoreCase = true))
+        assertTrue(normalized.contains("DeepFilterNet is enhancement rather than acoustic echo cancellation"))
     }
 
     @Test fun `models are provisioned before the returned directory configures pipeline`() {

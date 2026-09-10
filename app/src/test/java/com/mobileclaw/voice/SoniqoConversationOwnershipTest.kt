@@ -47,11 +47,12 @@ class SoniqoConversationOwnershipTest {
     @Test fun `barge in leaves phone control running`() {
         val h = Harness(); h.start(); h.brain.decision = VoiceTurnDecision(phoneCommand = VoiceControlCommand.Start("Open Settings"))
         h.input.emit(SpeechInputEvent.Final("open settings")); h.scope.advanceUntilIdle()
-        val request = h.pendingRequestIds().single()
-        h.emit(VoiceControlEvent.Accepted(1, request, "task"))
+        assertEquals(VoicePhoneTaskState.RUNNING, h.coordinator.status.value.state)
         val task = h.tasks.activeTasks.value.single().taskId
         h.input.emit(SpeechInputEvent.OutputInterrupted)
-        assertNotNull(h.tasks.task(task)); assertEquals(VoicePhoneTaskState.RUNNING, h.coordinator.status.value.state)
+        assertEquals(1, h.output.stops)
+        assertEquals(AgentTaskPhase.RUNNING, h.tasks.task(task)?.phase)
+        assertEquals(VoicePhoneTaskState.RUNNING, h.coordinator.status.value.state)
     }
 
     @Test fun `end rejects capture and output callbacks and restart installs a clean generation`() {

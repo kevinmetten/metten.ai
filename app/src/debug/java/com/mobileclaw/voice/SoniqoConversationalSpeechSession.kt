@@ -29,10 +29,11 @@ internal class SoniqoConversationalSpeechSession(
     private val main = Handler(Looper.getMainLooper())
     private val lock = Any()
     private val outputGeneration = AtomicLong()
-    private var pipeline: SpeechPipeline? = null
+    private val initialization = ExactInitializationOwnership<SpeechPipeline>()
+    private val pipeline get() = initialization.current()
     private var inputListener: ((SpeechInputEvent) -> Unit)? = null
     private var output: Output? = null
-    private var released = false
+    private val initializationListeners = mutableListOf<(SpeechCapability) -> Unit>()
     private var muted = true
     // Capture API is available synchronously; output initialization owns asynchronous model readiness.
     private var capability = SpeechCapability(true, "Soniqo models are preparing.", true)
@@ -56,9 +57,13 @@ internal class SoniqoConversationalSpeechSession(
     override fun capability(): SpeechCapability = synchronized(lock) { capability }
 
     override fun initialize(listener: (SpeechCapability) -> Unit) {
-        synchronized(lock) {
-            if (released || pipeline != null || !capability.initializing) { post { listener(capability()) }; return }
+        val begin = synchronized(lock) {
+            if (initialization.isReleased()) return
+            if (pipeline != null || !capability.initializing) { post { listener(capability) }; return }
+            initializationListeners += listener
+            initialization.begin() == InitializationAdmission.START
         }
+        if (!begin) return
         inference.execute {
             val result = runCatching {
                 ProvisionedResourceFactory(
@@ -91,31 +96,48 @@ internal class SoniqoConversationalSpeechSession(
                     },
                 ).create()
             }
-            val ready = result.fold(
+            result.fold(
                 onSuccess = { value ->
-                    synchronized(lock) { if (!released) pipeline = value }
-                    observe(value)
-                    SpeechCapability(true)
+                    val listeners = synchronized(lock) {
+                        if (!initialization.accept(value)) null else {
+                            capability = SpeechCapability(true)
+                            initializationListeners.toList().also { initializationListeners.clear() }
+                        }
+                    }
+                    if (listeners == null) { runCatching { value.stop() }; runCatching { value.close() } }
+                    else {
+                        observe(value)
+                        Log.i(TAG, ENGINE_IDENTITY)
+                        listeners.forEach { callback -> post { callback(SpeechCapability(true)) } }
+                    }
                 },
-                onFailure = { SpeechCapability(false, it.message ?: "Soniqo model preparation failed.") },
+                onFailure = { failure ->
+                    val ready = SpeechCapability(false, failure.message ?: "Soniqo model preparation failed.")
+                    val listeners = synchronized(lock) {
+                        initialization.failed()
+                        if (initialization.isReleased()) emptyList() else {
+                            capability = ready
+                            initializationListeners.toList().also { initializationListeners.clear() }
+                        }
+                    }
+                    if (listeners.isNotEmpty()) {
+                        Log.i(TAG, "Speech engine: SONIQO (preparation failed)")
+                        listeners.forEach { callback -> post { callback(ready) } }
+                    }
+                },
             )
-            synchronized(lock) { if (!released) capability = ready }
-            if (!released) {
-                Log.i(TAG, if (ready.available) ENGINE_IDENTITY else "Speech engine: SONIQO (preparation failed)")
-                post { listener(ready) }
-            }
         }
     }
 
     override fun startListening(listener: (SpeechInputEvent) -> Unit) {
         val value = synchronized(lock) {
-            if (released) return
+            if (initialization.isReleased()) return
             inputListener = listener
             muted = false
             pipeline
         } ?: return post { listener(SpeechInputEvent.FatalError("Soniqo is not prepared.")) }
         value.resumeListening()
-        capture.start { samples -> synchronized(lock) { if (!muted && !released) pipeline }?.pushAudio(samples) }
+        capture.start { samples -> synchronized(lock) { if (!muted && !initialization.isReleased()) pipeline }?.pushAudio(samples) }
             .onSuccess { started ->
                 interruption.configure(started.acousticEchoCancelerEnabled)
                 Log.i(TAG, if (started.acousticEchoCancelerEnabled) "Barge-in confirmation: 500ms, AEC enabled" else "Barge-in confirmation: 1000ms, AEC unavailable")
@@ -134,7 +156,7 @@ internal class SoniqoConversationalSpeechSession(
     override fun speak(text: String, listener: (SpeechOutputEvent) -> Unit) {
         val value: Pair<SpeechPipeline, Output> = synchronized(lock) {
             val pipe = pipeline
-            if (released || pipe == null || !capability.available) return post { listener(SpeechOutputEvent.Failed("Soniqo is unavailable.")) }
+            if (initialization.isReleased() || pipe == null || !capability.available) return post { listener(SpeechOutputEvent.Failed("Soniqo is unavailable.")) }
             val generation = outputGeneration.incrementAndGet()
             val next = Output(generation, PlaybackIdentity(UUID.randomUUID().toString(), generation), listener)
             output = next
@@ -164,9 +186,13 @@ internal class SoniqoConversationalSpeechSession(
     }
 
     override fun release() {
-        synchronized(lock) { if (released) return; released = true; inputListener = null; output = null }
+        val owned = synchronized(lock) {
+            if (initialization.isReleased()) return
+            inputListener = null; output = null; initializationListeners.clear()
+            initialization.release()
+        }
         interruption.close()
-        capture.release(); player.release(); pipeline?.cancelSynthesis(); pipeline?.stop(); pipeline?.close(); pipeline = null
+        capture.release(); player.release(); owned?.cancelSynthesis(); owned?.stop(); owned?.close()
         scope.cancel(); inference.shutdownNow()
     }
 
@@ -190,16 +216,16 @@ internal class SoniqoConversationalSpeechSession(
     }
 
     private fun failOutput(value: Output, reason: String) = deliver(value, SpeechOutputEvent.Failed(reason), terminal = true)
-    private fun isCurrent(value: Output) = synchronized(lock) { !released && output === value && outputGeneration.get() == value.generation }
+    private fun isCurrent(value: Output) = synchronized(lock) { !initialization.isReleased() && output === value && outputGeneration.get() == value.generation }
     private fun deliver(value: Output, event: SpeechOutputEvent, terminal: Boolean) {
         val listener = synchronized(lock) {
-            if (released || output !== value || outputGeneration.get() != value.generation) return
+            if (initialization.isReleased() || output !== value || outputGeneration.get() != value.generation) return
             if (terminal) output = null
             value.listener
         }
         post { listener(event) }
     }
-    private fun postInput(event: SpeechInputEvent) { synchronized(lock) { if (muted || released) null else inputListener }?.let { callback -> post { callback(event) } } }
+    private fun postInput(event: SpeechInputEvent) { synchronized(lock) { if (muted || initialization.isReleased()) null else inputListener }?.let { callback -> post { callback(event) } } }
     private fun post(block: () -> Unit) { main.post(block) }
 
     private companion object {
