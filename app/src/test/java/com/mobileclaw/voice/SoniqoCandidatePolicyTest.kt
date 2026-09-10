@@ -8,7 +8,7 @@ class SoniqoCandidatePolicyTest {
     @Test fun `debug candidate is pinned and cannot silently select legacy speech`() {
         val build = projectFile("build.gradle.kts").readText()
         val factory = projectFile("src/debug/java/com/mobileclaw/voice/MettenSpeechEngineFactory.kt").readText()
-        assertTrue(build.contains("debugImplementation(\"audio.soniqo:speech:0.0.21\")"))
+        assertTrue(build.contains("debugImplementation(\"audio.soniqo:speech:0.0.20\")"))
         assertTrue(factory.contains("SoniqoConversationalSpeechSession"))
         assertFalse(factory.contains("AndroidOnDeviceSpeechInput"))
         assertFalse(factory.contains("MettenSpeechOutputFactory.create"))
@@ -30,6 +30,9 @@ class SoniqoCandidatePolicyTest {
         val normalized = notice.replace(Regex("\\s+"), " ")
         assertTrue(notice.contains("Parakeet-EOU-120M-ONNX-INT8`: CC-BY-4.0"))
         assertTrue(notice.contains("Pocket-TTS-100M-ONNX-INT8`: CC-BY-4.0"))
+        assertTrue(notice.contains("audio.soniqo:speech:0.0.20"))
+        assertTrue(notice.contains("a019eaf2896443c5e889a3f26463b81c42e9db1f"))
+        assertTrue(notice.contains("c2cdcf2f1b90f15acac640cf8cf5233ed1f388a9"))
         assertTrue(normalized.contains("fixed 1.0 second minimum"))
         assertTrue(normalized.contains("500 ms")); assertTrue(normalized.contains("1,000 ms"))
         assertTrue(normalized.contains("not claimed solved", ignoreCase = true))

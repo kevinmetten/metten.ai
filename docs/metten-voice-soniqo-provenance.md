@@ -1,8 +1,12 @@
 # Metten Voice Soniqo candidate provenance
 
-The debug conversational candidate uses `audio.soniqo:speech:0.0.21`, inspected at
-speech-android commit `ca9c58916cc63224fc74f81f95310b7546868b71` with speech-core
+The debug conversational candidate uses `audio.soniqo:speech:0.0.20`, inspected at
+speech-android commit `a019eaf2896443c5e889a3f26463b81c42e9db1f` with speech-core
 commit `c2cdcf2f1b90f15acac640cf8cf5233ed1f388a9`.
+
+Version 0.0.20 is selected because its Android SDK is compatible with compileSdk 35.
+Version 0.0.21 moved to compileSdk 37 and newer Android/OkHttp dependencies that are
+incompatible with Metten's current toolchain.
 
 ## Licenses and runtime
 
@@ -19,7 +23,7 @@ speech processing. Smart Turn and FunctionGemma are not used.
 
 ## Physical-test limitation
 
-Soniqo v0.0.21's native response path confirms interruption after a fixed 1.0 second
+Soniqo v0.0.20's native response path confirms interruption after a fixed 1.0 second
 minimum and uses a 0.4 second recovery timeout, but direct TRANSCRIBE_ONLY synthesis does
 not arm that native response state. Metten instead gates Soniqo VAD events for 500 ms when
 Android AEC is attached and enabled, or a conservative 1,000 ms without it. Consequently

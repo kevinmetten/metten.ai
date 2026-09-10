@@ -172,7 +172,7 @@ internal class SoniqoConversationalSpeechSession(
         inference.execute {
             runCatching {
                 value.first.synthesizeStreaming(text, "en") { result, isFinal ->
-                    if (isCurrent(value.second)) value.second.playback?.accept(result.audio, result.sampleRate, isFinal)
+                    if (isCurrent(value.second)) value.second.playback?.accept(result.pcm16, result.sampleRate, isFinal)
                 }
             }
                 .onFailure { failOutput(value.second, it.message ?: "Pocket TTS synthesis failed.") }

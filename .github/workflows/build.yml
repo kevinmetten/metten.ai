@@ -95,7 +95,7 @@ jobs:
         run: |
           set -euo pipefail
           ./gradlew :app:dependencies --configuration debugRuntimeClasspath > "$RUNNER_TEMP/debug-dependencies.txt"
-          grep -q 'audio.soniqo:speech:0.0.21' "$RUNNER_TEMP/debug-dependencies.txt"
+          grep -q 'audio.soniqo:speech:0.0.20' "$RUNNER_TEMP/debug-dependencies.txt"
 
       - name: Verify provisioned pinned sherpa AAR
         run: |
