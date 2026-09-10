@@ -198,7 +198,10 @@ dependencies {
     // Phase-1 neural speech is debug-only; provision the pinned AAR with the repository script.
     debugCompileOnly(files("libs/sherpa-onnx-1.13.7.aar"))
     // Debug Voice candidate only. Inference is local; models are provisioned outside the APK.
-    debugImplementation("audio.soniqo:speech:0.0.20")
+    debugImplementation(files("libs/soniqo-speech-0.0.20-metten-onnx-only.aar"))
+    // StringRes is also used by production source; WorkManager is needed only by the debug Soniqo AAR.
+    implementation("androidx.annotation:annotation:1.8.2")
+    debugImplementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
