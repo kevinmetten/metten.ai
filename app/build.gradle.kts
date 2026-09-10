@@ -197,6 +197,8 @@ chaquopy {
 dependencies {
     // Phase-1 neural speech is debug-only; provision the pinned AAR with the repository script.
     debugImplementation(files("libs/sherpa-onnx-1.13.7.aar"))
+    // Debug Voice candidate only. Inference is local; models are provisioned outside the APK.
+    debugImplementation("audio.soniqo:speech:0.0.21")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

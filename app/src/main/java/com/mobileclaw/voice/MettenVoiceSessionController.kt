@@ -161,6 +161,7 @@ class MettenVoiceSessionController(
     fun setMuted(value: Boolean) {
         var stop: SpeechInputEngine? = null
         var prepared: PreparedListen? = null
+        var resumeContinuous: Triple<Long, Long, ContinuousSpeechInputEngine>? = null
         synchronized(this) {
             if (_state.value.phase in setOf(MettenVoicePhase.IDLE, MettenVoicePhase.ENDING, MettenVoicePhase.FAILED) || muted == value) return
             if (value) {
@@ -169,7 +170,10 @@ class MettenVoiceSessionController(
             } else {
                 refreshMutedOwnerLocked(); val owner = mutedResumeOwner; muted = false
                 when (owner) {
-                    MutedResumeOwner.OUTPUT -> if (activeOutput != null) _state.value = MettenVoiceState(MettenVoicePhase.SPEAKING) else prepared = prepareListenLocked(generation, ListenCause.Unmuted)
+                    MutedResumeOwner.OUTPUT -> if (activeOutput != null) {
+                        _state.value = MettenVoiceState(MettenVoicePhase.SPEAKING)
+                        (input as? ContinuousSpeechInputEngine)?.let { resumeContinuous = Triple(generation, listenAttempt, it) }
+                    } else prepared = prepareListenLocked(generation, ListenCause.Unmuted)
                     MutedResumeOwner.STARTUP -> _state.value = MettenVoiceState(MettenVoicePhase.STARTING)
                     MutedResumeOwner.THINKING -> _state.value = MettenVoiceState(MettenVoicePhase.THINKING)
                     MutedResumeOwner.LISTENING -> prepared = prepareListenLocked(generation, ListenCause.Unmuted)
@@ -177,6 +181,9 @@ class MettenVoiceSessionController(
             }
         }
         stop?.let(::submitStop); prepared?.let(::submitPreparedListen)
+        resumeContinuous?.let { (id, attempt, engine) ->
+            engine.startListening { event -> onInput(id, attempt, event) }
+        }
     }
 
     @Synchronized fun microphonePermissionMissing() {
@@ -217,7 +224,15 @@ class MettenVoiceSessionController(
     private fun submitStop(engine: SpeechInputEngine) = synchronized(inputEngineGate) { engine.stopListening() }
 
     private fun onInput(id: Long, attempt: Long, event: SpeechInputEvent) {
-        if (!synchronized(this) { id == generation && attempt == listenAttempt && !muted && _state.value.phase == MettenVoicePhase.LISTENING }) return
+        if (event == SpeechInputEvent.OutputInterrupted) {
+            interruptExactOutput(id, attempt)
+            return
+        }
+        if (!synchronized(this) {
+                id == generation && attempt == listenAttempt && !muted &&
+                    (_state.value.phase == MettenVoicePhase.LISTENING ||
+                        input is ContinuousSpeechInputEngine && activeOutput == null && !hasThinkingOwnershipLocked())
+            }) return
         when (event) {
             SpeechInputEvent.Ready, SpeechInputEvent.SpeechStarted -> synchronized(this) { if (id == generation && attempt == listenAttempt) startFailures = 0 }
             is SpeechInputEvent.Final -> acceptFinal(id, attempt, event.text)
@@ -227,7 +242,22 @@ class MettenVoiceSessionController(
             }
             is SpeechInputEvent.FatalError -> fail(id, event.reason)
             is SpeechInputEvent.Partial -> Unit
+            SpeechInputEvent.OutputInterrupted -> Unit
         }
+    }
+
+    /** Audio interruption never reaches the coordinator; only a later final transcript may control phone work. */
+    private fun interruptExactOutput(id: Long, attempt: Long) {
+        val engine = synchronized(this) {
+            if (id != generation || attempt != listenAttempt || muted || input !is ContinuousSpeechInputEngine) return
+            val token = activeOutput ?: return
+            if (token.generation != id) return
+            activeOutput = null
+            pendingEchoText = null
+            _state.value = MettenVoiceState(MettenVoicePhase.LISTENING)
+            output
+        }
+        engine?.stop()
     }
 
     private fun acceptFinal(id: Long, attempt: Long, text: String) {
@@ -240,12 +270,12 @@ class MettenVoiceSessionController(
             val normalized = normalizeForEchoGuard(text)
             val echoed = normalized.isNotEmpty() && normalized == pendingEchoText
             pendingEchoText = null
-            invalidateListeningLocked()
+            if (input !is ContinuousSpeechInputEngine) invalidateListeningLocked()
             if (echoed) echoListen = prepareListenLocked(id, ListenCause.EchoConsumed(attempt))
             else {
                 val token = TurnToken(id, ++nextTurnId)
                 activeTurn = token; _state.value = MettenVoiceState(MettenVoicePhase.THINKING)
-                turn = token; stop = input
+                turn = token; if (input !is ContinuousSpeechInputEngine) stop = input
             }
         }
         echoListen?.let(::submitPreparedListen)
@@ -359,7 +389,7 @@ class MettenVoiceSessionController(
     private fun installSpeechLocked(id: Long, text: String): PreparedSpeech? {
         if (id != generation || muted) return null
         val engine = output ?: return null
-        invalidateListeningLocked()
+        if (input !is ContinuousSpeechInputEngine) invalidateListeningLocked()
         val token = OutputToken(id, ++outputId)
         activeOutput = token
         pendingEchoText = normalizeForEchoGuard(text)
@@ -368,7 +398,7 @@ class MettenVoiceSessionController(
     }
 
     private fun submitSpeech(speech: PreparedSpeech) {
-        speech.input?.let(::submitStop)
+        if (speech.input !is ContinuousSpeechInputEngine) speech.input?.let(::submitStop)
         if (!synchronized(this) {
                 speech.token.generation == generation && activeOutput == speech.token && output === speech.engine
             }) return
