@@ -5,7 +5,7 @@ import java.io.InputStream
 
 /** Copies an Android asset directory to storage while preserving its relative tree. */
 internal class AssetTreeMaterializer(
-    private val list: (String) -> Array<String>,
+    private val list: (String) -> Array<out String>,
     private val open: (String) -> InputStream,
 ) {
     fun materialize(assetDirectory: String, storageRoot: File): File {
