@@ -63,6 +63,9 @@ jobs:
             --tests 'com.mobileclaw.realtime.VoiceForegroundServicePolicyTest' \
             --tests 'com.mobileclaw.ui.settings.AiBasicsReachabilityTest'
 
+      - name: Compile release
+        run: ./gradlew :app:compileReleaseKotlin --no-daemon
+
       - name: Test release isolation
         run: |
           ./gradlew :app:testReleaseUnitTest --no-daemon \
@@ -74,9 +77,6 @@ jobs:
             --tests 'com.mobileclaw.realtime.RealtimeSidebandLifecycleTest' \
             --tests 'com.mobileclaw.realtime.VoiceForegroundServicePolicyTest' \
             --tests 'com.mobileclaw.ui.settings.AiBasicsReachabilityTest'
-
-      - name: Build unsigned release isolation APK
-        run: ./gradlew :app:assembleRelease --no-daemon
 
       - name: Verify release runtime excludes debug speech engines
         run: |
@@ -91,14 +91,38 @@ jobs:
             exit 1
           fi
 
-      - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --no-daemon
-
-      - name: Verify debug runtime contains pinned Soniqo
+      - name: Verify debug runtime contains only pinned Soniqo speech runtime
         run: |
           set -euo pipefail
           ./gradlew :app:dependencies --configuration debugRuntimeClasspath > "$RUNNER_TEMP/debug-dependencies.txt"
           grep -q 'audio.soniqo:speech:0.0.20' "$RUNNER_TEMP/debug-dependencies.txt"
+          if grep -qi 'sherpa-onnx' "$RUNNER_TEMP/debug-dependencies.txt"; then
+            echo "Debug runtime unexpectedly contains compile-only sherpa-onnx."
+            exit 1
+          fi
+
+      - name: Merge and inspect debug native libraries
+        run: |
+          set -euo pipefail
+          ./gradlew :app:mergeDebugNativeLibs --no-daemon
+          native_root="app/build/intermediates/merged_native_libs/debug/mergeDebugNativeLibs/out/lib"
+          test -d "$native_root"
+          if find "$native_root" -name 'libsherpa-onnx-jni.so' -print -quit | grep -q .; then
+            echo "Soniqo candidate unexpectedly packages sherpa JNI."
+            exit 1
+          fi
+          while IFS= read -r abi; do
+            count="$(find "$abi" -maxdepth 1 -name 'libonnxruntime.so' -type f | wc -l)"
+            test "$count" -eq 1
+          done < <(find "$native_root" -mindepth 1 -maxdepth 1 -type d | sort)
+
+      - name: Build unsigned release isolation APK
+        if: github.event_name != 'pull_request'
+        run: ./gradlew :app:assembleRelease --no-daemon
+
+      - name: Build debug APK
+        if: github.event_name != 'pull_request'
+        run: ./gradlew :app:assembleDebug --no-daemon
 
       - name: Verify provisioned pinned sherpa AAR
         run: |
@@ -112,6 +136,7 @@ jobs:
             "$aar" | sha256sum -c -
 
       - name: Inspect neural debug APK
+        if: github.event_name != 'pull_request'
         run: |
           set -euo pipefail
           apk="$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)"
@@ -120,9 +145,13 @@ jobs:
           grep -q 'assets/tts/kitten-nano-en-v0_8-fp32/model.fp32.onnx' "$RUNNER_TEMP/debug-apk.txt"
           grep -q 'assets/tts/kitten-nano-en-v0_8-fp32/metten-model-manifest.json' "$RUNNER_TEMP/debug-apk.txt"
           grep -q 'assets/tts/kitten-nano-en-v0_8-fp32/espeak-ng-data/.' "$RUNNER_TEMP/debug-apk.txt"
-          grep -q 'lib/arm64-v8a/libsherpa-onnx-jni.so' "$RUNNER_TEMP/debug-apk.txt"
+          if grep -q 'libsherpa-onnx-jni.so' "$RUNNER_TEMP/debug-apk.txt"; then
+            echo "Soniqo candidate APK unexpectedly contains sherpa JNI."
+            exit 1
+          fi
 
       - name: Upload debug APK
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: mobileclaw-debug-${{ github.sha }}
