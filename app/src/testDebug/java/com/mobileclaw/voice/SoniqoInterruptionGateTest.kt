@@ -4,85 +4,130 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SoniqoInterruptionGateTest {
-    @Test fun `speech onset waits and short during-output segment is rejected`() {
+    @Test fun `duration without lexical human evidence never interrupts`() {
         val h = Harness()
-        h.gate.speechStarted(h.output, muted = false)
+        h.start("Seventeen plus twenty-eight equals forty-five.")
+        h.scheduler.fire(h.gate.thresholdMillis())
         assertEquals(0, h.interruptions)
-        h.gate.speechEnded(); h.scheduler.fireAll()
-        assertEquals(0, h.interruptions)
-        assertFalse(h.gate.allowFinal())
-        assertTrue(h.gate.allowFinal())
+        h.gate.speechEnded()
+        assertFalse(h.gate.allowFinal("equals forty five"))
     }
 
-    @Test fun `continuous speech confirms once and keeps final eligible`() {
+    @Test fun `assistant echo fragments cannot create a self turn storm`() {
         val h = Harness()
-        h.gate.speechStarted(h.output, muted = false); h.scheduler.fireAll(); h.scheduler.fireAll()
+        var acceptedFinals = 0
+        repeat(4) {
+            h.start("Seventeen plus twenty-eight equals forty-five.")
+            h.gate.partial("seventeen plus twenty eight")
+            h.scheduler.fire(h.gate.thresholdMillis())
+            h.gate.partial("twenty eight equals forty five")
+            h.gate.speechEnded()
+            if (h.gate.allowFinal("equals forty five")) acceptedFinals++
+        }
+        assertEquals(0, h.interruptions)
+        assertEquals(0, acceptedFinals)
+        assertEquals(h.output, h.current)
+    }
+
+    @Test fun `AEC sustained divergent speech interrupts once and same final survives`() {
+        genuineBargeIn(aec = true, expectedDelay = 500L)
+    }
+
+    @Test fun `non AEC sustained divergent speech interrupts once and same final survives`() {
+        genuineBargeIn(aec = false, expectedDelay = 1_000L)
+    }
+
+    @Test fun `human evidence before duration waits for exact threshold`() {
+        val h = Harness().apply { gate.configure(true) }
+        h.start("One, two, three, four, five")
+        h.gate.partial("Actually stop counting and tell me the three largest planets")
+        assertEquals(0, h.interruptions)
+        h.scheduler.fire(500L)
+        assertEquals(1, h.interruptions)
+    }
+
+    @Test fun `replacement output makes old segment unable to interrupt`() {
+        val h = Harness()
+        h.start("old assistant words")
+        h.gate.partial("a clearly different human request")
+        h.current = PlaybackIdentity("new", 2)
+        h.scheduler.fire(h.gate.thresholdMillis())
+        assertEquals(0, h.interruptions)
+        h.gate.speechEnded()
+        assertTrue(h.gate.allowFinal("a clearly different human request"))
+    }
+
+    @Test fun `natural drain quarantine discards immediate echo fragment`() {
+        val h = Harness()
+        val reference = h.reference("Seventeen plus twenty-eight equals forty-five")
+        h.gate.outputEnded(reference, naturallyDrained = true); h.current = null
+        h.gate.speechStarted(null, muted = false)
+        h.gate.partial("equals forty five"); h.gate.speechEnded()
+        assertFalse(h.gate.allowFinal("equals forty five"))
+    }
+
+    @Test fun `natural drain quarantine preserves divergent tail overlap user speech`() {
+        val h = Harness()
+        val reference = h.reference("One two three four five")
+        h.gate.outputEnded(reference, naturallyDrained = true); h.current = null
+        h.gate.speechStarted(null, muted = false)
+        h.gate.partial("Actually tell me the three largest planets"); h.gate.speechEnded()
+        assertTrue(h.gate.allowFinal("Actually tell me the three largest planets"))
+        assertEquals(0, h.interruptions)
+    }
+
+    @Test fun `tail quarantine expires narrowly`() {
+        val h = Harness()
+        h.gate.outputEnded(h.reference("assistant tail words"), naturallyDrained = true); h.current = null
+        h.scheduler.fire(SoniqoInterruptionGate.OUTPUT_TAIL_QUARANTINE_MS)
+        assertTrue(h.gate.allowFinal("assistant tail words"))
+    }
+
+    @Test fun `short during-output segment and muted speech are rejected`() {
+        val h = Harness()
+        h.start("assistant output"); h.gate.speechEnded()
+        assertFalse(h.gate.allowFinal("unrelated human request"))
+        h.gate.speechStarted(h.reference("assistant output"), muted = true)
+        h.scheduler.fireAll(); assertEquals(0, h.interruptions)
+    }
+
+    @Test fun `close invalidates timers and state`() {
+        val h = Harness(); h.start("assistant output"); h.gate.close(); h.scheduler.fireAll()
+        assertEquals(0, h.interruptions)
+    }
+
+    private fun genuineBargeIn(aec: Boolean, expectedDelay: Long) {
+        val h = Harness().apply { gate.configure(aec) }
+        assertEquals(expectedDelay, h.gate.thresholdMillis())
+        h.start("One, two, three, four, five")
+        h.scheduler.fire(expectedDelay)
+        assertEquals(0, h.interruptions)
+        val user = "Actually stop counting and tell me the three largest planets"
+        h.gate.partial(user); h.gate.partial(user)
         assertEquals(1, h.interruptions)
         h.gate.speechEnded()
-        assertTrue(h.gate.allowFinal())
-    }
-
-    @Test fun `replacement output keeps old segment stale and ineligible`() {
-        val h = Harness()
-        h.gate.speechStarted(h.output, muted = false)
-        h.output = PlaybackIdentity("new", 2); h.scheduler.fireAll()
-        assertEquals(0, h.interruptions)
-        h.gate.speechEnded()
-        assertFalse(h.gate.allowFinal())
-    }
-
-    @Test fun `output finishing while speech continues past threshold preserves final without interruption`() {
-        val h = Harness()
-        h.gate.speechStarted(h.output, muted = false)
-        h.output = null; h.scheduler.fireAll()
-        assertEquals(0, h.interruptions)
-        h.gate.speechEnded()
-        assertTrue(h.gate.allowFinal())
-    }
-
-    @Test fun `muted speech cannot interrupt`() {
-        val h = Harness()
-        h.gate.speechStarted(h.output, muted = true); h.scheduler.fireAll()
-        assertEquals(0, h.interruptions)
-    }
-
-    @Test fun `AEC selects 500ms and unavailable AEC selects 1000ms`() {
-        val h = Harness()
-        h.gate.configure(true); assertEquals(500L, h.gate.thresholdMillis())
-        h.gate.configure(false); assertEquals(1_000L, h.gate.thresholdMillis())
-    }
-
-    @Test fun `close invalidates pending timer`() {
-        val h = Harness(); h.gate.speechStarted(h.output, muted = false); h.gate.close(); h.scheduler.fireAll()
-        assertEquals(0, h.interruptions)
-    }
-
-    @Test fun `later speech onset cannot erase older echo disposition`() {
-        val h = Harness()
-        h.gate.speechStarted(h.output, muted = false); h.gate.speechEnded()
-        h.output = null
-        h.gate.speechStarted(null, muted = false)
-        assertFalse(h.gate.allowFinal())
-        h.gate.speechEnded()
-        assertTrue(h.gate.allowFinal())
-    }
-
-    @Test fun `completed segment dispositions are consumed in event order`() {
-        val h = Harness()
-        h.gate.speechStarted(h.output, muted = false); h.gate.speechEnded()
-        h.output = null; h.gate.speechStarted(null, muted = false); h.gate.speechEnded()
-        assertFalse(h.gate.allowFinal())
-        assertTrue(h.gate.allowFinal())
+        assertTrue(h.gate.allowFinal(user))
+        assertEquals(1, h.interruptions)
     }
 
     private class Harness {
-        val scheduler = FakeScheduler(); var output: PlaybackIdentity? = PlaybackIdentity("old", 1); var interruptions = 0
-        val gate = SoniqoInterruptionGate(scheduler, { output }, { interruptions++ })
+        val scheduler = FakeScheduler()
+        val output = PlaybackIdentity("old", 1)
+        var current: PlaybackIdentity? = output
+        var interruptions = 0
+        val gate = SoniqoInterruptionGate(scheduler, { current }, { interruptions++ })
+        fun reference(text: String) = SoniqoInterruptionGate.OutputReference(output, text)
+        fun start(text: String) = gate.speechStarted(reference(text), muted = false)
     }
+
     private class FakeScheduler : InterruptionScheduler {
-        private data class Entry(val action: () -> Unit, var cancelled: Boolean = false)
+        private data class Entry(val delay: Long, val action: () -> Unit, var cancelled: Boolean = false)
         private val entries = mutableListOf<Entry>()
-        override fun schedule(delayMillis: Long, action: () -> Unit): CancellableTimer = Entry(action).also(entries::add).let { entry -> CancellableTimer { entry.cancelled = true } }
-        fun fireAll() { entries.toList().also { entries.clear() }.filterNot { it.cancelled }.forEach { it.action() } }
+        override fun schedule(delayMillis: Long, action: () -> Unit): CancellableTimer =
+            Entry(delayMillis, action).also(entries::add).let { entry -> CancellableTimer { entry.cancelled = true } }
+        fun fire(delay: Long) {
+            entries.filter { !it.cancelled && it.delay == delay }.toList().also { entries.removeAll(it) }.forEach { it.action() }
+        }
+        fun fireAll() = entries.filterNot { it.cancelled }.toList().also { entries.clear() }.forEach { it.action() }
     }
 }

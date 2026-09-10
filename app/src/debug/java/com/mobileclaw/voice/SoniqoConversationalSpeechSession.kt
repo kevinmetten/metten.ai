@@ -15,8 +15,8 @@ import java.util.concurrent.atomic.AtomicLong
  * One shared, full-duplex Soniqo session behind Metten's existing input/output seams.
  *
  * Direct TRANSCRIBE_ONLY synthesis does not arm Soniqo's native ResponseInterrupted path.
- * Metten therefore confirms VAD speech after 500 ms with working Android AEC, otherwise
- * 1,000 ms. A short "Stop" remains a physical risk. DeepFilterNet is not AEC.
+ * Metten therefore requires divergent transcript evidence plus 500 ms of VAD speech with
+ * working Android AEC, otherwise 1,000 ms. A short "Stop" remains exploratory. DeepFilterNet is not AEC.
  */
 internal class SoniqoConversationalSpeechSession(
     context: Context,
@@ -45,14 +45,18 @@ internal class SoniqoConversationalSpeechSession(
         },
         currentOutput = { synchronized(lock) { output?.identity } },
         emitConfirmed = { postInput(SpeechInputEvent.OutputInterrupted) },
+        debug = { message -> Log.d(TAG, message) },
     )
 
     private data class Output(
         val generation: Long,
         val identity: PlaybackIdentity,
+        val text: String,
         val listener: (SpeechOutputEvent) -> Unit,
         var playback: PocketStreamingPlayback? = null,
-    )
+    ) {
+        val reference = SoniqoInterruptionGate.OutputReference(identity, text)
+    }
 
     override fun capability(): SpeechCapability = synchronized(lock) { capability }
 
@@ -163,7 +167,7 @@ internal class SoniqoConversationalSpeechSession(
             val pipe = pipeline
             if (initialization.isReleased() || pipe == null || !capability.available) return post { listener(SpeechOutputEvent.Failed("Soniqo is unavailable.")) }
             val generation = outputGeneration.incrementAndGet()
-            val next = Output(generation, PlaybackIdentity(UUID.randomUUID().toString(), generation), listener)
+            val next = Output(generation, PlaybackIdentity(UUID.randomUUID().toString(), generation), text, listener)
             output = next
             next.playback = PocketStreamingPlayback(player, next.identity, pipe.ttsSampleRate) { event ->
                 when (event) {
@@ -187,7 +191,11 @@ internal class SoniqoConversationalSpeechSession(
     override fun stop() {
         val old = synchronized(lock) { outputGeneration.incrementAndGet(); output.also { output = null } }
         pipeline?.cancelSynthesis()
-        old?.let { player.cancel(it.identity) }
+        old?.let {
+            Log.d(TAG, "output=${it.identity} cancel requested")
+            interruption.outputEnded(it.reference, naturallyDrained = false)
+            player.cancel(it.identity)
+        }
     }
 
     override fun release() {
@@ -206,13 +214,16 @@ internal class SoniqoConversationalSpeechSession(
             value.events.collect { event ->
                 when (event) {
                     is SpeechEvent.SpeechStarted -> {
-                        val snapshot = synchronized(lock) { output?.identity to muted }
+                        val snapshot = synchronized(lock) { output?.reference to muted }
                         interruption.speechStarted(snapshot.first, snapshot.second)
                         postInput(SpeechInputEvent.SpeechStarted)
                     }
                     is SpeechEvent.SpeechEnded -> interruption.speechEnded()
-                    is SpeechEvent.PartialTranscription -> postInput(SpeechInputEvent.Partial(event.text))
-                    is SpeechEvent.TranscriptionCompleted -> if (interruption.allowFinal()) postInput(SpeechInputEvent.Final(event.text))
+                    is SpeechEvent.PartialTranscription -> {
+                        interruption.partial(event.text)
+                        postInput(SpeechInputEvent.Partial(event.text))
+                    }
+                    is SpeechEvent.TranscriptionCompleted -> if (interruption.allowFinal(event.text)) postInput(SpeechInputEvent.Final(event.text))
                     is SpeechEvent.Error -> postInput(SpeechInputEvent.FatalError(event.message))
                     else -> Unit
                 }
@@ -228,6 +239,7 @@ internal class SoniqoConversationalSpeechSession(
             if (terminal) output = null
             value.listener
         }
+        if (terminal) interruption.outputEnded(value.reference, naturallyDrained = event == SpeechOutputEvent.Completed)
         post { listener(event) }
     }
     private fun postInput(event: SpeechInputEvent) { synchronized(lock) { if (muted || initialization.isReleased()) null else inputListener }?.let { callback -> post { callback(event) } } }
