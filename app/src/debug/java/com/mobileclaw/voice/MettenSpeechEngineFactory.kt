@@ -7,7 +7,7 @@ object MettenSpeechEngineFactory {
     fun create(context: Context): MettenSpeechEnginePair {
         val session = SoniqoConversationalSpeechSession(
             context.applicationContext,
-            AndroidAudioTrackPcmPlayer(),
+            AndroidStreamingPcm16Player(),
         )
         return MettenSpeechEnginePair(session, session)
     }

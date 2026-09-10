@@ -33,6 +33,19 @@ class SoniqoCandidatePolicyTest {
         assertTrue(notice.contains("not claimed solved", ignoreCase = true))
     }
 
+    @Test fun `models are provisioned before the returned directory configures pipeline`() {
+        val source = projectFile("src/debug/java/com/mobileclaw/voice/SoniqoConversationalSpeechSession.kt").readText()
+        val provision = source.indexOf("ModelManager.ensureModels(")
+        val construct = source.indexOf("SpeechPipeline(SpeechConfig(")
+        val configure = source.indexOf("modelDir = modelDir", construct)
+        assertTrue(provision >= 0 && provision < construct && construct < configure)
+        assertTrue(source.contains("modelDir = modelDir"))
+        assertFalse(source.contains("File(app.filesDir"))
+        assertFalse(source.contains("SpeechEvent.ResponseInterrupted"))
+        assertFalse(source.contains("SpeechEvent.ResponseAudioDelta"))
+        assertFalse(source.contains("SpeechEvent.ResponseDone"))
+    }
+
     private fun projectFile(relative: String): File = sequenceOf(
         File(relative), File("app/$relative"), File(System.getProperty("user.dir"), relative),
         File(System.getProperty("user.dir"), "app/$relative"),

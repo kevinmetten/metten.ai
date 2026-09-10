@@ -19,10 +19,13 @@ speech processing. Smart Turn and FunctionGemma are not used.
 
 ## Physical-test limitation
 
-Soniqo v0.0.21 speech-core confirms interruption after a fixed 1.0 second minimum and
-uses a 0.4 second recovery timeout. Android `SpeechConfig` does not expose the minimum.
-Consequently a short one-word “Stop” is **not claimed solved** until a later integration
-addresses the upstream surface and the behavior is tested on Galaxy Z Fold 7 hardware.
-DeepFilterNet is enhancement rather than acoustic echo cancellation, and speech-android
-does not integrate Android `AcousticEchoCanceler`; true AEC also remains a physical-test
-follow-up.
+Soniqo v0.0.21's native response path confirms interruption after a fixed 1.0 second
+minimum and uses a 0.4 second recovery timeout, but direct TRANSCRIBE_ONLY synthesis does
+not arm that native response state. Metten instead gates Soniqo VAD events for 500 ms when
+Android AEC is attached and enabled, or a conservative 1,000 ms without it. Consequently
+a short one-word “Stop” is **not claimed solved** until tested on Galaxy Z Fold 7 hardware.
+DeepFilterNet is enhancement rather than acoustic echo cancellation. The current Android
+JNI explicitly disables it because DeepFilterNet expects 48 kHz while the Voice pipeline
+supplies 16 kHz and has not wired the required resampling. Metten attempts Android
+`AcousticEchoCanceler` on its exact `AudioRecord` session; hardware support and effectiveness
+remain physical-test questions.

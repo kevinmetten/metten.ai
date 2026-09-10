@@ -7,7 +7,6 @@ import android.util.Log
 import audio.soniqo.speech.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collect
-import java.io.File
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
@@ -15,13 +14,13 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * One shared, full-duplex Soniqo session behind Metten's existing input/output seams.
  *
- * v0.0.21 confirms interruption only after speech-core's fixed 1.0 s threshold (0.4 s
- * recovery). Android SpeechConfig cannot tune it, so a short "Stop" remains a physical risk.
- * DeepFilterNet is enhancement, not AEC; this capture seam intentionally permits later AEC.
+ * Direct TRANSCRIBE_ONLY synthesis does not arm Soniqo's native ResponseInterrupted path.
+ * Metten therefore confirms VAD speech after 500 ms with working Android AEC, otherwise
+ * 1,000 ms. A short "Stop" remains a physical risk. DeepFilterNet is not AEC.
  */
 internal class SoniqoConversationalSpeechSession(
     context: Context,
-    private val player: PcmSpeechPlayer,
+    private val player: StreamingPcm16Player,
     private val capture: FloatPcmCapture = SoniqoAudioRecordCapture(),
 ) : ContinuousSpeechInputEngine, SpeechOutputEngine {
     private val app = context.applicationContext
@@ -37,12 +36,21 @@ internal class SoniqoConversationalSpeechSession(
     private var muted = true
     // Capture API is available synchronously; output initialization owns asynchronous model readiness.
     private var capability = SpeechCapability(true, "Soniqo models are preparing.", true)
+    private val interruption = SoniqoInterruptionGate(
+        scheduler = InterruptionScheduler { delay, action ->
+            val runnable = Runnable(action)
+            main.postDelayed(runnable, delay)
+            CancellableTimer { main.removeCallbacks(runnable) }
+        },
+        currentOutput = { synchronized(lock) { output?.identity } },
+        emitConfirmed = { postInput(SpeechInputEvent.OutputInterrupted) },
+    )
 
     private data class Output(
         val generation: Long,
         val identity: PlaybackIdentity,
         val listener: (SpeechOutputEvent) -> Unit,
-        val samples: MutableList<FloatArray> = mutableListOf(),
+        var playback: PocketStreamingPlayback? = null,
     )
 
     override fun capability(): SpeechCapability = synchronized(lock) { capability }
@@ -53,24 +61,35 @@ internal class SoniqoConversationalSpeechSession(
         }
         inference.execute {
             val result = runCatching {
-                val modelDir = File(app.filesDir, "speech/soniqo-v0.0.21").apply { mkdirs() }
-                val config = SpeechConfig(
-                    modelDir = modelDir.absolutePath,
-                    useNnapi = false,
-                    sttModel = SttModel.PARAKEET_EOU,
-                    ttsModel = TtsModel.POCKET,
-                    pipelineMode = PipelineMode.TRANSCRIBE_ONLY,
-                    language = "auto",
-                    precision = ModelPrecision.INT8,
-                    emitPartialTranscriptions = true,
-                    partialTranscriptionInterval = 0.5f,
-                    beamSize = 4,
-                    endOfSpeechSilenceSec = 0.8f,
-                    enableSmartTurn = false,
-                )
-                // SpeechPipeline.start delegates to v0.0.21 ModelManager/ensureModels and
-                // reuses validated files in modelDir; this worker prevents main-thread I/O.
-                SpeechPipeline(config).also { it.start() }
+                ProvisionedResourceFactory(
+                    ensureModels = {
+                        runBlocking {
+                            ModelManager.ensureModels(
+                                context = app,
+                                precision = ModelPrecision.INT8,
+                                sttModel = SttModel.PARAKEET_EOU,
+                                ttsModel = TtsModel.POCKET,
+                                enableSmartTurn = false,
+                            )
+                        }
+                    },
+                    construct = { modelDir ->
+                        SpeechPipeline(SpeechConfig(
+                            modelDir = modelDir,
+                            useNnapi = false,
+                            sttModel = SttModel.PARAKEET_EOU,
+                            ttsModel = TtsModel.POCKET,
+                            pipelineMode = PipelineMode.TRANSCRIBE_ONLY,
+                            language = "auto",
+                            precision = ModelPrecision.INT8,
+                            emitPartialTranscriptions = true,
+                            partialTranscriptionInterval = 0.5f,
+                            beamSize = 4,
+                            endOfSpeechSilenceSec = 0.8f,
+                            enableSmartTurn = false,
+                        )).also { it.start() }
+                    },
+                ).create()
             }
             val ready = result.fold(
                 onSuccess = { value ->
@@ -97,12 +116,17 @@ internal class SoniqoConversationalSpeechSession(
         } ?: return post { listener(SpeechInputEvent.FatalError("Soniqo is not prepared.")) }
         value.resumeListening()
         capture.start { samples -> synchronized(lock) { if (!muted && !released) pipeline }?.pushAudio(samples) }
-            .onSuccess { postInput(SpeechInputEvent.Ready) }
+            .onSuccess { started ->
+                interruption.configure(started.acousticEchoCancelerEnabled)
+                Log.i(TAG, if (started.acousticEchoCancelerEnabled) "Barge-in confirmation: 500ms, AEC enabled" else "Barge-in confirmation: 1000ms, AEC unavailable")
+                postInput(SpeechInputEvent.Ready)
+            }
             .onFailure { postInput(SpeechInputEvent.FatalError(it.message ?: "Microphone capture failed.")) }
     }
 
     override fun stopListening() {
         synchronized(lock) { muted = true; inputListener = null }
+        interruption.muted()
         capture.stop()
         pipeline?.cancelCurrentTurn()
     }
@@ -114,10 +138,21 @@ internal class SoniqoConversationalSpeechSession(
             val generation = outputGeneration.incrementAndGet()
             val next = Output(generation, PlaybackIdentity(UUID.randomUUID().toString(), generation), listener)
             output = next
+            next.playback = PocketStreamingPlayback(player, next.identity, pipe.ttsSampleRate) { event ->
+                when (event) {
+                    StreamingPlaybackEvent.Started -> deliver(next, SpeechOutputEvent.Started, terminal = false)
+                    StreamingPlaybackEvent.Drained -> deliver(next, SpeechOutputEvent.Completed, terminal = true)
+                    is StreamingPlaybackEvent.Failed -> deliver(next, SpeechOutputEvent.Failed(event.reason), terminal = true)
+                }
+            }
             pipe to next
         }
         inference.execute {
-            runCatching { value.first.synthesizeStreaming(text) }
+            runCatching {
+                value.first.synthesizeStreaming(text, "en") { result, isFinal ->
+                    if (isCurrent(value.second)) value.second.playback?.accept(result.audio, result.sampleRate, isFinal)
+                }
+            }
                 .onFailure { failOutput(value.second, it.message ?: "Pocket TTS synthesis failed.") }
         }
     }
@@ -130,6 +165,7 @@ internal class SoniqoConversationalSpeechSession(
 
     override fun release() {
         synchronized(lock) { if (released) return; released = true; inputListener = null; output = null }
+        interruption.close()
         capture.release(); player.release(); pipeline?.cancelSynthesis(); pipeline?.stop(); pipeline?.close(); pipeline = null
         scope.cancel(); inference.shutdownNow()
     }
@@ -138,15 +174,14 @@ internal class SoniqoConversationalSpeechSession(
         scope.launch {
             value.events.collect { event ->
                 when (event) {
-                    is SpeechEvent.SpeechStarted -> postInput(SpeechInputEvent.SpeechStarted)
-                    is SpeechEvent.PartialTranscription -> postInput(SpeechInputEvent.Partial(event.text))
-                    is SpeechEvent.TranscriptionCompleted -> postInput(SpeechInputEvent.Final(event.text))
-                    is SpeechEvent.ResponseInterrupted -> {
-                        Log.i(TAG, "Soniqo confirmed barge-in; cancelling exact Voice output (no transcript logged).")
-                        postInput(SpeechInputEvent.OutputInterrupted)
+                    is SpeechEvent.SpeechStarted -> {
+                        val snapshot = synchronized(lock) { output?.identity to muted }
+                        interruption.speechStarted(snapshot.first, snapshot.second)
+                        postInput(SpeechInputEvent.SpeechStarted)
                     }
-                    is SpeechEvent.ResponseAudioDelta -> appendAudio(event.audio)
-                    is SpeechEvent.ResponseDone -> playCompletedSynthesis()
+                    is SpeechEvent.SpeechEnded -> interruption.speechEnded()
+                    is SpeechEvent.PartialTranscription -> postInput(SpeechInputEvent.Partial(event.text))
+                    is SpeechEvent.TranscriptionCompleted -> if (interruption.allowFinal()) postInput(SpeechInputEvent.Final(event.text))
                     is SpeechEvent.Error -> postInput(SpeechInputEvent.FatalError(event.message))
                     else -> Unit
                 }
@@ -154,27 +189,8 @@ internal class SoniqoConversationalSpeechSession(
         }
     }
 
-    private fun appendAudio(samples: FloatArray) = synchronized(lock) { output?.samples?.add(samples.copyOf()) }
-
-    private fun playCompletedSynthesis() {
-        val pair = synchronized(lock) {
-            val current = output ?: return
-            val samples = FloatArray(current.samples.sumOf { it.size })
-            var offset = 0
-            current.samples.forEach { it.copyInto(samples, offset).also { offset += it.size } }
-            current to samples
-        }
-        if (pair.second.isEmpty()) return failOutput(pair.first, "Pocket TTS produced no audio.")
-        player.play(pair.first.identity, SynthesizedSpeech(PcmFormat(pipeline?.ttsSampleRate ?: 24_000, 1), pair.second)) { event ->
-            when (event) {
-                PcmPlaybackEvent.Started -> deliver(pair.first, SpeechOutputEvent.Started, terminal = false)
-                PcmPlaybackEvent.Drained -> deliver(pair.first, SpeechOutputEvent.Completed, terminal = true)
-                is PcmPlaybackEvent.Failed -> deliver(pair.first, SpeechOutputEvent.Failed(event.reason), terminal = true)
-            }
-        }
-    }
-
     private fun failOutput(value: Output, reason: String) = deliver(value, SpeechOutputEvent.Failed(reason), terminal = true)
+    private fun isCurrent(value: Output) = synchronized(lock) { !released && output === value && outputGeneration.get() == value.generation }
     private fun deliver(value: Output, event: SpeechOutputEvent, terminal: Boolean) {
         val listener = synchronized(lock) {
             if (released || output !== value || outputGeneration.get() != value.generation) return

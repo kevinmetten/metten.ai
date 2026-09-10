@@ -60,12 +60,16 @@ jobs:
       - name: Build unsigned release isolation APK
         run: ./gradlew :app:assembleRelease --no-daemon
 
-      - name: Verify release runtime excludes sherpa
+      - name: Verify release runtime excludes debug speech engines
         run: |
           set -euo pipefail
           ./gradlew :app:dependencies --configuration releaseRuntimeClasspath > "$RUNNER_TEMP/release-dependencies.txt"
           if grep -qi 'sherpa-onnx' "$RUNNER_TEMP/release-dependencies.txt"; then
             echo "Release runtime unexpectedly contains sherpa-onnx."
+            exit 1
+          fi
+          if grep -qi 'audio.soniqo:speech' "$RUNNER_TEMP/release-dependencies.txt"; then
+            echo "Release runtime unexpectedly contains Soniqo."
             exit 1
           fi
 
@@ -86,6 +90,12 @@ jobs:
 
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --no-daemon
+
+      - name: Verify debug runtime contains pinned Soniqo
+        run: |
+          set -euo pipefail
+          ./gradlew :app:dependencies --configuration debugRuntimeClasspath > "$RUNNER_TEMP/debug-dependencies.txt"
+          grep -q 'audio.soniqo:speech:0.0.21' "$RUNNER_TEMP/debug-dependencies.txt"
 
       - name: Verify provisioned pinned sherpa AAR
         run: |
