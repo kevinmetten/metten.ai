@@ -20,6 +20,7 @@ internal class SoniqoInterruptionGate(
     private data class Segment(
         val id: Long,
         val reference: OutputReference?,
+        val beganDuringOutput: Boolean,
         var durationReached: Boolean = false,
         var classification: Classification = if (reference == null) Classification.HUMAN else Classification.UNKNOWN,
         var interrupted: Boolean = false,
@@ -33,6 +34,7 @@ internal class SoniqoInterruptionGate(
     private var timer: CancellableTimer? = null
     private var recentOutput: OutputReference? = null
     private var recentExpiry: CancellableTimer? = null
+    private var settledSegmentAwaitingNextSpeechId: Long? = null
     private var closed = false
 
     @Synchronized fun configure(acousticEchoCancelerEnabled: Boolean) {
@@ -47,8 +49,9 @@ internal class SoniqoInterruptionGate(
         if (closed || muted) return
         // A segment beginning just after drain still gets the exact, narrowly-lived output reference.
         val reference = output ?: recentOutput
-        val value = Segment(++nextSegment, reference)
+        val value = Segment(++nextSegment, reference, beganDuringOutput = output != null)
         segment = value
+        settledSegmentAwaitingNextSpeechId = null
         debug("VAD segment=${value.id} output=${reference?.identity} AEC=$aecEnabled started")
         if (output != null) {
             timer = scheduler.schedule(thresholdMillis) { durationReached(value.id, output.identity) }
@@ -74,15 +77,31 @@ internal class SoniqoInterruptionGate(
         val allowed = synchronized(this) {
             val value = completed.removeFirstOrNull() ?: segment
             if (value == null) {
+                if (settledSegmentAwaitingNextSpeechId != null) {
+                    debug("duplicate final for settled VAD segment=$settledSegmentAwaitingNextSpeechId discarded")
+                    return@synchronized false
+                }
                 val recent = recentOutput
                 val classification = recent?.let { classify(it.tokens, normalize(text)) } ?: Classification.HUMAN
                 debug("final without VAD output=${recent?.identity} classified=$classification ${if (classification == Classification.ECHO) "discarded" else "allowed"}")
                 return@synchronized classification != Classification.ECHO
             }
-            value.classification = classify(value.reference?.tokens, normalize(text))
+            val finalClassification = classify(value.reference?.tokens, normalize(text))
+            value.classification = finalClassification
             emit = shouldInterrupt(value)
-            val accept = value.reference == null || value.classification == Classification.HUMAN
-            debug("VAD segment=${value.id} final classified=${value.classification} ${if (accept) "allowed" else "discarded"}")
+            val accept = when {
+                value.reference == null -> true
+                finalClassification == Classification.ECHO -> false
+                !value.beganDuringOutput -> finalClassification == Classification.HUMAN
+                value.interrupted -> true
+                !value.durationReached -> false
+                finalClassification != Classification.HUMAN -> false
+                // Sustained overlapping human speech remains valid if its captured output drained or was replaced.
+                currentOutput() != value.reference.identity -> true
+                else -> false
+            }
+            settledSegmentAwaitingNextSpeechId = value.id
+            debug("VAD segment=${value.id} final classified=$finalClassification duration=${value.durationReached} interrupted=${value.interrupted} ${if (accept) "allowed" else "discarded"}")
             accept
         }
         if (emit) emitConfirmed()

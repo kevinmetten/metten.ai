@@ -46,6 +46,32 @@ class SoniqoInterruptionGateTest {
         assertEquals(1, h.interruptions)
     }
 
+    @Test fun `confirmed segment keeps a shortened unknown final exactly once`() {
+        val h = Harness().apply { gate.configure(true) }
+        h.start("One, two, three, four, five")
+        h.gate.partial("Actually stop counting and tell me about Jupiter")
+        h.scheduler.fire(500L)
+        assertEquals(1, h.interruptions)
+        h.gate.speechEnded()
+        assertTrue(h.gate.allowFinal("about Jupiter"))
+        assertFalse(h.gate.allowFinal("about Jupiter"))
+        assertEquals(1, h.interruptions)
+    }
+
+    @Test fun `sustained human overlap survives output drain before interruption`() {
+        val h = Harness().apply { gate.configure(true) }
+        val reference = h.reference("One, two, three, four, five")
+        h.gate.speechStarted(reference, muted = false)
+        h.gate.partial("Actually tell me about the largest planets")
+        h.current = null
+        h.gate.outputEnded(reference, naturallyDrained = true)
+        h.scheduler.fire(500L)
+        assertEquals(0, h.interruptions)
+        h.gate.speechEnded()
+        assertTrue(h.gate.allowFinal("Actually tell me about the largest planets"))
+        assertFalse(h.gate.allowFinal("Actually tell me about the largest planets"))
+    }
+
     @Test fun `replacement output makes old segment unable to interrupt`() {
         val h = Harness()
         h.start("old assistant words")
@@ -87,6 +113,7 @@ class SoniqoInterruptionGateTest {
         val h = Harness()
         h.start("assistant output"); h.gate.speechEnded()
         assertFalse(h.gate.allowFinal("unrelated human request"))
+        assertEquals(0, h.interruptions)
         h.gate.speechStarted(h.reference("assistant output"), muted = true)
         h.scheduler.fireAll(); assertEquals(0, h.interruptions)
     }
