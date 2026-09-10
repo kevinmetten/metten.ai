@@ -44,11 +44,11 @@ internal class SoniqoInterruptionGate(
 
     @Synchronized fun thresholdMillis() = thresholdMillis
 
-    @Synchronized fun speechStarted(output: OutputReference?, muted: Boolean) {
+    @Synchronized fun speechStarted(output: OutputReference?, muted: Boolean, recentHandoff: OutputReference? = null) {
         cancelSegmentTimer()
         if (closed || muted) return
         // A segment beginning just after drain still gets the exact, narrowly-lived output reference.
-        val reference = output ?: recentOutput
+        val reference = output ?: recentHandoff ?: recentOutput
         val value = Segment(++nextSegment, reference, beganDuringOutput = output != null)
         segment = value
         settledSegmentAwaitingNextSpeechId = null
@@ -173,11 +173,37 @@ internal class SoniqoInterruptionGate(
         const val CONSERVATIVE_CONFIRMATION_MS = 1_000L
         const val OUTPUT_TAIL_QUARANTINE_MS = 1_500L
 
-        private fun normalize(text: String): List<String> = text.lowercase()
-            .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
-            .trim()
-            .split(Regex("\\s+"))
-            .filter(String::isNotEmpty)
+        private fun normalize(text: String): List<String> {
+            val operators = text.lowercase()
+                .replace(Regex("(?<=\\d),(?=\\d{3}(?:\\D|$))"), "")
+                .replace(Regex("(?<=\\d)\\s*-\\s*(?=\\d)"), " minus ")
+                .replace(Regex("(?<=\\d)\\s*/\\s*(?=\\d)"), " divided by ")
+                .replace("+", " plus ")
+                .replace("=", " equals ")
+                .replace("×", " times ")
+                .replace("*", " times ")
+            return operators
+                .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
+                .trim()
+                .split(Regex("\\s+"))
+                .filter(String::isNotEmpty)
+                .flatMap { token -> token.toLongOrNull()?.takeIf { it in 0L..999_999_999L }?.let(::englishInteger) ?: listOf(token) }
+        }
+
+        private fun englishInteger(value: Long): List<String> = when {
+            value < 20 -> listOf(
+                "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+                "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen",
+                "eighteen", "nineteen",
+            )[value.toInt()].let(::listOf)
+            value < 100 -> {
+                val tens = listOf("", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety")
+                listOf(tens[(value / 10).toInt()]) + if (value % 10 == 0L) emptyList() else englishInteger(value % 10)
+            }
+            value < 1_000 -> englishInteger(value / 100) + "hundred" + if (value % 100 == 0L) emptyList() else englishInteger(value % 100)
+            value < 1_000_000 -> englishInteger(value / 1_000) + "thousand" + if (value % 1_000 == 0L) emptyList() else englishInteger(value % 1_000)
+            else -> englishInteger(value / 1_000_000) + "million" + if (value % 1_000_000 == 0L) emptyList() else englishInteger(value % 1_000_000)
+        }
 
         private fun classify(reference: List<String>?, transcript: List<String>): Classification {
             if (reference == null) return Classification.HUMAN

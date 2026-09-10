@@ -29,6 +29,39 @@ class SoniqoInterruptionGateTest {
         assertEquals(h.output, h.current)
     }
 
+    @Test fun `numeric arithmetic Pocket rendering is assistant echo`() {
+        val h = Harness().apply { gate.configure(true) }
+        h.start("17 + 28 = 45.")
+        h.gate.partial("seventeen plus twenty eight equals forty five")
+        h.scheduler.fire(500L)
+        assertEquals(0, h.interruptions)
+        h.gate.speechEnded()
+        assertFalse(h.gate.allowFinal("seventeen plus twenty eight equals forty five"))
+    }
+
+    @Test fun `numeric answer rendered as words is assistant echo`() {
+        val h = Harness().apply { gate.configure(true) }
+        h.start("The answer is 45.")
+        h.gate.partial("the answer is forty five")
+        h.scheduler.fire(500L)
+        assertEquals(0, h.interruptions)
+        h.gate.speechEnded()
+        assertFalse(h.gate.allowFinal("the answer is forty five"))
+    }
+
+    @Test fun `numeric assistant output still permits divergent barge in`() {
+        val h = Harness().apply { gate.configure(true) }
+        h.start("17 + 28 = 45.")
+        val user = "Actually tell me about Jupiter instead"
+        h.gate.partial(user)
+        h.scheduler.fire(500L)
+        assertEquals(1, h.interruptions)
+        h.gate.speechEnded()
+        assertTrue(h.gate.allowFinal(user))
+        assertFalse(h.gate.allowFinal(user))
+        assertEquals(1, h.interruptions)
+    }
+
     @Test fun `AEC sustained divergent speech interrupts once and same final survives`() {
         genuineBargeIn(aec = true, expectedDelay = 500L)
     }
@@ -90,6 +123,19 @@ class SoniqoInterruptionGateTest {
         h.gate.speechStarted(null, muted = false)
         h.gate.partial("equals forty five"); h.gate.speechEnded()
         assertFalse(h.gate.allowFinal("equals forty five"))
+    }
+
+    @Test fun `terminal handoff has no gap before quarantine is armed`() {
+        val h = Harness()
+        val reference = h.reference("The answer is 45")
+        h.current = null
+        // SpeechStarted lands after session output removal but before outputEnded enters the gate.
+        h.gate.speechStarted(output = null, muted = false, recentHandoff = reference)
+        h.gate.outputEnded(reference, naturallyDrained = true)
+        h.gate.partial("the answer is forty five")
+        h.gate.speechEnded()
+        assertFalse(h.gate.allowFinal("the answer is forty five"))
+        assertEquals(0, h.interruptions)
     }
 
     @Test fun `natural drain quarantine preserves divergent tail overlap user speech`() {

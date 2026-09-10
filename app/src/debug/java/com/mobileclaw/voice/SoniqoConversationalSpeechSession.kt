@@ -33,6 +33,8 @@ internal class SoniqoConversationalSpeechSession(
     private val pipeline get() = initialization.current()
     private var inputListener: ((SpeechInputEvent) -> Unit)? = null
     private var output: Output? = null
+    /** Bridges terminal output removal to the gate without nesting the session and gate locks. */
+    private var tailHandoff: SoniqoInterruptionGate.OutputReference? = null
     private val initializationListeners = mutableListOf<(SpeechCapability) -> Unit>()
     private var muted = true
     // Capture API is available synchronously; output initialization owns asynchronous model readiness.
@@ -189,11 +191,14 @@ internal class SoniqoConversationalSpeechSession(
     }
 
     override fun stop() {
-        val old = synchronized(lock) { outputGeneration.incrementAndGet(); output.also { output = null } }
+        val old = synchronized(lock) {
+            outputGeneration.incrementAndGet()
+            output.also { value -> if (value != null) tailHandoff = value.reference; output = null }
+        }
         pipeline?.cancelSynthesis()
         old?.let {
             Log.d(TAG, "output=${it.identity} cancel requested")
-            interruption.outputEnded(it.reference, naturallyDrained = false)
+            completeTailHandoff(it.reference, naturallyDrained = false)
             player.cancel(it.identity)
         }
     }
@@ -201,7 +206,7 @@ internal class SoniqoConversationalSpeechSession(
     override fun release() {
         val owned = synchronized(lock) {
             if (initialization.isReleased()) return
-            inputListener = null; output = null; initializationListeners.clear()
+            inputListener = null; output = null; tailHandoff = null; initializationListeners.clear()
             initialization.release()
         }
         interruption.close()
@@ -214,8 +219,8 @@ internal class SoniqoConversationalSpeechSession(
             value.events.collect { event ->
                 when (event) {
                     is SpeechEvent.SpeechStarted -> {
-                        val snapshot = synchronized(lock) { output?.reference to muted }
-                        interruption.speechStarted(snapshot.first, snapshot.second)
+                        val snapshot = synchronized(lock) { Triple(output?.reference, tailHandoff, muted) }
+                        interruption.speechStarted(snapshot.first, snapshot.third, snapshot.second)
                         postInput(SpeechInputEvent.SpeechStarted)
                     }
                     is SpeechEvent.SpeechEnded -> interruption.speechEnded()
@@ -236,11 +241,16 @@ internal class SoniqoConversationalSpeechSession(
     private fun deliver(value: Output, event: SpeechOutputEvent, terminal: Boolean) {
         val listener = synchronized(lock) {
             if (initialization.isReleased() || output !== value || outputGeneration.get() != value.generation) return
-            if (terminal) output = null
+            if (terminal) { tailHandoff = value.reference; output = null }
             value.listener
         }
-        if (terminal) interruption.outputEnded(value.reference, naturallyDrained = event == SpeechOutputEvent.Completed)
+        if (terminal) completeTailHandoff(value.reference, naturallyDrained = event == SpeechOutputEvent.Completed)
         post { listener(event) }
+    }
+    private fun completeTailHandoff(reference: SoniqoInterruptionGate.OutputReference, naturallyDrained: Boolean) {
+        // Never hold [lock] while entering the gate: the gate's exact-current check acquires [lock].
+        interruption.outputEnded(reference, naturallyDrained)
+        synchronized(lock) { if (tailHandoff == reference) tailHandoff = null }
     }
     private fun postInput(event: SpeechInputEvent) { synchronized(lock) { if (muted || initialization.isReleased()) null else inputListener }?.let { callback -> post { callback(event) } } }
     private fun post(block: () -> Unit) { main.post(block) }
