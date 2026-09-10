@@ -8,8 +8,8 @@ commit `c2cdcf2f1b90f15acac640cf8cf5233ed1f388a9`. The pinned artifact is
 * ONNX Runtime: 1.27.0.
 * LiteRT: intentionally disabled in the Metten Soniqo build. Metten's separate
   LiteRT-LM runtime remains unchanged.
-* AAR byte size: `PENDING_ONE_TIME_BUILD`.
-* AAR SHA-256: `PENDING_ONE_TIME_BUILD`.
+* AAR byte size: `24184035`.
+* AAR SHA-256: `31dc167122cf632c996c0ada78a6ce4d352d071144335ddae01aa8d270928da7`.
 
 Version 0.0.20 is selected because its Android SDK is compatible with compileSdk 35.
 Version 0.0.21 moved to compileSdk 37 and newer Android/OkHttp dependencies that are
