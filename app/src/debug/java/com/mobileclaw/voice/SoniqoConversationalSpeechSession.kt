@@ -178,13 +178,21 @@ internal class SoniqoConversationalSpeechSession(
                     is StreamingPlaybackEvent.Failed -> deliver(next, SpeechOutputEvent.Failed(event.reason), terminal = true)
                 }
             }
+            Log.d(TAG, "Pocket logical output=${next.identity} chars=${text.length}")
             pipe to next
         }
         inference.execute {
             runCatching {
-                value.first.synthesizeStreaming(text, "en") { result, isFinal ->
-                    if (isCurrent(value.second)) value.second.playback?.accept(result.pcm16, result.sampleRate, isFinal)
-                }
+                PocketSegmentedSynthesis(
+                    playback = checkNotNull(value.second.playback),
+                    isCurrent = { isCurrent(value.second) },
+                    synthesize = { segment, callback ->
+                        value.first.synthesizeStreaming(segment, "en") { result, isFinal ->
+                            callback(result.pcm16, result.sampleRate, isFinal)
+                        }
+                    },
+                    debug = { Log.d(TAG, "output=${value.second.identity} $it") },
+                ).run(text)
             }
                 .onFailure { failOutput(value.second, it.message ?: "Pocket TTS synthesis failed.") }
         }
@@ -220,15 +228,21 @@ internal class SoniqoConversationalSpeechSession(
                 when (event) {
                     is SpeechEvent.SpeechStarted -> {
                         val snapshot = synchronized(lock) { Triple(output?.reference, tailHandoff, muted) }
+                        Log.d(TAG, "Soniqo SpeechStarted output=${snapshot.first?.identity} active=${snapshot.first != null}")
                         interruption.speechStarted(snapshot.first, snapshot.third, snapshot.second)
                         postInput(SpeechInputEvent.SpeechStarted)
                     }
-                    is SpeechEvent.SpeechEnded -> interruption.speechEnded()
+                    is SpeechEvent.SpeechEnded -> { Log.d(TAG, "Soniqo SpeechEnded"); interruption.speechEnded() }
                     is SpeechEvent.PartialTranscription -> {
+                        Log.d(TAG, "Soniqo partial tokens=${event.text.trim().split(Regex("\\s+")).filter(String::isNotEmpty).size} output=${synchronized(lock) { output?.identity }}")
                         interruption.partial(event.text)
                         postInput(SpeechInputEvent.Partial(event.text))
                     }
-                    is SpeechEvent.TranscriptionCompleted -> if (interruption.allowFinal(event.text)) postInput(SpeechInputEvent.Final(event.text))
+                    is SpeechEvent.TranscriptionCompleted -> {
+                        val active = synchronized(lock) { output?.reference }
+                        Log.d(TAG, "Soniqo final tokens=${event.text.trim().split(Regex("\\s+")).filter(String::isNotEmpty).size} output=${active?.identity}")
+                        if (interruption.allowFinal(event.text, active)) postInput(SpeechInputEvent.Final(event.text))
+                    }
                     is SpeechEvent.Error -> postInput(SpeechInputEvent.FatalError(event.message))
                     else -> Unit
                 }

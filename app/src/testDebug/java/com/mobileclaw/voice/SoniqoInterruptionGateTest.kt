@@ -79,6 +79,32 @@ class SoniqoInterruptionGateTest {
         assertEquals(1, h.interruptions)
     }
 
+    @Test fun `mixed airplane echo with strong divergent suffix interrupts`() {
+        val h = Harness().apply { gate.configure(true) }
+        h.start("Airplanes fly when airflow over their wings creates lift and thrust moves them forward through the atmosphere")
+        h.gate.partial("airplanes fly when airflow over their wings creates lift actually stop there and tell me why the ocean is salty instead")
+        h.scheduler.fire(500L)
+        assertEquals(1, h.interruptions)
+    }
+
+    @Test fun `mixed Mars echo with divergent subject change interrupts but two errors do not`() {
+        val h = Harness().apply { gate.configure(true) }
+        h.start("Mars is cold and has a thin atmosphere and many ancient craters")
+        h.gate.partial("mars is warm and has a thick atmosphere and many ancient craters")
+        h.scheduler.fire(500L)
+        assertEquals(0, h.interruptions)
+        h.gate.partial("mars is cold and has a thin atmosphere change of subject explain how thunderstorms form")
+        assertEquals(1, h.interruptions)
+    }
+
+    @Test fun `strong active final without VAD conservatively interrupts and is accepted once`() {
+        val h = Harness()
+        val reference = h.reference("Airplanes fly because wings create lift and engines provide thrust")
+        assertTrue(h.gate.allowFinal("airplanes fly because wings create lift actually explain why ocean water is salty instead", reference))
+        assertEquals(1, h.interruptions)
+        assertFalse(h.gate.allowFinal("airplanes fly because wings create lift actually explain why ocean water is salty instead", reference))
+    }
+
     @Test fun `confirmed segment keeps a shortened unknown final exactly once`() {
         val h = Harness().apply { gate.configure(true) }
         h.start("One, two, three, four, five")
