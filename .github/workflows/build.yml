@@ -7,12 +7,22 @@ on:
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Build the full Metten APK or create the one-time ONNX-only Soniqo AAR
+        required: true
+        default: full_apk
+        type: choice
+        options:
+          - full_apk
+          - soniqo_onnx_aar
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
+    if: github.event_name != 'workflow_dispatch' || inputs.mode == 'full_apk'
     runs-on: ubuntu-latest
 
     steps:
@@ -43,34 +53,16 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.1.8937393" >> $GITHUB_ENV
 
       - name: Grant execute permission for gradlew
-        run: chmod +x gradlew scripts/provision_kitten_tts_model.sh
-
-      - name: Test release isolation
-        run: |
-          ./gradlew :app:testReleaseUnitTest --no-daemon \
-            --tests 'com.mobileclaw.voice.*' \
-            --tests 'com.mobileclaw.agent.VoiceAgentCoordinatorTest' \
-            --tests 'com.mobileclaw.agent.PriorGenerationSettlementBarrierTest' \
-            --tests 'com.mobileclaw.agent.AgentTaskSubmissionServiceTest' \
-            --tests 'com.mobileclaw.realtime.ChatGptRealtimeSessionControllerTest' \
-            --tests 'com.mobileclaw.realtime.RealtimeSidebandLifecycleTest' \
-            --tests 'com.mobileclaw.realtime.VoiceForegroundServicePolicyTest' \
-            --tests 'com.mobileclaw.ui.settings.AiBasicsReachabilityTest'
-
-      - name: Build unsigned release isolation APK
-        run: ./gradlew :app:assembleRelease --no-daemon
-
-      - name: Verify release runtime excludes sherpa
-        run: |
-          set -euo pipefail
-          ./gradlew :app:dependencies --configuration releaseRuntimeClasspath > "$RUNNER_TEMP/release-dependencies.txt"
-          if grep -qi 'sherpa-onnx' "$RUNNER_TEMP/release-dependencies.txt"; then
-            echo "Release runtime unexpectedly contains sherpa-onnx."
-            exit 1
-          fi
+        run: chmod +x gradlew scripts/provision_kitten_tts_model.sh scripts/verify_soniqo_aar.sh
 
       - name: Provision pinned neural speech artifacts
         run: scripts/provision_kitten_tts_model.sh
+
+      - name: Verify pinned ONNX-only Soniqo AAR
+        run: scripts/verify_soniqo_aar.sh
+
+      - name: Compile debug Voice candidate
+        run: ./gradlew :app:compileDebugKotlin --no-daemon
 
       - name: Test debug
         run: |
@@ -84,7 +76,87 @@ jobs:
             --tests 'com.mobileclaw.realtime.VoiceForegroundServicePolicyTest' \
             --tests 'com.mobileclaw.ui.settings.AiBasicsReachabilityTest'
 
+      - name: Compile release
+        run: ./gradlew :app:compileReleaseKotlin --no-daemon
+
+      - name: Test release isolation
+        run: |
+          ./gradlew :app:testReleaseUnitTest --no-daemon \
+            --tests 'com.mobileclaw.voice.*' \
+            --tests 'com.mobileclaw.agent.VoiceAgentCoordinatorTest' \
+            --tests 'com.mobileclaw.agent.PriorGenerationSettlementBarrierTest' \
+            --tests 'com.mobileclaw.agent.AgentTaskSubmissionServiceTest' \
+            --tests 'com.mobileclaw.realtime.ChatGptRealtimeSessionControllerTest' \
+            --tests 'com.mobileclaw.realtime.RealtimeSidebandLifecycleTest' \
+            --tests 'com.mobileclaw.realtime.VoiceForegroundServicePolicyTest' \
+            --tests 'com.mobileclaw.ui.settings.AiBasicsReachabilityTest'
+
+      - name: Verify release runtime excludes debug speech engines
+        run: |
+          set -euo pipefail
+          ./gradlew :app:dependencies --configuration releaseRuntimeClasspath > "$RUNNER_TEMP/release-dependencies.txt"
+          if grep -qi 'sherpa-onnx' "$RUNNER_TEMP/release-dependencies.txt"; then
+            echo "Release runtime unexpectedly contains sherpa-onnx."
+            exit 1
+          fi
+          if grep -qi 'audio.soniqo:speech' "$RUNNER_TEMP/release-dependencies.txt"; then
+            echo "Release runtime unexpectedly contains Soniqo."
+            exit 1
+          fi
+
+      - name: Verify debug runtime contains only pinned Soniqo speech runtime
+        run: |
+          set -euo pipefail
+          ./gradlew :app:dependencies --configuration debugRuntimeClasspath > "$RUNNER_TEMP/debug-dependencies.txt"
+          grep -q 'soniqo-speech-0.0.20-metten-onnx-only.aar' app/build.gradle.kts
+          if grep -qi 'audio.soniqo:speech' "$RUNNER_TEMP/debug-dependencies.txt"; then
+            echo "Debug runtime unexpectedly resolved the Maven Soniqo artifact."
+            exit 1
+          fi
+          if grep -qi 'sherpa-onnx' "$RUNNER_TEMP/debug-dependencies.txt"; then
+            echo "Debug runtime unexpectedly contains compile-only sherpa-onnx."
+            exit 1
+          fi
+
+      - name: Merge and inspect debug native libraries
+        run: |
+          set -euo pipefail
+          ./gradlew :app:mergeDebugNativeLibs --no-daemon
+          native_root="app/build/intermediates/merged_native_libs/debug/mergeDebugNativeLibs/out/lib"
+          test -d "$native_root"
+          if find "$native_root" -name 'libsherpa-onnx-jni.so' -print -quit | grep -q .; then
+            echo "Soniqo candidate unexpectedly packages sherpa JNI."
+            exit 1
+          fi
+          prebuilt_dir="$(find "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+          test -n "$prebuilt_dir"
+          readelf_bin="$prebuilt_dir/bin/llvm-readelf"
+          if [ ! -x "$readelf_bin" ]; then
+            echo "Expected executable llvm-readelf at: $readelf_bin" >&2
+            ls -la "$prebuilt_dir/bin" | grep -E 'llvm-readelf|llvm-readobj' || true
+            exit 1
+          fi
+          echo "Using llvm-readelf: $readelf_bin"
+          ls -l "$readelf_bin"
+          while IFS= read -r abi; do
+            abi_dir="$native_root/$abi"
+            test -d "$abi_dir"
+            test "$(find "$abi_dir" -maxdepth 1 -name 'libonnxruntime.so' -type f | wc -l)" -eq 1
+            test "$(find "$abi_dir" -maxdepth 1 -name 'libLiteRt.so' -type f | wc -l)" -eq 1
+            test -f "$abi_dir/libspeech_android.so"
+            test ! -f "$abi_dir/libsherpa-onnx-jni.so"
+            if "$readelf_bin" -d "$abi_dir/libspeech_android.so" | grep -q 'Shared library: \[libLiteRt.so\]'; then
+              echo "$abi libspeech_android.so unexpectedly depends on libLiteRt.so."
+              exit 1
+            fi
+          done < <(printf '%s\n' arm64-v8a x86_64)
+
+      - name: Build unsigned release isolation APK
+        if: github.event_name != 'pull_request'
+        run: ./gradlew :app:assembleRelease --no-daemon
+
       - name: Build debug APK
+        if: github.event_name != 'pull_request'
         run: ./gradlew :app:assembleDebug --no-daemon
 
       - name: Verify provisioned pinned sherpa AAR
@@ -99,6 +171,7 @@ jobs:
             "$aar" | sha256sum -c -
 
       - name: Inspect neural debug APK
+        if: github.event_name != 'pull_request'
         run: |
           set -euo pipefail
           apk="$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)"
@@ -107,14 +180,193 @@ jobs:
           grep -q 'assets/tts/kitten-nano-en-v0_8-fp32/model.fp32.onnx' "$RUNNER_TEMP/debug-apk.txt"
           grep -q 'assets/tts/kitten-nano-en-v0_8-fp32/metten-model-manifest.json' "$RUNNER_TEMP/debug-apk.txt"
           grep -q 'assets/tts/kitten-nano-en-v0_8-fp32/espeak-ng-data/.' "$RUNNER_TEMP/debug-apk.txt"
-          grep -q 'lib/arm64-v8a/libsherpa-onnx-jni.so' "$RUNNER_TEMP/debug-apk.txt"
+          if grep -q 'libsherpa-onnx-jni.so' "$RUNNER_TEMP/debug-apk.txt"; then
+            echo "Soniqo candidate APK unexpectedly contains sherpa JNI."
+            exit 1
+          fi
 
       - name: Upload debug APK
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: mobileclaw-debug-${{ github.sha }}
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 14
+
+  soniqo_onnx_aar:
+    name: Build and pin ONNX-only Soniqo AAR
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'soniqo_onnx_aar'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      METTEN_BRANCH: codex/implement-full-duplex-conversational-speech-path
+      SPEECH_ANDROID_SHA: a019eaf2896443c5e889a3f26463b81c42e9db1f
+      SPEECH_CORE_SHA: c2cdcf2f1b90f15acac640cf8cf5233ed1f388a9
+      ORT_VERSION: 1.27.0
+
+    steps:
+      - name: Refuse any ref except the existing PR branch
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_TYPE" = branch
+          test "$GITHUB_REF_NAME" = "$METTEN_BRANCH"
+
+      - name: Checkout the existing Metten PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: codex/implement-full-duplex-conversational-speech-path
+          fetch-depth: 0
+
+      - name: Remember the branch head used by this build
+        run: echo "METTEN_START_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Checkout exact Soniqo source and recursive submodules
+        uses: actions/checkout@v4
+        with:
+          repository: soniqo/speech-android
+          ref: a019eaf2896443c5e889a3f26463b81c42e9db1f
+          submodules: recursive
+          fetch-depth: 0
+          path: .soniqo-build
+
+      - name: Verify exact upstream source revisions
+        run: |
+          set -euo pipefail
+          test "$(git -C .soniqo-build rev-parse HEAD)" = "$SPEECH_ANDROID_SHA"
+          core_path="$(git -C .soniqo-build config -f .gitmodules --get-regexp path | awk '$2 ~ /speech-core/ {print $2; exit}')"
+          test -n "$core_path"
+          test "$(git -C ".soniqo-build/$core_path" rev-parse HEAD)" = "$SPEECH_CORE_SHA"
+          grep -Eq 'compileSdk[[:space:]]*=[[:space:]]*35|compileSdk\(35\)' .soniqo-build/sdk/build.gradle.kts
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: gradle
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install pinned Android native toolchain
+        run: |
+          sdkmanager 'platforms;android-35' 'ndk;29.0.14206865' 'cmake;3.22.1'
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+
+      - name: Provision ONNX Runtime 1.27.0 only
+        working-directory: .soniqo-build
+        run: |
+          set -euo pipefail
+          rm -rf ort litert
+          mkdir -p ort/include ort/lib
+          aar="$RUNNER_TEMP/onnxruntime-android-$ORT_VERSION.aar"
+          curl --fail --location --retry 3 \
+            "https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/$ORT_VERSION/onnxruntime-android-$ORT_VERSION.aar" \
+            --output "$aar"
+          unzip -q "$aar" -d "$RUNNER_TEMP/ort-aar"
+          for abi in arm64-v8a x86_64; do
+            mkdir -p "ort/lib/$abi"
+            cp "$RUNNER_TEMP/ort-aar/jni/$abi/libonnxruntime.so" "ort/lib/$abi/"
+          done
+          if compgen -G "$RUNNER_TEMP/ort-aar/headers/*.h" >/dev/null; then
+            cp -R "$RUNNER_TEMP/ort-aar/headers/." ort/include/
+          fi
+          for header in \
+            onnxruntime_c_api.h \
+            onnxruntime_ep_c_api.h \
+            onnxruntime_float16.h; do
+            if [ ! -f "ort/include/$header" ]; then
+              curl --fail --location --retry 3 \
+                "https://raw.githubusercontent.com/microsoft/onnxruntime/v$ORT_VERSION/include/onnxruntime/core/session/$header" \
+                --output "ort/include/$header"
+            fi
+          done
+          test -f ort/include/onnxruntime_c_api.h
+          test -f ort/include/onnxruntime_ep_c_api.h
+          test -f ort/include/onnxruntime_float16.h
+          test -f ort/lib/arm64-v8a/libonnxruntime.so
+          test -f ort/lib/x86_64/libonnxruntime.so
+          if find "$PWD" -name libLiteRt.so -print -quit | grep -q .; then
+            echo 'LiteRT must be absent before configuring Soniqo.'
+            exit 1
+          fi
+
+      - name: Build only the upstream Soniqo SDK release AAR
+        working-directory: .soniqo-build
+        run: ./gradlew :sdk:assembleRelease --no-daemon
+
+      - name: Inspect and pin the ONNX-only AAR
+        run: |
+          set -euo pipefail
+          chmod +x scripts/verify_soniqo_aar.sh
+          source_aar=".soniqo-build/sdk/build/outputs/aar/sdk-release.aar"
+          target_aar="app/libs/soniqo-speech-0.0.20-metten-onnx-only.aar"
+          test -f "$source_aar"
+          inspect="$RUNNER_TEMP/soniqo-aar"
+          mkdir -p "$inspect"
+          unzip -q "$source_aar" -d "$inspect"
+          echo 'Soniqo AAR native entries:'
+          unzip -Z1 "$source_aar" | grep -E '(^|/)jni/|libspeech_android|libonnxruntime|libLiteRt' || true
+          if find "$inspect" -name libLiteRt.so -print -quit | grep -q .; then
+            echo 'Soniqo AAR unexpectedly contains LiteRT.'
+            exit 1
+          fi
+          prebuilt_dir="$(find "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+          test -n "$prebuilt_dir"
+          readelf_bin="$prebuilt_dir/bin/llvm-readelf"
+          if [ ! -x "$readelf_bin" ]; then
+            echo "Expected executable llvm-readelf at: $readelf_bin" >&2
+            ls -la "$prebuilt_dir/bin" | grep -E 'llvm-readelf|llvm-readobj' || true
+            exit 1
+          fi
+          echo "Using llvm-readelf: $readelf_bin"
+          ls -l "$readelf_bin"
+          for abi in arm64-v8a x86_64; do
+            for library in libspeech_android.so libonnxruntime.so; do
+              required_path="$inspect/jni/$abi/$library"
+              if [ ! -f "$required_path" ]; then
+                echo "Missing required Soniqo AAR native library: jni/$abi/$library" >&2
+                exit 1
+              fi
+            done
+            if "$readelf_bin" -d "$inspect/jni/$abi/libspeech_android.so" | grep -q 'Shared library: \[libLiteRt.so\]'; then
+              echo "$abi libspeech_android.so unexpectedly depends on LiteRT."
+              exit 1
+            fi
+          done
+          mkdir -p app/libs
+          cp "$source_aar" "$target_aar"
+          size="$(stat -c %s "$target_aar")"
+          sha="$(sha256sum "$target_aar" | awk '{print $1}')"
+          python3 - "$size" "$sha" <<'PY'
+          from pathlib import Path
+          import sys
+          path = Path("docs/metten-voice-soniqo-provenance.md")
+          text = path.read_text()
+          if text.count("PENDING_ONE_TIME_BUILD") != 2:
+              raise SystemExit("provenance placeholders are missing or already substituted")
+          text = text.replace("PENDING_ONE_TIME_BUILD", sys.argv[1], 1)
+          text = text.replace("PENDING_ONE_TIME_BUILD", sys.argv[2], 1)
+          path.write_text(text)
+          PY
+          scripts/verify_soniqo_aar.sh "$target_aar"
+
+      - name: Commit verified artifact to the existing PR branch without force
+        run: |
+          set -euo pipefail
+          git fetch origin "$METTEN_BRANCH:refs/remotes/origin/$METTEN_BRANCH"
+          test "$(git rev-parse "origin/$METTEN_BRANCH")" = "$METTEN_START_SHA" || {
+            echo 'The PR branch advanced during the native build; refusing to overwrite it.'
+            exit 1
+          }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/libs/soniqo-speech-0.0.20-metten-onnx-only.aar \
+            docs/metten-voice-soniqo-provenance.md
+          git diff --cached --check
+          git commit -m 'Pin ONNX-only Soniqo 0.0.20 runtime'
+          git push origin "HEAD:$METTEN_BRANCH"
 
   release:
     runs-on: ubuntu-latest

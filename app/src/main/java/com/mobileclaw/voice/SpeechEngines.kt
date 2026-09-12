@@ -7,6 +7,8 @@ sealed interface SpeechInputEvent {
     data object SpeechStarted : SpeechInputEvent
     data class Partial(val text: String) : SpeechInputEvent
     data class Final(val text: String) : SpeechInputEvent
+    /** Emitted only after the speech backend has confirmed barge-in (not merely speech onset). */
+    data object OutputInterrupted : SpeechInputEvent
     data class RecoverableError(
         val reason: String,
         val retryDelayMillis: Long = 700,
@@ -14,6 +16,9 @@ sealed interface SpeechInputEvent {
     ) : SpeechInputEvent
     data class FatalError(val reason: String) : SpeechInputEvent
 }
+
+/** An input whose capture session remains alive while Metten thinks and speaks. */
+interface ContinuousSpeechInputEngine : SpeechInputEngine
 
 enum class SpeechInputFailureKind { NO_SPEECH, BUSY, CLIENT_CANCELLATION, START_FAILURE }
 
