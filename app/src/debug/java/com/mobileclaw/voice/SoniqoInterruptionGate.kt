@@ -17,6 +17,14 @@ internal class SoniqoInterruptionGate(
     }
 
     private enum class Classification { ECHO, HUMAN, UNKNOWN }
+    private data class Analysis(
+        val classification: Classification,
+        val overlap: Double,
+        val divergentResidue: Int,
+        val divergentRun: Int,
+        val trailingDivergent: Int,
+        val trailingSize: Int,
+    )
     private data class Segment(
         val id: Long,
         val reference: OutputReference?,
@@ -72,7 +80,7 @@ internal class SoniqoInterruptionGate(
     }
 
     /** Finals consume completed VAD segments in order and may provide their last lexical evidence. */
-    fun allowFinal(text: String): Boolean {
+    fun allowFinal(text: String, activeOutput: OutputReference? = null): Boolean {
         var emit = false
         val allowed = synchronized(this) {
             val value = completed.removeFirstOrNull() ?: segment
@@ -81,12 +89,22 @@ internal class SoniqoInterruptionGate(
                     debug("duplicate final for settled VAD segment=$settledSegmentAwaitingNextSpeechId discarded")
                     return@synchronized false
                 }
-                val recent = recentOutput
-                val classification = recent?.let { classify(it.tokens, normalize(text)) } ?: Classification.HUMAN
-                debug("final without VAD output=${recent?.identity} classified=$classification ${if (classification == Classification.ECHO) "discarded" else "allowed"}")
-                return@synchronized classification != Classification.ECHO
+                val reference = activeOutput ?: recentOutput
+                val tokens = normalize(text)
+                val analysis = analyze(reference?.tokens, tokens)
+                val fallback = activeOutput != null && tokens.size >= FINAL_FALLBACK_MIN_TOKENS &&
+                    analysis.classification == Classification.HUMAN && currentOutput() == activeOutput.identity
+                if (fallback) {
+                    settledSegmentAwaitingNextSpeechId = ++nextSegment
+                    emit = true
+                    debug("final without VAD output=${activeOutput.identity} overlap=${analysis.overlap} divergentResidue=${analysis.divergentResidue} divergentRun=${analysis.divergentRun} trailingDivergent=${analysis.trailingDivergent}/${analysis.trailingSize} HUMAN OutputInterrupted emitted; allowed")
+                    return@synchronized true
+                }
+                debug("final without VAD output=${reference?.identity} overlap=${analysis.overlap} divergentResidue=${analysis.divergentResidue} divergentRun=${analysis.divergentRun} trailingDivergent=${analysis.trailingDivergent}/${analysis.trailingSize} classified=${analysis.classification} ${if (analysis.classification == Classification.ECHO || activeOutput != null) "discarded" else "allowed"}")
+                return@synchronized activeOutput == null && analysis.classification != Classification.ECHO
             }
-            val finalClassification = classify(value.reference?.tokens, normalize(text))
+            val finalAnalysis = analyze(value.reference?.tokens, normalize(text))
+            val finalClassification = finalAnalysis.classification
             value.classification = finalClassification
             emit = shouldInterrupt(value)
             val accept = when {
@@ -101,7 +119,7 @@ internal class SoniqoInterruptionGate(
                 else -> false
             }
             settledSegmentAwaitingNextSpeechId = value.id
-            debug("VAD segment=${value.id} final classified=$finalClassification duration=${value.durationReached} interrupted=${value.interrupted} ${if (accept) "allowed" else "discarded"}")
+            debug("VAD segment=${value.id} final overlap=${finalAnalysis.overlap} divergentResidue=${finalAnalysis.divergentResidue} divergentRun=${finalAnalysis.divergentRun} trailingDivergent=${finalAnalysis.trailingDivergent}/${finalAnalysis.trailingSize} classified=$finalClassification duration=${value.durationReached} interrupted=${value.interrupted} ${if (accept) "allowed" else "discarded"}")
             accept
         }
         if (emit) emitConfirmed()
@@ -136,8 +154,9 @@ internal class SoniqoInterruptionGate(
         var emit = false
         synchronized(this) {
             val value = segment ?: return
-            value.classification = classify(value.reference?.tokens, normalize(text))
-            debug("VAD segment=${value.id} output=${value.reference?.identity} ${if (final) "final" else "partial"} classified=${value.classification}")
+            val analysis = analyze(value.reference?.tokens, normalize(text))
+            value.classification = analysis.classification
+            debug("VAD segment=${value.id} output=${value.reference?.identity} ${if (final) "final" else "partial"} overlap=${analysis.overlap} divergentResidue=${analysis.divergentResidue} divergentRun=${analysis.divergentRun} trailingDivergent=${analysis.trailingDivergent}/${analysis.trailingSize} classified=${value.classification}")
             emit = shouldInterrupt(value)
         }
         if (emit) emitConfirmed()
@@ -172,6 +191,11 @@ internal class SoniqoInterruptionGate(
         const val AEC_CONFIRMATION_MS = 500L
         const val CONSERVATIVE_CONFIRMATION_MS = 1_000L
         const val OUTPUT_TAIL_QUARANTINE_MS = 1_500L
+        private const val DIVERGENT_RUN_MIN_TOKENS = 5
+        private const val TRAILING_WINDOW_TOKENS = 12
+        private const val TRAILING_DIVERGENT_MIN_TOKENS = 7
+        private const val TRAILING_DIVERGENT_MIN_RATIO = 0.58
+        private const val FINAL_FALLBACK_MIN_TOKENS = 5
 
         private fun normalize(text: String): List<String> {
             val operators = text.lowercase()
@@ -205,18 +229,40 @@ internal class SoniqoInterruptionGate(
             else -> englishInteger(value / 1_000_000) + "million" + if (value % 1_000_000 == 0L) emptyList() else englishInteger(value % 1_000_000)
         }
 
-        private fun classify(reference: List<String>?, transcript: List<String>): Classification {
-            if (reference == null) return Classification.HUMAN
-            if (transcript.isEmpty()) return Classification.UNKNOWN
+        private fun analyze(reference: List<String>?, transcript: List<String>): Analysis {
+            if (reference == null) return Analysis(Classification.HUMAN, 0.0, transcript.size, transcript.size, transcript.size, transcript.size)
+            if (transcript.isEmpty()) return Analysis(Classification.UNKNOWN, 0.0, 0, 0, 0, 0)
             val contiguous = transcript.size >= 2 && reference.windowed(transcript.size).any { it == transcript }
             val remaining = reference.groupingBy { it }.eachCount().toMutableMap()
-            val overlap = transcript.count { token ->
+            var run = 0
+            var longestRun = 0
+            val divergent = transcript.map { token ->
                 val count = remaining[token] ?: 0
-                if (count > 0) { remaining[token] = count - 1; true } else false
-            }.toDouble() / transcript.size
-            if (contiguous || overlap >= 0.75) return Classification.ECHO
+                if (count > 0) {
+                    remaining[token] = count - 1
+                    run = 0
+                    false
+                } else {
+                    run++
+                    longestRun = maxOf(longestRun, run)
+                    true
+                }
+            }
+            val overlapCount = divergent.count { !it }
+            val overlap = overlapCount.toDouble() / transcript.size
+            val residue = transcript.size - overlapCount
+            val trailing = divergent.takeLast(TRAILING_WINDOW_TOKENS)
+            val trailingDivergent = trailing.count { it }
+            val localizedDivergence = trailingDivergent >= TRAILING_DIVERGENT_MIN_TOKENS &&
+                trailingDivergent.toDouble() / trailing.size >= TRAILING_DIVERGENT_MIN_RATIO
+            // Only concentrated divergence overrides strong global echo; scattered substitutions cannot.
+            if (longestRun >= DIVERGENT_RUN_MIN_TOKENS || localizedDivergence) {
+                return Analysis(Classification.HUMAN, overlap, residue, longestRun, trailingDivergent, trailing.size)
+            }
+            if (contiguous || overlap >= 0.75) return Analysis(Classification.ECHO, overlap, residue, longestRun, trailingDivergent, trailing.size)
             // Short or mixed evidence stays unknown rather than risking an echo interruption.
-            return if (transcript.size >= 3 && overlap < 0.5) Classification.HUMAN else Classification.UNKNOWN
+            val classification = if (transcript.size >= 3 && overlap < 0.5) Classification.HUMAN else Classification.UNKNOWN
+            return Analysis(classification, overlap, residue, longestRun, trailingDivergent, trailing.size)
         }
     }
 }

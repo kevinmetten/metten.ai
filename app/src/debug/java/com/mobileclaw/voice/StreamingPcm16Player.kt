@@ -69,12 +69,22 @@ internal class PocketStreamingPlayback(
     private val sampleRateHz: Int,
     listener: (StreamingPlaybackEvent) -> Unit,
 ) {
-    private var final = false
+    private var logicalFinal = false
+    private var segment = 0
     init { player.start(identity, sampleRateHz, listener) }
-    fun accept(pcm16: ByteArray, chunkSampleRateHz: Int, isFinal: Boolean) {
-        check(!final) { "Pocket emitted audio after its final chunk." }
+    fun beginSegment(): Int = synchronized(this) {
+        check(!logicalFinal) { "Pocket segment started after logical final." }
+        ++segment
+    }
+    @Synchronized fun accept(segmentId: Int, pcm16: ByteArray, chunkSampleRateHz: Int) {
+        // Native callbacks may race cancellation/retry; an old segment never owns the current stream.
+        if (logicalFinal || segmentId != segment) return
         check(chunkSampleRateHz == sampleRateHz) { "Pocket changed sample rate within an utterance." }
         if (pcm16.isNotEmpty()) player.append(identity, pcm16)
-        if (isFinal) { final = true; player.finish(identity) }
+    }
+    @Synchronized fun finishLogical() {
+        check(!logicalFinal) { "Pocket logical output finished twice." }
+        logicalFinal = true
+        player.finish(identity)
     }
 }
