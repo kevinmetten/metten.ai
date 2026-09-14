@@ -130,6 +130,76 @@ class SoniqoInterruptionGateTest {
         assertEquals(0, h.interruptions)
     }
 
+    @Test fun `long volcano echo prefix cannot hide earthquake interruption in unrelated common words`() {
+        val h = Harness().apply { gate.configure(true) }
+        val user = "actually stop there and explain how earthquakes happen instead"
+        val mixed = "magma rises through cracks and pressure builds beneath the surface $user"
+        h.start(longVolcanoReference())
+        h.gate.partial(mixed)
+        h.scheduler.fire(SoniqoInterruptionGate.AEC_CONFIRMATION_MS)
+        assertEquals(1, h.interruptions)
+        h.gate.speechEnded()
+        assertTrue(h.gate.allowFinal(mixed))
+        assertFalse(h.gate.allowFinal(mixed))
+        assertEquals(1, h.interruptions)
+    }
+
+    @Test fun `complete earthquake interruption without echo prefix interrupts active volcano output`() {
+        val h = Harness().apply { gate.configure(false) }
+        val user = "actually stop there and explain how earthquakes happen instead"
+        h.start(longVolcanoReference())
+        h.gate.partial(user)
+        h.scheduler.fire(SoniqoInterruptionGate.CONSERVATIVE_CONFIRMATION_MS)
+        assertEquals(1, h.interruptions)
+        h.gate.speechEnded()
+        assertTrue(h.gate.allowFinal(user))
+        assertFalse(h.gate.allowFinal(user))
+    }
+
+    @Test fun `long ordered assistant passages tolerate substitutions insertions and deletions`() {
+        val cases = listOf(
+            longEchoTokens().mapIndexed { index, token -> if (index in setOf(4, 11, 19, 27)) "mistake$index" else token },
+            longEchoTokens().toMutableList().apply { add(8, "unexpected"); add(23, "word") },
+            longEchoTokens().filterIndexed { index, _ -> index !in setOf(3, 10, 18, 26) },
+        )
+        cases.forEach { captured ->
+            val h = Harness().apply { gate.configure(true) }
+            h.start(longVolcanoReference())
+            val transcript = captured.joinToString(" ")
+            h.gate.partial(transcript)
+            h.scheduler.fire(SoniqoInterruptionGate.AEC_CONFIRMATION_MS)
+            h.gate.speechEnded()
+            assertFalse(h.gate.allowFinal(transcript))
+            assertEquals(0, h.interruptions)
+        }
+    }
+
+    @Test fun `three consecutive outputs each accept exactly one sustained interruption`() {
+        val h = Harness().apply { gate.configure(true) }
+        repeat(3) { turn ->
+            val identity = PlaybackIdentity("output-$turn", turn.toLong() + 1)
+            h.current = identity
+            h.gate.speechStarted(h.reference(longVolcanoReference(), identity), muted = false)
+            val user = "actually stop there and explain how earthquakes happen instead"
+            h.gate.partial(user)
+            h.scheduler.fire(SoniqoInterruptionGate.AEC_CONFIRMATION_MS)
+            assertEquals(turn + 1, h.interruptions)
+            h.gate.speechEnded()
+            assertTrue(h.gate.allowFinal(user))
+            assertFalse(h.gate.allowFinal(user))
+        }
+        assertEquals(3, h.interruptions)
+    }
+
+    @Test fun `active final fallback uses sequence alignment for volcano interruption`() {
+        val h = Harness()
+        val reference = h.reference(longVolcanoReference())
+        val mixed = "magma rises through cracks and pressure builds beneath the surface actually stop there and explain how earthquakes happen instead"
+        assertTrue(h.gate.allowFinal(mixed, reference))
+        assertEquals(1, h.interruptions)
+        assertFalse(h.gate.allowFinal(mixed, reference))
+    }
+
     @Test fun `confirmed segment keeps a shortened unknown final exactly once`() {
         val h = Harness().apply { gate.configure(true) }
         h.start("One, two, three, four, five")
@@ -238,13 +308,21 @@ class SoniqoInterruptionGateTest {
         if (index in setOf(3, 8, 13, 18, 23, 28)) "error$index" else "token$index"
     }
 
+    private fun longEchoTokens() = "magma rises through cracks and pressure builds beneath the surface until an eruption releases lava ash and gases volcanoes can form at plate boundaries hot spots or rifts shield volcanoes spread broad gentle slopes while composite cones build steep alternating layers".split(" ")
+
+    private fun longVolcanoReference() = buildString {
+        append(longEchoTokens().joinToString(" "))
+        // Deliberately repeat every interruption word, but in unrelated places and a different order.
+        append(". Scientists explain the process and how different eruptions happen. Actually, magma may stop moving there. Instead shield volcanoes may remain quiet while earthquakes reveal shifting rock.")
+    }
+
     private class Harness {
         val scheduler = FakeScheduler()
         val output = PlaybackIdentity("old", 1)
         var current: PlaybackIdentity? = output
         var interruptions = 0
         val gate = SoniqoInterruptionGate(scheduler, { current }, { interruptions++ })
-        fun reference(text: String) = SoniqoInterruptionGate.OutputReference(output, text)
+        fun reference(text: String, identity: PlaybackIdentity = output) = SoniqoInterruptionGate.OutputReference(identity, text)
         fun start(text: String) = gate.speechStarted(reference(text), muted = false)
     }
 
