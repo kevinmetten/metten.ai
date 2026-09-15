@@ -74,7 +74,7 @@ internal class SoniqoInterruptionGate(
     @Synchronized fun speechEnded() {
         val value = segment ?: return
         completed += value
-        debug("VAD segment=${value.id} ended classification=${value.classification}")
+        debug("VAD segment=${value.id} ended threshold=${if (value.durationReached) "after" else "before"} confirmationMs=$thresholdMillis classification=${value.classification}")
         cancelSegmentTimer()
         segment = null
     }

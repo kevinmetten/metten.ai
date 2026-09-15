@@ -43,6 +43,7 @@ internal class AndroidStreamingPcm16Player : StreamingPcm16Player {
             if (!value.started) {
                 try { track.play() } catch (failure: RuntimeException) { return fail(value, failure.message ?: "PCM playback could not start.") }
                 Log.d(TAG, "AudioTrack first playback/start output=${value.identity} tMs=${System.nanoTime() / 1_000_000L}")
+                VoiceDiagnostics.event("AUDIOTRACK_STARTED", "identity=${value.identity}")
                 value.started = true; value.listener(StreamingPlaybackEvent.Started)
             }
         }

@@ -106,6 +106,7 @@ class MettenVoiceSessionController(
                 _state.value = MettenVoiceState(MettenVoicePhase.FAILED, ready.reason); return false
             }
             val id = ++generation
+            VoiceDiagnostics.beginSession(id)
             lifecycleEpoch++
             val token = StartupToken(id, ++startupEpoch)
             startupToken = token
@@ -226,6 +227,7 @@ class MettenVoiceSessionController(
 
     private fun onInput(id: Long, attempt: Long, event: SpeechInputEvent) {
         if (event == SpeechInputEvent.OutputInterrupted) {
+            VoiceDiagnostics.event("CONTROLLER_OUTPUT_INTERRUPTED_RECEIVED", "generation=$id listenAttempt=$attempt")
             interruptExactOutput(id, attempt)
             return
         }
@@ -250,15 +252,19 @@ class MettenVoiceSessionController(
     /** Audio interruption never reaches the coordinator; only a later final transcript may control phone work. */
     private fun interruptExactOutput(id: Long, attempt: Long) {
         val engine = synchronized(this) {
-            if (id != generation || attempt != listenAttempt || muted || input !is ContinuousSpeechInputEngine) return
-            val token = activeOutput ?: return
-            if (token.generation != id) return
+            if (id != generation) { VoiceDiagnostics.event("CONTROLLER_INTERRUPT_REJECTED", "reason=stale_generation expected=$generation actual=$id"); return }
+            if (attempt != listenAttempt) { VoiceDiagnostics.event("CONTROLLER_INTERRUPT_REJECTED", "reason=stale_listenAttempt expected=$listenAttempt actual=$attempt"); return }
+            if (muted) { VoiceDiagnostics.event("CONTROLLER_INTERRUPT_REJECTED", "reason=muted"); return }
+            if (input !is ContinuousSpeechInputEngine) { VoiceDiagnostics.event("CONTROLLER_INTERRUPT_REJECTED", "reason=non-continuous_input"); return }
+            val token = activeOutput ?: run { VoiceDiagnostics.event("CONTROLLER_INTERRUPT_REJECTED", "reason=no_activeOutput"); return }
+            if (token.generation != id) { VoiceDiagnostics.event("CONTROLLER_INTERRUPT_REJECTED", "reason=generation_mismatch outputGeneration=${token.generation} inputGeneration=$id"); return }
+            VoiceDiagnostics.event("CONTROLLER_INTERRUPT_ACCEPTED", "output=${token.outputId} generation=$id listenAttempt=$attempt")
             activeOutput = null
             pendingEchoText = null
             _state.value = MettenVoiceState(MettenVoicePhase.LISTENING)
             output
         }
-        engine?.stop()
+        engine?.let { VoiceDiagnostics.event("OUTPUT_STOP_CALLED"); it.stop() }
     }
 
     private fun acceptFinal(id: Long, attempt: Long, text: String) {
@@ -277,6 +283,7 @@ class MettenVoiceSessionController(
                 val token = TurnToken(id, ++nextTurnId)
                 activeTurn = token; _state.value = MettenVoiceState(MettenVoicePhase.THINKING)
                 timingLogger.log("accepted STT final turn=${token.turnId} tMs=${monotonicMillis()}")
+                VoiceDiagnostics.event("STT_ACCEPTED", "turn=${token.turnId}")
                 turn = token; if (input !is ContinuousSpeechInputEngine) stop = input
             }
         }
@@ -310,9 +317,11 @@ class MettenVoiceSessionController(
             val turnContext = synchronized(this) { VoiceTurnContext(context.toList(), coordinator.status.value) }
             val requestStarted = monotonicMillis()
             timingLogger.log("Voice brain request start turn=${token.turnId} tMs=$requestStarted")
+            VoiceDiagnostics.event("BRAIN_REQUEST_START", "turn=${token.turnId}")
             val decision = brain.decide(text, turnContext)
             val responseCompleted = monotonicMillis()
             timingLogger.log("Voice brain response complete turn=${token.turnId} tMs=$responseCompleted durationMs=${responseCompleted - requestStarted}")
+            VoiceDiagnostics.event("BRAIN_RESPONSE_COMPLETE", "turn=${token.turnId} durationMs=${responseCompleted - requestStarted}")
             val command = decision.phoneCommand
             when {
                 command != null -> transferTurnToPhone(token, text, command)
@@ -398,6 +407,7 @@ class MettenVoiceSessionController(
         if (input !is ContinuousSpeechInputEngine) invalidateListeningLocked()
         val token = OutputToken(id, ++outputId)
         activeOutput = token
+        VoiceDiagnostics.event("OUTPUT_INSTALLED", "output=${token.outputId} generation=${token.generation}")
         pendingEchoText = normalizeForEchoGuard(text)
         _state.value = MettenVoiceState(MettenVoicePhase.SPEAKING)
         return PreparedSpeech(token, engine, input, text)
@@ -409,9 +419,10 @@ class MettenVoiceSessionController(
                 speech.token.generation == generation && activeOutput == speech.token && output === speech.engine
             }) return
         timingLogger.log("SpeechOutputEngine.speak called output=${speech.token.outputId} tMs=${monotonicMillis()}")
+        VoiceDiagnostics.event("OUTPUT_SPEAK_CALLED", "output=${speech.token.outputId} generation=${speech.token.generation}")
         speech.engine.speak(speech.text) callback@{ event ->
             when (event) {
-                SpeechOutputEvent.Completed -> completeSpeech(speech.token)
+                SpeechOutputEvent.Completed -> { VoiceDiagnostics.event("OUTPUT_NATURAL_DRAIN", "output=${speech.token.outputId}"); completeSpeech(speech.token) }
                 is SpeechOutputEvent.Failed -> {
                     val exact = synchronized(this) { if (activeOutput == speech.token && generation == speech.token.generation) { activeOutput = null; true } else false }
                     if (exact) fail(speech.token.generation, event.reason)

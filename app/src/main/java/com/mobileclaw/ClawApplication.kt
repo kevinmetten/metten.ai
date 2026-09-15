@@ -54,6 +54,7 @@ import com.mobileclaw.voice.MettenSpeechOutputFactory
 import com.mobileclaw.voice.MettenSpeechEngineFactory
 import com.mobileclaw.voice.MettenSpeechEnginePair
 import com.mobileclaw.voice.MettenVoiceSessionController
+import com.mobileclaw.voice.installVoiceDiagnostics
 import com.mobileclaw.memory.MemoryContextBuilder
 import com.mobileclaw.runtime.PageRuntimeCapabilities
 import com.mobileclaw.server.ConsoleServer
@@ -277,6 +278,7 @@ class ClawApplication : Application() {
                 .run(goal = goal, taskType = TaskType.PHONE_CONTROL)
         }
         var mettenSpeech: MettenSpeechEnginePair? = null
+        installVoiceDiagnostics()
         mettenVoiceController = MettenVoiceSessionController(
             scope = agentExecutionScope,
             inputFactory = {
