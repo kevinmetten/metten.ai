@@ -47,7 +47,18 @@ internal class SoniqoConversationalSpeechSession(
         },
         currentOutput = { synchronized(lock) { output?.identity } },
         emitConfirmed = { postInput(SpeechInputEvent.OutputInterrupted) },
-        debug = { message -> Log.d(TAG, message) },
+        debug = { message ->
+            Log.d(TAG, message)
+            val event = when {
+                " partial " in message -> "STT_PARTIAL"
+                " final " in message || message.startsWith("final ") -> "STT_FINAL"
+                "duration=" in message && "reached" in message -> "INTERRUPT_THRESHOLD_REACHED"
+                "OutputInterrupted emitted" in message -> "OUTPUT_INTERRUPTED_EMITTED"
+                message.startsWith("VAD segment=") && "ended" in message -> "SONIQO_SPEECH_ENDED"
+                else -> null
+            }
+            event?.let { VoiceDiagnostics.event(it, message) }
+        },
     )
 
     private data class Output(
@@ -151,6 +162,8 @@ internal class SoniqoConversationalSpeechSession(
         }
             .onSuccess { started ->
                 interruption.configure(started.acousticEchoCancelerEnabled)
+                VoiceDiagnostics.aecEnabled = started.acousticEchoCancelerEnabled
+                VoiceDiagnostics.thresholdMillis = interruption.thresholdMillis()
                 Log.i(TAG, if (started.acousticEchoCancelerEnabled) "Barge-in confirmation: 500ms, AEC enabled" else "Barge-in confirmation: 1000ms, AEC unavailable")
                 postInput(SpeechInputEvent.Ready)
             }
@@ -171,6 +184,7 @@ internal class SoniqoConversationalSpeechSession(
             val generation = outputGeneration.incrementAndGet()
             val next = Output(generation, PlaybackIdentity(UUID.randomUUID().toString(), generation), text, listener)
             output = next
+            VoiceDiagnostics.event("OUTPUT_INSTALLED", "identity=${next.identity}")
             next.playback = PocketStreamingPlayback(player, next.identity, pipe.ttsSampleRate) { event ->
                 when (event) {
                     StreamingPlaybackEvent.Started -> deliver(next, SpeechOutputEvent.Started, terminal = false)
@@ -182,6 +196,7 @@ internal class SoniqoConversationalSpeechSession(
             pipe to next
         }
         inference.execute {
+            VoiceDiagnostics.event("POCKET_SYNTH_START", "identity=${value.second.identity}")
             runCatching {
                 PocketSegmentedSynthesis(
                     playback = checkNotNull(value.second.playback),
@@ -191,7 +206,10 @@ internal class SoniqoConversationalSpeechSession(
                             callback(result.pcm16, result.sampleRate, isFinal)
                         }
                     },
-                    debug = { Log.d(TAG, "output=${value.second.identity} $it") },
+                    debug = {
+                        Log.d(TAG, "output=${value.second.identity} $it")
+                        if ("logical first PCM" in it) VoiceDiagnostics.event("POCKET_FIRST_PCM", "identity=${value.second.identity}")
+                    },
                 ).run(text)
             }
                 .onFailure { failOutput(value.second, it.message ?: "Pocket TTS synthesis failed.") }
@@ -199,15 +217,19 @@ internal class SoniqoConversationalSpeechSession(
     }
 
     override fun stop() {
+        VoiceDiagnostics.event("SONIQO_STOP_ENTERED")
         val old = synchronized(lock) {
             outputGeneration.incrementAndGet()
             output.also { value -> if (value != null) tailHandoff = value.reference; output = null }
         }
+        VoiceDiagnostics.event("CANCEL_SYNTHESIS_CALLED")
         pipeline?.cancelSynthesis()
         old?.let {
             Log.d(TAG, "output=${it.identity} cancel requested")
             completeTailHandoff(it.reference, naturallyDrained = false)
+            VoiceDiagnostics.event("PLAYER_CANCEL_CALLED", "identity=${it.identity}")
             player.cancel(it.identity)
+            VoiceDiagnostics.event("OUTPUT_CANCELLED", "identity=${it.identity}")
         }
     }
 
@@ -229,6 +251,7 @@ internal class SoniqoConversationalSpeechSession(
                     is SpeechEvent.SpeechStarted -> {
                         val snapshot = synchronized(lock) { Triple(output?.reference, tailHandoff, muted) }
                         Log.d(TAG, "Soniqo SpeechStarted output=${snapshot.first?.identity} active=${snapshot.first != null}")
+                        VoiceDiagnostics.event("SONIQO_SPEECH_STARTED", "output=${snapshot.first?.identity ?: "none"} aec=${if (VoiceDiagnostics.aecEnabled) "enabled" else "disabled"}")
                         interruption.speechStarted(snapshot.first, snapshot.third, snapshot.second)
                         postInput(SpeechInputEvent.SpeechStarted)
                     }
@@ -258,7 +281,10 @@ internal class SoniqoConversationalSpeechSession(
             if (terminal) { tailHandoff = value.reference; output = null }
             value.listener
         }
-        if (terminal) completeTailHandoff(value.reference, naturallyDrained = event == SpeechOutputEvent.Completed)
+        if (terminal) {
+            if (event == SpeechOutputEvent.Completed) VoiceDiagnostics.event("OUTPUT_NATURAL_DRAIN", "identity=${value.identity}")
+            completeTailHandoff(value.reference, naturallyDrained = event == SpeechOutputEvent.Completed)
+        }
         post { listener(event) }
     }
     private fun completeTailHandoff(reference: SoniqoInterruptionGate.OutputReference, naturallyDrained: Boolean) {
