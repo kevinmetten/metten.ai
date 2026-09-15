@@ -6,6 +6,7 @@ import android.media.AudioTrack
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.SystemClock
+import android.util.Log
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
 
@@ -41,6 +42,7 @@ internal class AndroidStreamingPcm16Player : StreamingPcm16Player {
             value.drain.wrote(written)
             if (!value.started) {
                 try { track.play() } catch (failure: RuntimeException) { return fail(value, failure.message ?: "PCM playback could not start.") }
+                Log.d(TAG, "AudioTrack first playback/start output=${value.identity} tMs=${System.nanoTime() / 1_000_000L}")
                 value.started = true; value.listener(StreamingPlaybackEvent.Started)
             }
         }
@@ -89,5 +91,5 @@ internal class AndroidStreamingPcm16Player : StreamingPcm16Player {
             .setBufferSizeInBytes(max(minimum, PREFILL_BYTES)).setTransferMode(AudioTrack.MODE_STREAM).build()
             .also { check(it.state == AudioTrack.STATE_INITIALIZED) { "PCM16 output could not initialize." } }
     }
-    private companion object { const val PREFILL_BYTES = 8_192; const val DRAIN_POLL_MS = 20L }
+    private companion object { const val TAG = "MettenVoiceTiming"; const val PREFILL_BYTES = 8_192; const val DRAIN_POLL_MS = 20L }
 }

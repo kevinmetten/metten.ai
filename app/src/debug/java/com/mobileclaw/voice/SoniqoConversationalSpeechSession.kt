@@ -178,7 +178,7 @@ internal class SoniqoConversationalSpeechSession(
                     is StreamingPlaybackEvent.Failed -> deliver(next, SpeechOutputEvent.Failed(event.reason), terminal = true)
                 }
             }
-            Log.d(TAG, "Pocket logical output=${next.identity} chars=${text.length}")
+            Log.d(TAG, "Pocket logical output=${next.identity} speak received tMs=${System.nanoTime() / 1_000_000L} chars=${text.length}")
             pipe to next
         }
         inference.execute {

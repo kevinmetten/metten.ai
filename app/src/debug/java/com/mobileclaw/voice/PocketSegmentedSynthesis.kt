@@ -8,9 +8,11 @@ internal class PocketSegmentedSynthesis(
     private val debug: (String) -> Unit = {},
 ) {
     fun run(text: String) {
+        val logicalStarted = monotonicMillis()
         val pending = ArrayDeque(PocketTextSegmentation.initial(text).map { Work(it, 0) })
-        debug("Pocket logical chars=${text.length} segments=${pending.size}")
+        debug("Pocket logical synthesis start tMs=$logicalStarted chars=${text.length} segments=${pending.size}")
         var ordinal = 0
+        var logicalPcmSeen = false
         while (pending.isNotEmpty() && isCurrent()) {
             val work = pending.removeFirst(); ordinal++
             val segmentId = playback.beginSegment()
@@ -19,6 +21,11 @@ internal class PocketSegmentedSynthesis(
             try {
                 synthesize(work.text) { pcm, rate, isFinal ->
                     if (!isCurrent()) return@synthesize
+                    if (pcm.isNotEmpty() && !logicalPcmSeen) {
+                        logicalPcmSeen = true
+                        val firstPcm = monotonicMillis()
+                        debug("Pocket logical first PCM tMs=$firstPcm durationMs=${firstPcm - logicalStarted}")
+                    }
                     if (pcm.isNotEmpty() && !emitted) { emitted = true; debug("Pocket segment=$ordinal first PCM") }
                     playback.accept(segmentId, pcm, rate)
                     if (isFinal) debug("Pocket segment=$ordinal provider final")
@@ -34,4 +41,5 @@ internal class PocketSegmentedSynthesis(
     }
 
     private data class Work(val text: String, val depth: Int)
+    private fun monotonicMillis() = System.nanoTime() / 1_000_000L
 }
