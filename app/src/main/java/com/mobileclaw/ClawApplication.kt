@@ -47,6 +47,7 @@ import com.mobileclaw.permission.DeviceReadinessEngine
 import com.mobileclaw.permission.detectRom
 import com.mobileclaw.realtime.VoiceSessionForegroundService
 import com.mobileclaw.voice.SerializedVoiceForegroundLease
+import com.mobileclaw.voice.VoiceTimingLogger
 import com.mobileclaw.voice.AndroidOnDeviceSpeechInput
 import com.mobileclaw.voice.LlmVoiceTurnBrain
 import com.mobileclaw.voice.MettenSpeechOutputFactory
@@ -292,6 +293,11 @@ class ClawApplication : Application() {
                 startForeground = { VoiceSessionForegroundService.start(this) },
                 stopForeground = { VoiceSessionForegroundService.stop(this) },
             ),
+            timingLogger = if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+                VoiceTimingLogger { message -> android.util.Log.d("MettenVoiceTiming", message) }
+            } else {
+                VoiceTimingLogger.NONE
+            },
         )
     }
 

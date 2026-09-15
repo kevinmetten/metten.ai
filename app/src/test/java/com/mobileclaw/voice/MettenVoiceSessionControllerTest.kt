@@ -15,6 +15,22 @@ import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MettenVoiceSessionControllerTest {
+    @Test fun `timing sink receives all controller latency points without transcript bodies`() {
+        val timing = mutableListOf<String>()
+        val h = Harness(timingLogger = VoiceTimingLogger(timing::add))
+        h.start()
+        h.brain.next = VoiceTurnDecision("private assistant response")
+        h.input.emit(SpeechInputEvent.Final("private user transcript"))
+        h.scope.advanceUntilIdle()
+
+        assertEquals(4, timing.size)
+        assertTrue(timing[0].matches(Regex("accepted STT final turn=\\d+ tMs=\\d+")))
+        assertTrue(timing[1].matches(Regex("Voice brain request start turn=\\d+ tMs=\\d+")))
+        assertTrue(timing[2].matches(Regex("Voice brain response complete turn=\\d+ tMs=\\d+ durationMs=\\d+")))
+        assertTrue(timing[3].matches(Regex("SpeechOutputEngine\\.speak called output=\\d+ tMs=\\d+")))
+        assertFalse(timing.any { "private user transcript" in it || "private assistant response" in it })
+    }
+
     @Test fun `startup activation completed while muted remains admitted and unmute listens once`() {
         val h = Harness(autoInitialize = false)
         assertTrue(h.voice.start())
@@ -320,7 +336,7 @@ class MettenVoiceSessionControllerTest {
         h.output.finishInitialization(true); assertEquals(MettenVoicePhase.LISTENING, h.voice.state.value.phase)
     }
 
-    private class Harness(inputAvailable: Boolean = true, outputAvailable: Boolean = true, private val autoInitialize: Boolean = true, foregroundLease: VoiceForegroundLease? = null, publicationGate: CompletableDeferred<Unit>? = null) {
+    private class Harness(inputAvailable: Boolean = true, outputAvailable: Boolean = true, private val autoInitialize: Boolean = true, foregroundLease: VoiceForegroundLease? = null, publicationGate: CompletableDeferred<Unit>? = null, timingLogger: VoiceTimingLogger = VoiceTimingLogger.NONE) {
         val scope = TestScope(StandardTestDispatcher()); val input = FakeInput(inputAvailable); val output = FakeOutput(outputAvailable, autoInitialize); val brain = FakeBrain()
         val tasks = AgentTaskController(); val goals = mutableListOf<String>(); val gates = ArrayDeque<CompletableDeferred<AgentResult>>(); val fgs = mutableListOf<String>()
         val coordinator = VoiceAgentCoordinator(scope, tasks, AgentTaskSubmissionService(tasks, scope) {}, { ReadinessLevel.READY }, { publicationGate?.await() }) { goal -> goals += goal; CompletableDeferred<AgentResult>().also(gates::add).await() }
@@ -328,7 +344,7 @@ class MettenVoiceSessionControllerTest {
             override fun acquire(generation: Long): VoiceForegroundAcquireResult { fgs += "start:$generation"; return VoiceForegroundAcquireResult.Acquired }
             override fun release(generation: Long): VoiceForegroundReleaseResult { fgs += "stop:$generation"; return VoiceForegroundReleaseResult.Released }
         }
-        val voice = MettenVoiceSessionController(scope, { input }, { output }, brain, coordinator, { true }, { true }, foregroundLease ?: recordingLease)
+        val voice = MettenVoiceSessionController(scope, { input }, { output }, brain, coordinator, { true }, { true }, foregroundLease ?: recordingLease, timingLogger)
         init { brain.next = VoiceTurnDecision(phoneCommand = VoiceControlCommand.Start("Open Settings")) }
         fun start() { assertTrue(voice.start()); if (!autoInitialize) output.finishInitialization(true) }
         fun startPhone() { start(); input.emit(SpeechInputEvent.Final("Open Settings")); scope.advanceUntilIdle(); output.complete() }

@@ -1,6 +1,5 @@
 package com.mobileclaw.voice
 
-import android.util.Log
 import com.mobileclaw.agent.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,6 +38,7 @@ class MettenVoiceSessionController(
         override fun acquire(generation: Long) = VoiceForegroundAcquireResult.Acquired
         override fun release(generation: Long) = VoiceForegroundReleaseResult.NoOp
     },
+    private val timingLogger: VoiceTimingLogger = VoiceTimingLogger.NONE,
 ) {
     private data class StartupToken(val generation: Long, val epoch: Long)
     private data class OutputToken(val generation: Long, val outputId: Long)
@@ -276,7 +276,7 @@ class MettenVoiceSessionController(
             else {
                 val token = TurnToken(id, ++nextTurnId)
                 activeTurn = token; _state.value = MettenVoiceState(MettenVoicePhase.THINKING)
-                Log.d(TIMING_TAG, "accepted STT final turn=${token.turnId} tMs=${monotonicMillis()}")
+                timingLogger.log("accepted STT final turn=${token.turnId} tMs=${monotonicMillis()}")
                 turn = token; if (input !is ContinuousSpeechInputEngine) stop = input
             }
         }
@@ -309,10 +309,10 @@ class MettenVoiceSessionController(
         try {
             val turnContext = synchronized(this) { VoiceTurnContext(context.toList(), coordinator.status.value) }
             val requestStarted = monotonicMillis()
-            Log.d(TIMING_TAG, "Voice brain request start turn=${token.turnId} tMs=$requestStarted")
+            timingLogger.log("Voice brain request start turn=${token.turnId} tMs=$requestStarted")
             val decision = brain.decide(text, turnContext)
             val responseCompleted = monotonicMillis()
-            Log.d(TIMING_TAG, "Voice brain response complete turn=${token.turnId} tMs=$responseCompleted durationMs=${responseCompleted - requestStarted}")
+            timingLogger.log("Voice brain response complete turn=${token.turnId} tMs=$responseCompleted durationMs=${responseCompleted - requestStarted}")
             val command = decision.phoneCommand
             when {
                 command != null -> transferTurnToPhone(token, text, command)
@@ -408,7 +408,7 @@ class MettenVoiceSessionController(
         if (!synchronized(this) {
                 speech.token.generation == generation && activeOutput == speech.token && output === speech.engine
             }) return
-        Log.d(TIMING_TAG, "SpeechOutputEngine.speak called output=${speech.token.outputId} tMs=${monotonicMillis()}")
+        timingLogger.log("SpeechOutputEngine.speak called output=${speech.token.outputId} tMs=${monotonicMillis()}")
         speech.engine.speak(speech.text) callback@{ event ->
             when (event) {
                 SpeechOutputEvent.Completed -> completeSpeech(speech.token)
@@ -479,7 +479,6 @@ class MettenVoiceSessionController(
     private fun normalizeForEchoGuard(text: String) = text.trim().lowercase().replace(Regex("\\s+"), " ")
     private companion object {
         fun monotonicMillis() = System.nanoTime() / 1_000_000L
-        const val TIMING_TAG = "MettenVoiceTiming"
         const val MAX_TURNS = 8
         const val MAX_START_FAILURES = 3
         const val ACKNOWLEDGEMENT = "I'm working on that."
