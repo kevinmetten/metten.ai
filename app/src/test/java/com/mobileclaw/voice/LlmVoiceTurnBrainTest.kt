@@ -4,6 +4,8 @@ import com.mobileclaw.agent.VoiceControlCommand
 import com.mobileclaw.agent.VoicePhoneTaskState
 import com.mobileclaw.agent.VoicePhoneTaskStatus
 import com.mobileclaw.llm.*
+import kotlinx.coroutines.*
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Test
@@ -36,6 +38,29 @@ class LlmVoiceTurnBrainTest {
             override suspend fun embed(text: String) = floatArrayOf()
         }).decide("What is five plus five?", VoiceTurnContext(emptyList(), VoicePhoneTaskStatus("task", VoicePhoneTaskState.RUNNING, "Find the 12 PM alarm")))
         assertEquals("Ten.", conversational.spokenText); assertNull(conversational.phoneCommand)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun `existing gateway token callback delivers speech before response completion`() = runTest {
+        val release = CompletableDeferred<Unit>()
+        val chunks = mutableListOf<String>()
+        val raw = """{"action":"conversation","goal":null,"spoken_text":"First sentence. Final tail"}"""
+        val brain = LlmVoiceTurnBrain(object : LlmGateway {
+            override suspend fun chat(request: ChatRequest): ChatResponse {
+                assertTrue(request.stream)
+                request.onToken!!(raw)
+                release.await()
+                return ChatResponse(raw)
+            }
+            override suspend fun embed(text: String) = floatArrayOf()
+        })
+        val result = async { brain.decideStreaming("explain", VoiceTurnContext(emptyList(), VoicePhoneTaskStatus()), chunks::add) }
+        runCurrent()
+        assertFalse(result.isCompleted)
+        assertEquals(listOf("First sentence. "), chunks)
+        release.complete(Unit)
+        assertEquals("First sentence. Final tail", result.await().spokenText)
+        assertEquals("First sentence. Final tail", chunks.joinToString(""))
     }
 
     @Test fun `malformed unknown or incomplete output never becomes a phone command`() {

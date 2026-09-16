@@ -40,6 +40,7 @@ object VoiceDiagnostics {
     fun event(name: String, metadata: String = "") {
         sink.record(name, metadata)
         synchronized(timings) {
+            if (name == "STT_ACCEPTED") timings.clear()
             timings[name] = System.nanoTime() / 1_000_000L
             if (name == "AUDIOTRACK_STARTED") emitLatencyLocked()
         }
@@ -49,6 +50,8 @@ object VoiceDiagnostics {
         fun delta(a: String, b: String) = timings[a]?.let { start -> timings[b]?.minus(start) }
         sink.record("TURN_LATENCY", listOf(
             "sttToBrainMs=${delta("STT_ACCEPTED", "BRAIN_REQUEST_START")}",
+            "brainToFirstChunkMs=${delta("BRAIN_REQUEST_START", "BRAIN_FIRST_SPEECH_CHUNK")}",
+            "audioBeforeBrainComplete=${timings["BRAIN_RESPONSE_COMPLETE"] == null}",
             "brainMs=${delta("BRAIN_REQUEST_START", "BRAIN_RESPONSE_COMPLETE")}",
             "responseToSpeakMs=${delta("BRAIN_RESPONSE_COMPLETE", "OUTPUT_SPEAK_CALLED")}",
             "speakToPocketMs=${delta("OUTPUT_SPEAK_CALLED", "POCKET_SYNTH_START")}",

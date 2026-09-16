@@ -316,6 +316,23 @@ class SoniqoInterruptionGateTest {
         append(". Scientists explain the process and how different eruptions happen. Actually, magma may stop moving there. Instead shield volcanoes may remain quiet while earthquakes reveal shifting rock.")
     }
 
+    @Test fun `growing streamed reference suppresses new echo and permits one human interruption`() {
+        val h = Harness().apply { gate.configure(true) }
+        val reference = h.reference("Volcanoes form. ")
+        h.gate.speechStarted(reference, false)
+        reference.text += "Magma rises through cracks and pressure builds beneath the surface. "
+        h.gate.partial("Magma rises through cracks and pressure builds beneath the surface")
+        h.scheduler.fire(500L)
+        assertEquals(0, h.interruptions)
+        val human = "Actually stop there and explain how earthquakes happen instead"
+        h.gate.partial(human); h.gate.partial(human)
+        assertEquals(1, h.interruptions)
+        h.gate.speechEnded()
+        assertTrue(h.gate.allowFinal(human))
+        assertFalse(h.gate.allowFinal(human))
+        assertEquals(1, h.interruptions)
+    }
+
     private class Harness {
         val scheduler = FakeScheduler()
         val output = PlaybackIdentity("old", 1)

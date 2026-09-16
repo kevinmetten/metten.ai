@@ -9,11 +9,11 @@ internal fun interface InterruptionScheduler {
 internal class SoniqoInterruptionGate(
     private val scheduler: InterruptionScheduler,
     private val currentOutput: () -> PlaybackIdentity?,
-    private val emitConfirmed: () -> Unit,
+    private val emitConfirmed: (PlaybackIdentity) -> Unit,
     private val debug: (String) -> Unit = {},
 ) {
-    internal data class OutputReference(val identity: PlaybackIdentity, val text: String) {
-        val tokens = normalize(text)
+    internal data class OutputReference(val identity: PlaybackIdentity, @Volatile var text: String) {
+        val tokens get() = normalize(text)
     }
 
     private enum class Classification { ECHO, HUMAN, UNKNOWN }
@@ -82,6 +82,7 @@ internal class SoniqoInterruptionGate(
     /** Finals consume completed VAD segments in order and may provide their last lexical evidence. */
     fun allowFinal(text: String, activeOutput: OutputReference? = null): Boolean {
         var emit = false
+        var interruptedIdentity: PlaybackIdentity? = null
         val allowed = synchronized(this) {
             val value = completed.removeFirstOrNull() ?: segment
             if (value == null) {
@@ -97,6 +98,7 @@ internal class SoniqoInterruptionGate(
                 if (fallback) {
                     settledSegmentAwaitingNextSpeechId = ++nextSegment
                     emit = true
+                    interruptedIdentity = activeOutput.identity
                     debug("final without VAD output=${activeOutput.identity} tokens=${tokens.size} sequenceScore=${analysis.sequenceScore} divergentResidue=${analysis.divergentResidue} divergentRun=${analysis.divergentRun} trailingDivergent=${analysis.trailingDivergent}/${analysis.trailingSize} HUMAN OutputInterrupted emitted; allowed")
                     return@synchronized true
                 }
@@ -107,6 +109,7 @@ internal class SoniqoInterruptionGate(
             val finalClassification = finalAnalysis.classification
             value.classification = finalClassification
             emit = shouldInterrupt(value)
+            if (emit) interruptedIdentity = value.reference?.identity
             val accept = when {
                 value.reference == null -> true
                 finalClassification == Classification.ECHO -> false
@@ -122,7 +125,7 @@ internal class SoniqoInterruptionGate(
             debug("VAD segment=${value.id} final tokens=${normalize(text).size} sequenceScore=${finalAnalysis.sequenceScore} divergentResidue=${finalAnalysis.divergentResidue} divergentRun=${finalAnalysis.divergentRun} trailingDivergent=${finalAnalysis.trailingDivergent}/${finalAnalysis.trailingSize} classified=$finalClassification duration=${value.durationReached} interrupted=${value.interrupted} ${if (accept) "allowed" else "discarded"}")
             accept
         }
-        if (emit) emitConfirmed()
+        if (emit) interruptedIdentity?.let(emitConfirmed)
         return allowed
     }
 
@@ -152,14 +155,16 @@ internal class SoniqoInterruptionGate(
 
     private fun applyTranscript(text: String, final: Boolean) {
         var emit = false
+        var identity: PlaybackIdentity? = null
         synchronized(this) {
             val value = segment ?: return
             val analysis = analyze(value.reference?.tokens, normalize(text))
             value.classification = analysis.classification
             debug("VAD segment=${value.id} output=${value.reference?.identity} ${if (final) "final" else "partial"} tokens=${normalize(text).size} sequenceScore=${analysis.sequenceScore} divergentResidue=${analysis.divergentResidue} divergentRun=${analysis.divergentRun} trailingDivergent=${analysis.trailingDivergent}/${analysis.trailingSize} classified=${value.classification}")
             emit = shouldInterrupt(value)
+            if (emit) identity = value.reference?.identity
         }
-        if (emit) emitConfirmed()
+        if (emit) identity?.let(emitConfirmed)
     }
 
     private fun durationReached(id: Long, output: PlaybackIdentity) {
@@ -172,7 +177,7 @@ internal class SoniqoInterruptionGate(
             debug("VAD segment=$id output=$output duration=${thresholdMillis}ms reached")
             emit = shouldInterrupt(value)
         }
-        if (emit) emitConfirmed()
+        if (emit) emitConfirmed(output)
     }
 
     /** Must be called under this gate's monitor. */
