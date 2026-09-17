@@ -43,7 +43,7 @@ internal class AndroidStreamingPcm16Player : StreamingPcm16Player {
             if (!value.started) {
                 try { track.play() } catch (failure: RuntimeException) { return fail(value, failure.message ?: "PCM playback could not start.") }
                 Log.d(TAG, "AudioTrack first playback/start output=${value.identity} tMs=${System.nanoTime() / 1_000_000L}")
-                VoiceDiagnostics.event("AUDIOTRACK_STARTED", "identity=${value.identity}")
+                VoiceDiagnostics.event("AUDIOTRACK_STARTED", "identity=${value.identity} usage=${track.audioAttributes.usage} session=${track.audioSessionId} device=${track.routedDevice?.id ?: -1}")
                 value.started = true; value.listener(StreamingPlaybackEvent.Started)
             }
         }
@@ -82,12 +82,16 @@ internal class AndroidStreamingPcm16Player : StreamingPcm16Player {
         discard(value); value.listener(event)
     }
     private fun discard(value: Session) {
+        VoiceDiagnostics.event("AUDIOTRACK_STOP_REQUESTED", "identity=${value.identity}")
+        // Pause before waiting for the writer monitor: unblock a hardware write promptly.
+        value.track?.let { runCatching { it.pause() } }
         synchronized(value) { value.terminal = true; value.track?.let { runCatching { it.pause() }; runCatching { it.flush() }; runCatching { it.release() } }; value.track = null }
+        VoiceDiagnostics.event("AUDIOTRACK_STOPPED", "identity=${value.identity}")
     }
     private fun createTrack(value: Session) = runCatching {
         val minimum = AudioTrack.getMinBufferSize(value.sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
         check(minimum > 0) { "PCM16 output is unavailable." }
-        AudioTrack.Builder().setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANT).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+        AudioTrack.Builder().setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
             .setAudioFormat(AudioFormat.Builder().setSampleRate(value.sampleRate).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
             .setBufferSizeInBytes(max(minimum, PREFILL_BYTES)).setTransferMode(AudioTrack.MODE_STREAM).build()
             .also { check(it.state == AudioTrack.STATE_INITIALIZED) { "PCM16 output could not initialize." } }

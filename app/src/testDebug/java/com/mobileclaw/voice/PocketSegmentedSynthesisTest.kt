@@ -35,6 +35,24 @@ class PocketSegmentedSynthesisTest {
         assertEquals(0, player.finishes)
     }
 
+    @Test fun `progressive text retains cache protection and finishes only at logical EOF`() {
+        val player = FakePlayer()
+        val playback = PocketStreamingPlayback(player, PlaybackIdentity("stream", 1), 24_000) {}
+        val chunks = listOf("First sentence. ", "More detail, " + "details ".repeat(70), "Final tail.")
+        val spoken = mutableListOf<String>()
+        chunks.forEach { chunk ->
+            PocketSegmentedSynthesis(playback, { true }, { text, callback ->
+                if (text.length > 300) error("Pocket TTS text and voice conditioning exceed the 1000-token LM cache")
+                spoken += text
+                callback(byteArrayOf(1, 0), 24_000, true)
+            }).run(chunk, finishLogical = false)
+            assertEquals(0, player.finishes)
+        }
+        playback.finishLogical()
+        assertEquals(chunks.joinToString(""), spoken.joinToString(""))
+        assertEquals(1, player.finishes)
+    }
+
     private class FakePlayer : StreamingPcm16Player {
         var appends = 0; var finishes = 0
         private var listener: ((StreamingPlaybackEvent) -> Unit)? = null

@@ -7,7 +7,7 @@ internal class PocketSegmentedSynthesis(
     private val synthesize: (String, (ByteArray, Int, Boolean) -> Unit) -> Unit,
     private val debug: (String) -> Unit = {},
 ) {
-    fun run(text: String) {
+    fun run(text: String, finishLogical: Boolean = true) {
         val logicalStarted = monotonicMillis()
         val pending = ArrayDeque(PocketTextSegmentation.initial(text).map { Work(it, 0) })
         debug("Pocket logical synthesis start tMs=$logicalStarted chars=${text.length} segments=${pending.size}")
@@ -37,7 +37,7 @@ internal class PocketSegmentedSynthesis(
                 retry.asReversed().forEach { pending.addFirst(Work(it, work.depth + 1)) }
             }
         }
-        if (isCurrent()) { debug("Pocket logical playback finish"); playback.finishLogical() }
+        if (isCurrent() && finishLogical) { debug("Pocket logical playback finish"); playback.finishLogical() }
     }
 
     private data class Work(val text: String, val depth: Int)

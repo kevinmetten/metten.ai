@@ -46,3 +46,13 @@ interface SpeechOutputEngine {
     fun stop()
     fun release()
 }
+
+/** Append-only text for ONE logical output; handles must reject writes after exact cancellation. */
+interface SpeechTextStream {
+    fun append(text: String)
+    fun finish()
+    fun cancel()
+}
+interface StreamingSpeechOutputEngine : SpeechOutputEngine {
+    fun beginStream(listener: (SpeechOutputEvent) -> Unit): SpeechTextStream
+}

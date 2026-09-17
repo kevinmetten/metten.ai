@@ -21,8 +21,8 @@ import java.util.concurrent.atomic.AtomicLong
 internal class SoniqoConversationalSpeechSession(
     context: Context,
     private val player: StreamingPcm16Player,
-    private val capture: FloatPcmCapture = SoniqoAudioRecordCapture(),
-) : ContinuousSpeechInputEngine, SpeechOutputEngine {
+    private val capture: FloatPcmCapture = SoniqoAudioRecordCapture(context),
+) : ContinuousSpeechInputEngine, StreamingSpeechOutputEngine {
     private val app = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val inference = Executors.newSingleThreadExecutor()
@@ -46,7 +46,15 @@ internal class SoniqoConversationalSpeechSession(
             CancellableTimer { main.removeCallbacks(runnable) }
         },
         currentOutput = { synchronized(lock) { output?.identity } },
-        emitConfirmed = { postInput(SpeechInputEvent.OutputInterrupted) },
+        emitConfirmed = { identity ->
+            // Validate the backend identity again after the Android main-thread hop.
+            post {
+                val listener = synchronized(lock) {
+                    if (!muted && output?.identity == identity && !initialization.isReleased()) inputListener else null
+                }
+                listener?.invoke(SpeechInputEvent.OutputInterrupted)
+            }
+        },
         debug = { message ->
             Log.d(TAG, message)
             val event = when {
@@ -69,6 +77,7 @@ internal class SoniqoConversationalSpeechSession(
         var playback: PocketStreamingPlayback? = null,
     ) {
         val reference = SoniqoInterruptionGate.OutputReference(identity, text)
+        val chunks = PendingSpeechText()
     }
 
     override fun capability(): SpeechCapability = synchronized(lock) { capability }
@@ -178,70 +187,103 @@ internal class SoniqoConversationalSpeechSession(
     }
 
     override fun speak(text: String, listener: (SpeechOutputEvent) -> Unit) {
-        val value: Pair<SpeechPipeline, Output> = synchronized(lock) {
-            val pipe = pipeline
-            if (initialization.isReleased() || pipe == null || !capability.available) return post { listener(SpeechOutputEvent.Failed("Soniqo is unavailable.")) }
+        beginStream(listener).also { it.append(text); it.finish() }
+    }
+
+    @Synchronized override fun beginStream(listener: (SpeechOutputEvent) -> Unit): SpeechTextStream {
+        stop()
+        val value = synchronized(lock) {
+            check(!initialization.isReleased() && pipeline != null && capability.available) { "Soniqo is unavailable." }
             val generation = outputGeneration.incrementAndGet()
-            val next = Output(generation, PlaybackIdentity(UUID.randomUUID().toString(), generation), text, listener)
-            output = next
-            VoiceDiagnostics.event("OUTPUT_INSTALLED", "identity=${next.identity}")
-            next.playback = PocketStreamingPlayback(player, next.identity, pipe.ttsSampleRate) { event ->
-                when (event) {
-                    StreamingPlaybackEvent.Started -> deliver(next, SpeechOutputEvent.Started, terminal = false)
-                    StreamingPlaybackEvent.Drained -> deliver(next, SpeechOutputEvent.Completed, terminal = true)
-                    is StreamingPlaybackEvent.Failed -> deliver(next, SpeechOutputEvent.Failed(event.reason), terminal = true)
+            Output(generation, PlaybackIdentity(UUID.randomUUID().toString(), generation), "", listener).also { next ->
+                output = next
+                VoiceDiagnostics.event("OUTPUT_INSTALLED", "identity=${next.identity}")
+                next.playback = PocketStreamingPlayback(player, next.identity, checkNotNull(pipeline).ttsSampleRate) { event ->
+                    when (event) {
+                        StreamingPlaybackEvent.Started -> deliver(next, SpeechOutputEvent.Started, terminal = false)
+                        StreamingPlaybackEvent.Drained -> deliver(next, SpeechOutputEvent.Completed, terminal = true)
+                        is StreamingPlaybackEvent.Failed -> deliver(next, SpeechOutputEvent.Failed(event.reason), terminal = true)
+                    }
                 }
             }
-            Log.d(TAG, "Pocket logical output=${next.identity} speak received tMs=${System.nanoTime() / 1_000_000L} chars=${text.length}")
-            pipe to next
         }
-        inference.execute {
-            VoiceDiagnostics.event("POCKET_SYNTH_START", "identity=${value.second.identity}")
-            runCatching {
-                PocketSegmentedSynthesis(
-                    playback = checkNotNull(value.second.playback),
-                    isCurrent = { isCurrent(value.second) },
-                    synthesize = { segment, callback ->
-                        value.first.synthesizeStreaming(segment, "en") { result, isFinal ->
-                            callback(result.pcm16, result.sampleRate, isFinal)
-                        }
-                    },
-                    debug = {
-                        Log.d(TAG, "output=${value.second.identity} $it")
-                        if ("logical first PCM" in it) VoiceDiagnostics.event("POCKET_FIRST_PCM", "identity=${value.second.identity}")
-                    },
-                ).run(text)
+        return object : SpeechTextStream {
+            override fun append(text: String) {
+                if (!isCurrent(value)) return
+                if (value.chunks.append(text)) inference.execute { drainText(value) }
             }
-                .onFailure { failOutput(value.second, it.message ?: "Pocket TTS synthesis failed.") }
+            override fun finish() {
+                if (isCurrent(value) && value.chunks.finish()) inference.execute { drainText(value) }
+            }
+            override fun cancel() { stopExact(value) }
         }
+    }
+
+    private fun drainText(value: Output) {
+        if (!isCurrent(value)) return
+        try {
+            while (isCurrent(value)) {
+                when (val next = value.chunks.next()) {
+                    PendingSpeechText.Item.Wait -> return
+                    PendingSpeechText.Item.End -> { value.playback?.finishLogical(); return }
+                    is PendingSpeechText.Item.Text -> {
+                        synchronized(lock) {
+                            if (!isCurrent(value)) return
+                            // The SAME reference object follows the VAD segment as more spoken text arrives.
+                            value.reference.text += next.value
+                        }
+                        VoiceDiagnostics.event("POCKET_SYNTH_START", "identity=${value.identity} chars=${next.value.length}")
+                        PocketSegmentedSynthesis(
+                            playback = checkNotNull(value.playback),
+                            isCurrent = { isCurrent(value) },
+                            synthesize = { segment, callback ->
+                                if (isCurrent(value)) pipeline?.synthesizeStreaming(segment, "en") { result, final ->
+                                    callback(result.pcm16, result.sampleRate, final)
+                                }
+                            },
+                            debug = {
+                                if ("logical first PCM" in it) VoiceDiagnostics.event("POCKET_FIRST_PCM", "identity=${value.identity}")
+                            },
+                        ).run(next.value, finishLogical = false)
+                    }
+                }
+            }
+        } catch (failure: Throwable) {
+            failOutput(value, "Pocket streaming synthesis failed.")
+        }
+    }
+
+    @Synchronized private fun stopExact(value: Output) {
+        val accepted = synchronized(lock) {
+            if (output !== value) false else {
+                outputGeneration.incrementAndGet(); tailHandoff = value.reference; output = null
+                value.chunks.cancel()
+                true
+            }
+        }
+        if (!accepted) return
+        VoiceDiagnostics.event("CANCEL_SYNTHESIS_CALLED", "identity=${value.identity}")
+        pipeline?.cancelSynthesis()
+        completeTailHandoff(value.reference, naturallyDrained = false)
+        player.cancel(value.identity)
+        VoiceDiagnostics.event("OUTPUT_CANCELLED", "identity=${value.identity}")
     }
 
     override fun stop() {
-        VoiceDiagnostics.event("SONIQO_STOP_ENTERED")
-        val old = synchronized(lock) {
-            outputGeneration.incrementAndGet()
-            output.also { value -> if (value != null) tailHandoff = value.reference; output = null }
-        }
-        VoiceDiagnostics.event("CANCEL_SYNTHESIS_CALLED")
-        pipeline?.cancelSynthesis()
-        old?.let {
-            Log.d(TAG, "output=${it.identity} cancel requested")
-            completeTailHandoff(it.reference, naturallyDrained = false)
-            VoiceDiagnostics.event("PLAYER_CANCEL_CALLED", "identity=${it.identity}")
-            player.cancel(it.identity)
-            VoiceDiagnostics.event("OUTPUT_CANCELLED", "identity=${it.identity}")
-        }
+        synchronized(lock) { output }?.let(::stopExact)
     }
 
-    override fun release() {
+    @Synchronized override fun release() {
         val owned = synchronized(lock) {
             if (initialization.isReleased()) return
-            inputListener = null; output = null; tailHandoff = null; initializationListeners.clear()
+            inputListener = null; output?.chunks?.cancel(); output = null; tailHandoff = null; initializationListeners.clear()
             initialization.release()
         }
         interruption.close()
-        capture.release(); player.release(); owned?.cancelSynthesis(); owned?.stop(); owned?.close()
-        scope.cancel(); inference.shutdownNow()
+        capture.release(); player.release(); owned?.cancelSynthesis()
+        // Native handles must outlive in-flight synthesis callbacks.
+        inference.execute { owned?.stop(); owned?.close() }
+        scope.cancel(); inference.shutdown()
     }
 
     private fun observe(value: SpeechPipeline) {
@@ -282,6 +324,8 @@ internal class SoniqoConversationalSpeechSession(
             value.listener
         }
         if (terminal) {
+            value.chunks.cancel()
+            if (event is SpeechOutputEvent.Failed) player.cancel(value.identity)
             if (event == SpeechOutputEvent.Completed) VoiceDiagnostics.event("OUTPUT_NATURAL_DRAIN", "identity=${value.identity}")
             completeTailHandoff(value.reference, naturallyDrained = event == SpeechOutputEvent.Completed)
         }
