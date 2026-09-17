@@ -36,4 +36,33 @@ class VoiceDiagnosticTraceTest {
         behavior(NoOpVoiceTrace)
         assertEquals(1, calls)
     }
+
+    @Test fun `persistent milestones are bounded and reject speech bodies`() {
+        val record = PersistentVoiceRecord(maxEvents = 3, maxBytes = 300)
+        record.begin(8, aec = false, thresholdMillis = 1_000)
+        repeat(20) { record.add("NATIVE_CANCEL_ENTER", "identity=$it") }
+        record.add("STT_FINAL", "Actually stop there and secret assistant body")
+        val payload = record.encode()
+        assertTrue(payload.length <= 300)
+        assertEquals(3, payload.lines().count { it.startsWith("NATIVE_CANCEL_ENTER") })
+        assertFalse(payload.contains("Actually")); assertFalse(payload.contains("assistant body"))
+    }
+
+    @Test fun `new process defaults do not mutate prior serialized session`() {
+        val crashed = PersistentVoiceRecord()
+        crashed.begin(88, aec = false, thresholdMillis = 1_000)
+        crashed.add("NATIVE_CANCEL_ENTER", "identity=4")
+        val persisted = crashed.encode()
+        PersistentVoiceRecord() // simulated relaunched process, before a new Voice session
+        assertTrue(persisted.contains("generation=88"))
+        assertTrue(persisted.contains("lastVoicePhase=NATIVE_CANCEL_ENTER"))
+    }
+
+    @Test fun `metadata sanitizer bounds structural java crash-like fields`() {
+        val record = PersistentVoiceRecord(maxBytes = 400)
+        record.begin(1, false, 1_000)
+        record.add("PLAYER_CANCEL_ENTER", "type=java.lang.IllegalStateException appFrame=Voice.cancel:9 ${"!".repeat(800)}")
+        assertTrue(record.encode().length <= 400)
+        assertFalse(record.encode().contains("!"))
+    }
 }

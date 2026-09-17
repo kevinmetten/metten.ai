@@ -266,12 +266,15 @@ class MettenVoiceSessionController(
                 streamTurn = null
                 if (activeTurn == it.turn) activeTurn = null
                 turnJob?.takeIf { job -> job.token == it.turn }?.job?.cancel()
+                VoiceDiagnostics.event("BRAIN_STREAM_CANCEL_REQUESTED", "turn=${it.turn.turnId} output=${token.outputId}")
                 it.handle.cancel()
+                VoiceDiagnostics.event("BRAIN_STREAM_CANCEL_RETURNED", "turn=${it.turn.turnId} output=${token.outputId}")
                 VoiceDiagnostics.event("BRAIN_STREAM_CANCELLED", "turn=${it.turn.turnId} output=${token.outputId}")
             }
             activeOutput = null
             pendingEchoText = null
             _state.value = MettenVoiceState(MettenVoicePhase.LISTENING)
+            VoiceDiagnostics.event("CONTROLLER_LISTENING_RETURNED", "output=${token.outputId}")
             output
         }
         engine?.let { VoiceDiagnostics.event("OUTPUT_STOP_CALLED"); it.stop() }
