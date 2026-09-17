@@ -278,7 +278,7 @@ class ClawApplication : Application() {
                 .run(goal = goal, taskType = TaskType.PHONE_CONTROL)
         }
         var mettenSpeech: MettenSpeechEnginePair? = null
-        installVoiceDiagnostics()
+        installVoiceDiagnostics(this)
         mettenVoiceController = MettenVoiceSessionController(
             scope = agentExecutionScope,
             inputFactory = {

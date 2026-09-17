@@ -215,7 +215,11 @@ internal class SoniqoConversationalSpeechSession(
             override fun finish() {
                 if (isCurrent(value) && value.chunks.finish()) inference.execute { drainText(value) }
             }
-            override fun cancel() { stopExact(value) }
+            override fun cancel() {
+                VoiceDiagnostics.event("SPEECH_TEXT_CANCEL_ENTER", "identity=${value.identity}")
+                stopExact(value)
+                VoiceDiagnostics.event("SPEECH_TEXT_CANCEL_RETURNED", "identity=${value.identity}")
+            }
         }
     }
 
@@ -262,10 +266,16 @@ internal class SoniqoConversationalSpeechSession(
             }
         }
         if (!accepted) return
-        VoiceDiagnostics.event("CANCEL_SYNTHESIS_CALLED", "identity=${value.identity}")
+        VoiceDiagnostics.event("STOP_EXACT_ACCEPTED", "identity=${value.identity}")
+        VoiceDiagnostics.event("NATIVE_CANCEL_ENTER", "identity=${value.identity}")
         pipeline?.cancelSynthesis()
+        VoiceDiagnostics.event("NATIVE_CANCEL_RETURNED", "identity=${value.identity}")
+        VoiceDiagnostics.event("TAIL_HANDOFF_ENTER", "identity=${value.identity}")
         completeTailHandoff(value.reference, naturallyDrained = false)
+        VoiceDiagnostics.event("TAIL_HANDOFF_RETURNED", "identity=${value.identity}")
+        VoiceDiagnostics.event("PLAYER_CANCEL_ENTER", "identity=${value.identity}")
         player.cancel(value.identity)
+        VoiceDiagnostics.event("PLAYER_CANCEL_RETURNED", "identity=${value.identity}")
         VoiceDiagnostics.event("OUTPUT_CANCELLED", "identity=${value.identity}")
     }
 

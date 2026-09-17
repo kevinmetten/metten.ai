@@ -84,8 +84,21 @@ internal class AndroidStreamingPcm16Player : StreamingPcm16Player {
     private fun discard(value: Session) {
         VoiceDiagnostics.event("AUDIOTRACK_STOP_REQUESTED", "identity=${value.identity}")
         // Pause before waiting for the writer monitor: unblock a hardware write promptly.
+        VoiceDiagnostics.event("AUDIOTRACK_PAUSE_ENTER", "identity=${value.identity}")
         value.track?.let { runCatching { it.pause() } }
-        synchronized(value) { value.terminal = true; value.track?.let { runCatching { it.pause() }; runCatching { it.flush() }; runCatching { it.release() } }; value.track = null }
+        VoiceDiagnostics.event("AUDIOTRACK_PAUSE_RETURNED", "identity=${value.identity}")
+        synchronized(value) {
+            value.terminal = true
+            value.track?.let {
+                VoiceDiagnostics.event("AUDIOTRACK_FLUSH_ENTER", "identity=${value.identity}")
+                runCatching { it.flush() }
+                VoiceDiagnostics.event("AUDIOTRACK_FLUSH_RETURNED", "identity=${value.identity}")
+                VoiceDiagnostics.event("AUDIOTRACK_RELEASE_ENTER", "identity=${value.identity}")
+                runCatching { it.release() }
+                VoiceDiagnostics.event("AUDIOTRACK_RELEASE_RETURNED", "identity=${value.identity}")
+            }
+            value.track = null
+        }
         VoiceDiagnostics.event("AUDIOTRACK_STOPPED", "identity=${value.identity}")
     }
     private fun createTrack(value: Session) = runCatching {
