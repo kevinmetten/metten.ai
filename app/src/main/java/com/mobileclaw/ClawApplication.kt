@@ -47,10 +47,14 @@ import com.mobileclaw.permission.DeviceReadinessEngine
 import com.mobileclaw.permission.detectRom
 import com.mobileclaw.realtime.VoiceSessionForegroundService
 import com.mobileclaw.voice.SerializedVoiceForegroundLease
+import com.mobileclaw.voice.VoiceTimingLogger
 import com.mobileclaw.voice.AndroidOnDeviceSpeechInput
 import com.mobileclaw.voice.LlmVoiceTurnBrain
 import com.mobileclaw.voice.MettenSpeechOutputFactory
+import com.mobileclaw.voice.MettenSpeechEngineFactory
+import com.mobileclaw.voice.MettenSpeechEnginePair
 import com.mobileclaw.voice.MettenVoiceSessionController
+import com.mobileclaw.voice.installVoiceDiagnostics
 import com.mobileclaw.memory.MemoryContextBuilder
 import com.mobileclaw.runtime.PageRuntimeCapabilities
 import com.mobileclaw.server.ConsoleServer
@@ -273,10 +277,16 @@ class ClawApplication : Application() {
             AgentRuntime(createLlmGateway(), skillRegistry, semanticMemory, MemoryContextBuilder(semanticMemory, userConfig))
                 .run(goal = goal, taskType = TaskType.PHONE_CONTROL)
         }
+        var mettenSpeech: MettenSpeechEnginePair? = null
+        installVoiceDiagnostics()
         mettenVoiceController = MettenVoiceSessionController(
             scope = agentExecutionScope,
-            inputFactory = { AndroidOnDeviceSpeechInput(this) },
-            outputFactory = { MettenSpeechOutputFactory.create(this) },
+            inputFactory = {
+                MettenSpeechEngineFactory.create(this).also { mettenSpeech = it }.input
+            },
+            outputFactory = {
+                (mettenSpeech ?: MettenSpeechEngineFactory.create(this).also { mettenSpeech = it }).output
+            },
             brain = LlmVoiceTurnBrain(createLlmGateway()),
             coordinator = voiceAgentCoordinator,
             microphonePermission = { androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED },
@@ -285,6 +295,11 @@ class ClawApplication : Application() {
                 startForeground = { VoiceSessionForegroundService.start(this) },
                 stopForeground = { VoiceSessionForegroundService.stop(this) },
             ),
+            timingLogger = if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+                VoiceTimingLogger { message -> android.util.Log.d("MettenVoiceTiming", message) }
+            } else {
+                VoiceTimingLogger.NONE
+            },
         )
     }
 

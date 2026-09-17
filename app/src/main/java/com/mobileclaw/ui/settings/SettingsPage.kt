@@ -54,6 +54,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mobileclaw.R
+import com.mobileclaw.BuildConfig
 import com.mobileclaw.ClawApplication
 import com.mobileclaw.auth.chatgpt.ChatGptAuthState
 import com.mobileclaw.config.CacheCategory
@@ -70,6 +71,7 @@ import com.mobileclaw.llm.ChatGptModel
 import com.mobileclaw.memory.db.VideoGenerationTaskEntity
 import com.mobileclaw.perception.VirtualDisplayManager
 import com.mobileclaw.voice.MettenVoicePhase
+import com.mobileclaw.voice.copyableVoiceDiagnostics
 import com.mobileclaw.ui.ClawColors
 import com.mobileclaw.ui.ClawIconTile
 import com.mobileclaw.ui.ClawPageHeader
@@ -723,6 +725,7 @@ private fun ChatGptAccountCard(app: ClawApplication, c: ClawColors) {
     val voiceState by app.mettenVoiceController.state.collectAsState()
     val actions = chatGptAccountActions(state is ChatGptAuthState.SignedIn, voiceState.phase)
     val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
     val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) app.startLiveVoice() else app.mettenVoiceController.microphonePermissionMissing()
     }
@@ -810,6 +813,16 @@ private fun ChatGptAccountCard(app: ClawApplication, c: ClawColors) {
                         app.endLiveVoice()
                         manager.signOut()
                     }) { Text("Sign out", color = c.text) }
+                    if (BuildConfig.DEBUG) {
+                        OutlinedButton(
+                            onClick = {
+                                clipboard.setText(AnnotatedString(copyableVoiceDiagnostics()))
+                                Toast.makeText(context, "Voice diagnostics copied", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.testTag("copy_voice_diagnostics"),
+                            border = androidx.compose.foundation.BorderStroke(0.8.dp, c.border),
+                        ) { Text("Copy last Voice diagnostics", color = c.text) }
+                    }
                 }
                 is ChatGptAuthState.Refreshing -> Text("Refreshing ChatGPT session…", color = c.subtext, fontSize = 12.sp)
                 is ChatGptAuthState.Error -> {

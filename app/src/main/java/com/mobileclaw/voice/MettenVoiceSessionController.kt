@@ -38,10 +38,14 @@ class MettenVoiceSessionController(
         override fun acquire(generation: Long) = VoiceForegroundAcquireResult.Acquired
         override fun release(generation: Long) = VoiceForegroundReleaseResult.NoOp
     },
+    private val timingLogger: VoiceTimingLogger = VoiceTimingLogger.NONE,
 ) {
     private data class StartupToken(val generation: Long, val epoch: Long)
     private data class OutputToken(val generation: Long, val outputId: Long)
     private data class TurnToken(val generation: Long, val turnId: Long)
+    private data class StreamTurn(val turn: TurnToken, val output: OutputToken, val handle: SpeechTextStream)
+    private var streamTurn: StreamTurn? = null
+    private val announcements = ArrayDeque<String>()
     private data class TurnJobHandle(val token: TurnToken, val job: Job)
     private data class PreparedListen(val generation: Long, val attempt: Long, val engine: SpeechInputEngine)
     private data class PreparedSpeech(val token: OutputToken, val engine: SpeechOutputEngine, val input: SpeechInputEngine?, val text: String)
@@ -105,6 +109,7 @@ class MettenVoiceSessionController(
                 _state.value = MettenVoiceState(MettenVoicePhase.FAILED, ready.reason); return false
             }
             val id = ++generation
+            VoiceDiagnostics.beginSession(id)
             lifecycleEpoch++
             val token = StartupToken(id, ++startupEpoch)
             startupToken = token
@@ -161,6 +166,7 @@ class MettenVoiceSessionController(
     fun setMuted(value: Boolean) {
         var stop: SpeechInputEngine? = null
         var prepared: PreparedListen? = null
+        var resumeContinuous: Triple<Long, Long, ContinuousSpeechInputEngine>? = null
         synchronized(this) {
             if (_state.value.phase in setOf(MettenVoicePhase.IDLE, MettenVoicePhase.ENDING, MettenVoicePhase.FAILED) || muted == value) return
             if (value) {
@@ -169,7 +175,10 @@ class MettenVoiceSessionController(
             } else {
                 refreshMutedOwnerLocked(); val owner = mutedResumeOwner; muted = false
                 when (owner) {
-                    MutedResumeOwner.OUTPUT -> if (activeOutput != null) _state.value = MettenVoiceState(MettenVoicePhase.SPEAKING) else prepared = prepareListenLocked(generation, ListenCause.Unmuted)
+                    MutedResumeOwner.OUTPUT -> if (activeOutput != null) {
+                        _state.value = MettenVoiceState(MettenVoicePhase.SPEAKING)
+                        (input as? ContinuousSpeechInputEngine)?.let { resumeContinuous = Triple(generation, listenAttempt, it) }
+                    } else prepared = prepareListenLocked(generation, ListenCause.Unmuted)
                     MutedResumeOwner.STARTUP -> _state.value = MettenVoiceState(MettenVoicePhase.STARTING)
                     MutedResumeOwner.THINKING -> _state.value = MettenVoiceState(MettenVoicePhase.THINKING)
                     MutedResumeOwner.LISTENING -> prepared = prepareListenLocked(generation, ListenCause.Unmuted)
@@ -177,6 +186,9 @@ class MettenVoiceSessionController(
             }
         }
         stop?.let(::submitStop); prepared?.let(::submitPreparedListen)
+        resumeContinuous?.let { (id, attempt, engine) ->
+            engine.startListening { event -> onInput(id, attempt, event) }
+        }
     }
 
     @Synchronized fun microphonePermissionMissing() {
@@ -217,7 +229,16 @@ class MettenVoiceSessionController(
     private fun submitStop(engine: SpeechInputEngine) = synchronized(inputEngineGate) { engine.stopListening() }
 
     private fun onInput(id: Long, attempt: Long, event: SpeechInputEvent) {
-        if (!synchronized(this) { id == generation && attempt == listenAttempt && !muted && _state.value.phase == MettenVoicePhase.LISTENING }) return
+        if (event == SpeechInputEvent.OutputInterrupted) {
+            VoiceDiagnostics.event("CONTROLLER_OUTPUT_INTERRUPTED_RECEIVED", "generation=$id listenAttempt=$attempt")
+            interruptExactOutput(id, attempt)
+            return
+        }
+        if (!synchronized(this) {
+                id == generation && attempt == listenAttempt && !muted &&
+                    (_state.value.phase == MettenVoicePhase.LISTENING ||
+                        input is ContinuousSpeechInputEngine && activeOutput == null && !hasThinkingOwnershipLocked())
+            }) return
         when (event) {
             SpeechInputEvent.Ready, SpeechInputEvent.SpeechStarted -> synchronized(this) { if (id == generation && attempt == listenAttempt) startFailures = 0 }
             is SpeechInputEvent.Final -> acceptFinal(id, attempt, event.text)
@@ -227,7 +248,33 @@ class MettenVoiceSessionController(
             }
             is SpeechInputEvent.FatalError -> fail(id, event.reason)
             is SpeechInputEvent.Partial -> Unit
+            SpeechInputEvent.OutputInterrupted -> Unit
         }
+    }
+
+    /** Audio interruption never reaches the coordinator; only a later final transcript may control phone work. */
+    private fun interruptExactOutput(id: Long, attempt: Long) {
+        val engine = synchronized(this) {
+            if (id != generation) { VoiceDiagnostics.event("CONTROLLER_INTERRUPT_REJECTED", "reason=stale_generation expected=$generation actual=$id"); return }
+            if (attempt != listenAttempt) { VoiceDiagnostics.event("CONTROLLER_INTERRUPT_REJECTED", "reason=stale_listenAttempt expected=$listenAttempt actual=$attempt"); return }
+            if (muted) { VoiceDiagnostics.event("CONTROLLER_INTERRUPT_REJECTED", "reason=muted"); return }
+            if (input !is ContinuousSpeechInputEngine) { VoiceDiagnostics.event("CONTROLLER_INTERRUPT_REJECTED", "reason=non-continuous_input"); return }
+            val token = activeOutput ?: run { VoiceDiagnostics.event("CONTROLLER_INTERRUPT_REJECTED", "reason=no_activeOutput"); return }
+            if (token.generation != id) { VoiceDiagnostics.event("CONTROLLER_INTERRUPT_REJECTED", "reason=generation_mismatch outputGeneration=${token.generation} inputGeneration=$id"); return }
+            VoiceDiagnostics.event("CONTROLLER_INTERRUPT_ACCEPTED", "output=${token.outputId} generation=$id listenAttempt=$attempt")
+            streamTurn?.takeIf { it.output == token }?.let {
+                streamTurn = null
+                if (activeTurn == it.turn) activeTurn = null
+                turnJob?.takeIf { job -> job.token == it.turn }?.job?.cancel()
+                it.handle.cancel()
+                VoiceDiagnostics.event("BRAIN_STREAM_CANCELLED", "turn=${it.turn.turnId} output=${token.outputId}")
+            }
+            activeOutput = null
+            pendingEchoText = null
+            _state.value = MettenVoiceState(MettenVoicePhase.LISTENING)
+            output
+        }
+        engine?.let { VoiceDiagnostics.event("OUTPUT_STOP_CALLED"); it.stop() }
     }
 
     private fun acceptFinal(id: Long, attempt: Long, text: String) {
@@ -240,12 +287,14 @@ class MettenVoiceSessionController(
             val normalized = normalizeForEchoGuard(text)
             val echoed = normalized.isNotEmpty() && normalized == pendingEchoText
             pendingEchoText = null
-            invalidateListeningLocked()
+            if (input !is ContinuousSpeechInputEngine) invalidateListeningLocked()
             if (echoed) echoListen = prepareListenLocked(id, ListenCause.EchoConsumed(attempt))
             else {
                 val token = TurnToken(id, ++nextTurnId)
                 activeTurn = token; _state.value = MettenVoiceState(MettenVoicePhase.THINKING)
-                turn = token; stop = input
+                timingLogger.log("accepted STT final turn=${token.turnId} tMs=${monotonicMillis()}")
+                VoiceDiagnostics.event("STT_ACCEPTED", "turn=${token.turnId}")
+                turn = token; if (input !is ContinuousSpeechInputEngine) stop = input
             }
         }
         echoListen?.let(::submitPreparedListen)
@@ -276,15 +325,32 @@ class MettenVoiceSessionController(
     private suspend fun runExactTurn(token: TurnToken, text: String, job: Job) {
         try {
             val turnContext = synchronized(this) { VoiceTurnContext(context.toList(), coordinator.status.value) }
-            val decision = brain.decide(text, turnContext)
+            val requestStarted = monotonicMillis()
+            timingLogger.log("Voice brain request start turn=${token.turnId} tMs=$requestStarted")
+            VoiceDiagnostics.event("BRAIN_REQUEST_START", "turn=${token.turnId}")
+            var streamed = false
+            val deferred = StringBuilder()
+            val decision = if (output is StreamingSpeechOutputEngine) brain.decideStreaming(text, turnContext) { chunk ->
+                deferred.append(chunk)
+                if (appendTurnSpeech(token, deferred.toString())) { streamed = true; deferred.clear() }
+            } else brain.decide(text, turnContext)
+            val responseCompleted = monotonicMillis()
+            timingLogger.log("Voice brain response complete turn=${token.turnId} tMs=$responseCompleted durationMs=${responseCompleted - requestStarted}")
+            VoiceDiagnostics.event("BRAIN_RESPONSE_COMPLETE", "turn=${token.turnId} durationMs=${responseCompleted - requestStarted}")
             val command = decision.phoneCommand
             when {
+                streamed -> finishTurnStream(token, text, decision)
                 command != null -> transferTurnToPhone(token, text, command)
                 decision.spokenText != null -> prepareTurnSpeech(token, text, decision.spokenText)?.let(::submitSpeech)
                 else -> settleTurnWithoutSpeech(token)
             }
         } catch (_: CancellationException) {
         } catch (_: VoiceTurnProcessingException) {
+            synchronized(this) {
+                streamTurn?.takeIf { it.turn == token }?.let {
+                    it.handle.cancel(); streamTurn = null; activeOutput = null
+                }
+            }
             prepareTurnSpeech(token, text, RECOVERABLE_TURN_FAILURE)?.let(::submitSpeech)
         } finally {
             synchronized(this) {
@@ -293,6 +359,41 @@ class MettenVoiceSessionController(
                 if (activeTurn == token && token.generation != generation) activeTurn = null
             }
         }
+    }
+
+    private fun appendTurnSpeech(token: TurnToken, chunk: String): Boolean = synchronized(this) {
+        if (generation != token.generation || activeTurn != token) throw CancellationException("Superseded Voice turn.")
+        if (muted && streamTurn == null) return false
+        val engine = output as? StreamingSpeechOutputEngine ?: return false
+        val stream = streamTurn ?: run {
+            val prepared = installSpeechLocked(token.generation, "") ?: return false
+            VoiceDiagnostics.event("BRAIN_FIRST_SPEECH_CHUNK", "turn=${token.turnId} output=${prepared.token.outputId}")
+            val handle = engine.beginStream { event ->
+                when (event) {
+                    SpeechOutputEvent.Completed -> completeSpeech(prepared.token)
+                    is SpeechOutputEvent.Failed -> {
+                        val exact = synchronized(this) { activeOutput == prepared.token && generation == token.generation }
+                        if (exact) fail(token.generation, event.reason)
+                    }
+                    SpeechOutputEvent.Started -> Unit
+                }
+            }
+            StreamTurn(token, prepared.token, handle).also { streamTurn = it }
+        }
+        if (stream.turn != token || activeOutput != stream.output) throw CancellationException("Superseded Voice output.")
+        VoiceDiagnostics.event("BRAIN_SPEECH_CHUNK", "turn=${token.turnId} chars=${chunk.length}")
+        stream.handle.append(chunk)
+        true
+    }
+
+    private fun finishTurnStream(token: TurnToken, user: String, decision: VoiceTurnDecision) = synchronized(this) {
+        val stream = streamTurn?.takeIf { it.turn == token } ?: return@synchronized
+        if (generation != token.generation || activeTurn != token || activeOutput != stream.output) return@synchronized
+        if (decision.phoneCommand != null) throw VoiceTurnProcessingException.InvalidDecision("Streamed conversation changed action.")
+        remember(user, decision.spokenText.orEmpty())
+        activeTurn = null
+        stream.handle.finish()
+        if (muted) refreshMutedOwnerLocked()
     }
 
     private fun transferTurnToPhone(token: TurnToken, text: String, command: VoiceControlCommand) {
@@ -349,7 +450,13 @@ class MettenVoiceSessionController(
             }
             if (spoken != null) remember(user, spoken)
             if (muted) refreshMutedOwnerLocked()
-            else if (spoken != null) preparedSpeech = installSpeechLocked(id, spoken)
+            else if (spoken != null) {
+                if (streamTurn != null) {
+                    announcements.addLast(spoken)
+                    while (announcements.size > MAX_TURNS) announcements.removeFirst()
+                }
+                else preparedSpeech = installSpeechLocked(id, spoken)
+            }
             else if (hasThinkingOwnershipLocked()) _state.value = MettenVoiceState(MettenVoicePhase.THINKING)
             else preparedListen = prepareListenLocked(id, ListenCause.OwnerSettled)
         }
@@ -359,22 +466,25 @@ class MettenVoiceSessionController(
     private fun installSpeechLocked(id: Long, text: String): PreparedSpeech? {
         if (id != generation || muted) return null
         val engine = output ?: return null
-        invalidateListeningLocked()
+        if (input !is ContinuousSpeechInputEngine) invalidateListeningLocked()
         val token = OutputToken(id, ++outputId)
         activeOutput = token
+        VoiceDiagnostics.event("OUTPUT_INSTALLED", "output=${token.outputId} generation=${token.generation}")
         pendingEchoText = normalizeForEchoGuard(text)
         _state.value = MettenVoiceState(MettenVoicePhase.SPEAKING)
         return PreparedSpeech(token, engine, input, text)
     }
 
     private fun submitSpeech(speech: PreparedSpeech) {
-        speech.input?.let(::submitStop)
+        if (speech.input !is ContinuousSpeechInputEngine) speech.input?.let(::submitStop)
         if (!synchronized(this) {
                 speech.token.generation == generation && activeOutput == speech.token && output === speech.engine
             }) return
+        timingLogger.log("SpeechOutputEngine.speak called output=${speech.token.outputId} tMs=${monotonicMillis()}")
+        VoiceDiagnostics.event("OUTPUT_SPEAK_CALLED", "output=${speech.token.outputId} generation=${speech.token.generation}")
         speech.engine.speak(speech.text) callback@{ event ->
             when (event) {
-                SpeechOutputEvent.Completed -> completeSpeech(speech.token)
+                SpeechOutputEvent.Completed -> { VoiceDiagnostics.event("OUTPUT_NATURAL_DRAIN", "output=${speech.token.outputId}"); completeSpeech(speech.token) }
                 is SpeechOutputEvent.Failed -> {
                     val exact = synchronized(this) { if (activeOutput == speech.token && generation == speech.token.generation) { activeOutput = null; true } else false }
                     if (exact) fail(speech.token.generation, event.reason)
@@ -385,17 +495,21 @@ class MettenVoiceSessionController(
     }
 
     private fun completeSpeech(token: OutputToken) {
+        var announcement: PreparedSpeech? = null
         val prepared = synchronized(this) {
             if (token.generation != generation || activeOutput != token) return
             activeOutput = null
+            if (streamTurn?.output == token) streamTurn = null
             when {
                 muted -> { refreshMutedOwnerLocked(); _state.value = MettenVoiceState(MettenVoicePhase.MUTED); null }
                 startupToken?.generation == generation -> { _state.value = MettenVoiceState(MettenVoicePhase.STARTING); null }
                 hasThinkingOwnershipLocked() -> { _state.value = MettenVoiceState(MettenVoicePhase.THINKING); null }
+                announcements.isNotEmpty() -> { announcement = installSpeechLocked(token.generation, announcements.removeFirst()); null }
                 else -> prepareListenLocked(token.generation, ListenCause.OutputCompleted(token))
             }
         }
         prepared?.let(::submitPreparedListen)
+        announcement?.let(::submitSpeech)
     }
 
     private fun fail(id: Long, reason: String) = terminateExact(id, MettenVoiceState(MettenVoicePhase.FAILED, reason))
@@ -405,6 +519,7 @@ class MettenVoiceSessionController(
             if (id != generation) return
             generation++
             val terminationEpoch = ++lifecycleEpoch
+            streamTurn?.handle?.cancel(); streamTurn = null; announcements.clear()
             startupToken = null; activeOutput = null; activeTurn = null; startFailures = 0
             invalidateListeningLocked()
             val job = turnJob.also { turnJob = null }
@@ -441,6 +556,7 @@ class MettenVoiceSessionController(
     private fun remember(user: String, assistant: String) { context += VoiceConversationTurn(user, assistant); while (context.size > MAX_TURNS) context.removeFirst() }
     private fun normalizeForEchoGuard(text: String) = text.trim().lowercase().replace(Regex("\\s+"), " ")
     private companion object {
+        fun monotonicMillis() = System.nanoTime() / 1_000_000L
         const val MAX_TURNS = 8
         const val MAX_START_FAILURES = 3
         const val ACKNOWLEDGEMENT = "I'm working on that."

@@ -14,6 +14,8 @@ data class VoiceTurnDecision(val spokenText: String? = null, val phoneCommand: V
 
 fun interface VoiceTurnBrain {
     suspend fun decide(userText: String, context: VoiceTurnContext): VoiceTurnDecision
+    suspend fun decideStreaming(userText: String, context: VoiceTurnContext, onSpeech: (String) -> Unit): VoiceTurnDecision =
+        decide(userText, context)
 }
 
 sealed class VoiceTurnProcessingException(message: String, cause: Throwable? = null) : Exception(message, cause) {
@@ -25,17 +27,24 @@ sealed class VoiceTurnProcessingException(message: String, cause: Throwable? = n
 /** Structured text-only reasoning through the same selected LlmGateway used by the rest of MobileClaw. */
 class LlmVoiceTurnBrain(private val llm: LlmGateway) : VoiceTurnBrain {
     override suspend fun decide(userText: String, context: VoiceTurnContext): VoiceTurnDecision {
+        return decideStreaming(userText, context) {}
+    }
+
+    override suspend fun decideStreaming(userText: String, context: VoiceTurnContext, onSpeech: (String) -> Unit): VoiceTurnDecision {
+        val streaming = VoiceDecisionStream(onSpeech)
         val history = context.conversation.flatMap { listOf(Message("user", it.userText), Message("assistant", it.assistantText)) }
         val phoneState = "Current Voice-owned phone task: state=${context.phoneTask.state.name}; high-level goal/summary=${context.phoneTask.summary}"
         val response = try {
-            llm.chat(ChatRequest(messages = listOf(Message("system", "$SYSTEM\n$phoneState")) + history + Message("user", userText), stream = false))
+            llm.chat(ChatRequest(messages = listOf(Message("system", "$SYSTEM\n$phoneState")) + history + Message("user", userText), stream = true, onToken = streaming::accept))
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
             throw VoiceTurnProcessingException.Transport(failure)
         }
         val content = response.content?.trim()?.takeIf(String::isNotEmpty) ?: throw VoiceTurnProcessingException.EmptyResponse()
-        return parse(content)
+        val decision = parse(content)
+        streaming.finish(decision)
+        return decision
     }
 
     internal fun parse(raw: String): VoiceTurnDecision {
@@ -59,6 +68,6 @@ class LlmVoiceTurnBrain(private val llm: LlmGateway) : VoiceTurnBrain {
 
     private companion object {
         val ALLOWED_KEYS = setOf("action", "spoken_text", "goal")
-        const val SYSTEM = """You are Metten's conversational control plane. Return exactly one JSON object and no markdown: {"action":"conversation|start|replace|cancel|status","spoken_text":string|null,"goal":string|null}. An ordinary question while phone work is RUNNING is conversation and MUST NOT replace it. A status question is status. A stop request is cancel. An actionable correction to current STARTING or RUNNING phone work is replace. A new phone goal when no phone work is active is start. The goal is natural language for AgentRuntime; never emit coordinates or UI operations. Never claim an action succeeded. A phone acknowledgement is spoken by the application only after canonical acceptance."""
+        const val SYSTEM = """You are Metten's conversational control plane. Return exactly one JSON object and no markdown: {"action":"conversation|start|replace|cancel|status","spoken_text":string|null,"goal":string|null}. For conversation, use this exact key order: {"action":"conversation","goal":null,"spoken_text":"your answer"}. Decide the action before writing spoken_text; never revise it or repeat keys. An ordinary question while phone work is RUNNING is conversation and MUST NOT replace it. A status question is status. A stop request is cancel. An actionable correction to current STARTING or RUNNING phone work is replace. A new phone goal when no phone work is active is start. The goal is natural language for AgentRuntime; never emit coordinates or UI operations. Never claim an action succeeded. A phone acknowledgement is spoken by the application only after canonical acceptance."""
     }
 }
